@@ -1,0 +1,54 @@
+package com.example.jhapcham.seller.Controller;
+
+import com.example.jhapcham.seller.Service.SellerService;
+import com.example.jhapcham.user.model.User;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/sellers")
+public class SellerController {
+
+    @Autowired
+    private SellerService sellerService;
+
+
+    @PostMapping("/register")
+    public ResponseEntity<Map<String, Object>> registerSeller(@RequestBody User seller) {
+        User savedSeller = sellerService.createSeller(seller);
+        Map<String, Object> response = Map.of(
+                "message", "Seller registered successfully! Waiting for admin approval.",
+                "userId", savedSeller.getId()
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<Map<String, Object>> login(@RequestBody Map<String, String> body) {
+        String usernameOrEmail = body.get("usernameOrEmail");
+        String password = body.get("password");
+
+        if (usernameOrEmail == null || password == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "usernameOrEmail and password are required"));
+        }
+
+        try {
+            User user = sellerService.authenticateSeller(usernameOrEmail, password);
+            return ResponseEntity.ok(Map.of(
+                    "message", "Login successful",
+                    "userId", user.getId(),
+                    "username", user.getUsername(),
+                    "email", user.getEmail()
+            ));
+        } catch (IllegalStateException e) {
+            // Pending or blocked
+            return ResponseEntity.status(403).body(Map.of("message", e.getMessage()));
+        } catch (RuntimeException e) {
+            // Invalid credentials or not a seller
+            return ResponseEntity.status(401).body(Map.of("message", e.getMessage()));
+        }
+    }
+}
