@@ -1,132 +1,108 @@
 package com.example.jhapcham.product.model.service;
 
-import com.example.jhapcham.product.model.Product;
 
+import com.example.jhapcham.product.model.Product;
+import com.example.jhapcham.product.model.dto.ProductDto;
 import com.example.jhapcham.product.model.repository.ProductRepository;
-import com.example.jhapcham.user.model.Role;
-import com.example.jhapcham.user.model.Status;
 import com.example.jhapcham.user.model.User;
+import com.example.jhapcham.user.model.Role;
 import com.example.jhapcham.user.model.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Sort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.nio.file.*;
 
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 public class ProductService {
 
-    private final ProductRepository productRepository;
-    private final UserRepository userRepository;
+    private final String uploadDir = "product-images"; // folder in local device
 
-    private User getSellerOrThrow(String sellerId) {
-        Long sellerLongId;
-        try {
-            sellerLongId = Long.parseLong(sellerId);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Invalid seller id");
-        }
-        User seller = userRepository.findById(sellerLongId)
-                .orElseThrow(() -> new IllegalArgumentException("Seller not found"));
-        if (seller.getRole() != Role.SELLER) {
-            throw new IllegalStateException("Only SELLER can create/update products");
-        }
-        if (seller.getStatus() != Status.ACTIVE) {
-            throw new IllegalStateException("Seller is not approved");
-        }
-        return seller;
+    @Autowired
+    private ProductRepository productRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    public List<Product> getAllProducts() {
+        return productRepository.findAll();
     }
 
-    @Transactional
-    public Product createProduct(Product product, String sellerId) {
-        User seller = getSellerOrThrow(sellerId);
-        product.setSellerId(seller.getId().toString());
+    public Product addProduct(ProductDto dto, Long sellerId) throws Exception {
+        User seller = userRepository.findById(sellerId)
+                .orElseThrow(() -> new Exception("Seller not found"));
+
+        if (!seller.getRole().equals(Role.SELLER)) {
+            throw new Exception("Only sellers can add products");
+        }
+
+        String fileName = null;
+        if (dto.getImage() != null && !dto.getImage().isEmpty()) {
+            fileName = saveImage(dto.getImage());
+        }
+
+        Product product = Product.builder()
+                .name(dto.getName())
+                .description(dto.getDescription())
+                .price(dto.getPrice())
+                .category(dto.getCategory())
+                .sellerId(sellerId)
+                .imagePath(fileName)
+                .build();
+
         return productRepository.save(product);
     }
 
-    @Transactional
-    public Product updateProduct(Long productId, Product updatedProduct, String sellerId) {
-        User seller = getSellerOrThrow(sellerId);
+    public Product updateProduct(Long productId, ProductDto dto, Long sellerId) throws Exception {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new Exception("Product not found"));
 
-        Product existing = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found"));
-
-        if (!seller.getId().toString().equals(existing.getSellerId())) {
-            throw new IllegalStateException("Seller can update only their own product");
+        if (!product.getSellerId().equals(sellerId)) {
+            throw new Exception("You can only update your own products");
         }
 
-        existing.setName(updatedProduct.getName());
-        existing.setDescription(updatedProduct.getDescription());
-        existing.setPrice(updatedProduct.getPrice());
-        existing.setStock(updatedProduct.getStock());
-        existing.setCategory(updatedProduct.getCategory());
-        existing.setBrand(updatedProduct.getBrand());
-        existing.setSku(updatedProduct.getSku());
-        existing.setImageUrl(updatedProduct.getImageUrl());
-        existing.setDiscountPrice(updatedProduct.getDiscountPrice());
-        existing.setIsActive(updatedProduct.getIsActive() != null ? updatedProduct.getIsActive() : existing.getIsActive());
-        existing.setSearchRank(updatedProduct.getSearchRank() != null ? updatedProduct.getSearchRank() : existing.getSearchRank());
-        existing.setTags(updatedProduct.getTags());
+        product.setName(dto.getName());
+        product.setDescription(dto.getDescription());
+        product.setPrice(dto.getPrice());
+        product.setCategory(dto.getCategory());
 
-        return productRepository.save(existing);
+        if (dto.getImage() != null && !dto.getImage().isEmpty()) {
+            String fileName = saveImage(dto.getImage());
+            product.setImagePath(fileName);
+        }
+
+        return productRepository.save(product);
     }
 
-    @Transactional(readOnly = true)
-    public List<Product> getAllProducts() {
-        return productRepository.findAll().stream()
-                .filter(Product::getIsActive)
-                .toList();
+    public void deleteProduct(Long productId, Long adminId) throws Exception {
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new Exception("Admin not found"));
+
+        if (!admin.getRole().equals(Role.ADMIN)) {
+            throw new Exception("Only admin can delete products");
+        }
+
+        productRepository.deleteById(productId);
     }
 
-    @Transactional(readOnly = true)
-    public List<Product> getSellerProducts(String sellerId) {
+    public List<Product> getProductsBySeller(Long sellerId) {
         return productRepository.findBySellerId(sellerId);
     }
 
-    @Transactional
-    public void deleteProduct(Long productId, Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+    // Save uploaded image to local directory
+    private String saveImage(MultipartFile image) throws IOException {
+        Files.createDirectories(Paths.get(uploadDir));
 
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found"));
+        String originalFilename = StringUtils.cleanPath(image.getOriginalFilename());
+        String fileName = System.currentTimeMillis() + "_" + originalFilename;
+        Path filePath = Paths.get(uploadDir, fileName);
 
-        if (user.getRole() == Role.ADMIN) {
-            productRepository.delete(product);
-            return;
-        }
+        Files.copy(image.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
 
-        if (user.getRole() == Role.SELLER && user.getId().toString().equals(product.getSellerId())) {
-            productRepository.delete(product);
-            return;
-        }
-
-        throw new IllegalStateException("Not authorized to delete this product");
-    }
-
-    @Transactional
-    public void incrementView(Long productId) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found"));
-        product.setViewsCount(product.getViewsCount() + 1);
-        productRepository.save(product);
-    }
-
-    @Transactional
-    public void incrementSales(Long productId) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found"));
-        product.setSalesCount(product.getSalesCount() + 1);
-        productRepository.save(product);
-    }
-
-    @Transactional(readOnly = true)
-    public List<Product> getAllSortedBy(String sortBy, boolean desc) {
-        Sort sort = desc ? Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
-        return productRepository.findAll(sort).stream()
-                .filter(Product::getIsActive)
-                .toList();
+        return fileName; // store only file name in DB
     }
 }

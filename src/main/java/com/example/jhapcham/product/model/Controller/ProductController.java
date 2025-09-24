@@ -1,58 +1,89 @@
 package com.example.jhapcham.product.model.Controller;
 
-import com.example.jhapcham.product.model.Product;
 
+import com.example.jhapcham.product.model.Product;
+import com.example.jhapcham.product.model.dto.ProductDto;
 import com.example.jhapcham.product.model.service.ProductService;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/products")
-@RequiredArgsConstructor
 public class ProductController {
 
-    private final ProductService productService;
+    @Autowired
+    private ProductService productService;
 
-    @PostMapping("/create/{sellerId}")
-    public ResponseEntity<Product> createProduct(@PathVariable String sellerId, @RequestBody Product product) {
-        return ResponseEntity.ok(productService.createProduct(product, sellerId));
-    }
-
-    @PutMapping("/update/{productId}/{sellerId}")
-    public ResponseEntity<Product> updateProduct(@PathVariable Long productId,
-                                                 @PathVariable String sellerId,
-                                                 @RequestBody Product updatedProduct) {
-        return ResponseEntity.ok(productService.updateProduct(productId, updatedProduct, sellerId));
-    }
-
-    @GetMapping("/")
+    @GetMapping
     public ResponseEntity<List<Product>> getAllProducts() {
         return ResponseEntity.ok(productService.getAllProducts());
     }
 
-    @GetMapping("/seller/{sellerId}")
-    public ResponseEntity<List<Product>> getSellerProducts(@PathVariable String sellerId) {
-        return ResponseEntity.ok(productService.getSellerProducts(sellerId));
+    @PostMapping("/add")
+    public ResponseEntity<?> addProduct(
+            @RequestParam String name,
+            @RequestParam String description,
+            @RequestParam Double price,
+            @RequestParam String category,
+            @RequestParam Long sellerId,
+            @RequestParam(required = false) MultipartFile image
+    ) {
+        try {
+            ProductDto dto = ProductDto.builder()
+                    .name(name)
+                    .description(description)
+                    .price(price)
+                    .category(category)
+                    .image(image)
+                    .build();
+            Product product = productService.addProduct(dto, sellerId);
+            return ResponseEntity.ok(product);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 
-    @DeleteMapping("/delete/{productId}/{userId}")
-    public ResponseEntity<Void> deleteProduct(@PathVariable Long productId, @PathVariable Long userId) {
-        productService.deleteProduct(productId, userId);
-        return ResponseEntity.noContent().build();
+    @PutMapping("/update/{id}")
+    public ResponseEntity<?> updateProduct(
+            @PathVariable Long id,
+            @RequestParam String name,
+            @RequestParam String description,
+            @RequestParam Double price,
+            @RequestParam String category,
+            @RequestParam Long sellerId,
+            @RequestParam(required = false) MultipartFile image
+    ) {
+        try {
+            ProductDto dto = ProductDto.builder()
+                    .name(name)
+                    .description(description)
+                    .price(price)
+                    .category(category)
+                    .image(image)
+                    .build();
+            Product product = productService.updateProduct(id, dto, sellerId);
+            return ResponseEntity.ok(product);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 
-    @PatchMapping("/view/{productId}")
-    public ResponseEntity<Void> incrementView(@PathVariable Long productId) {
-        productService.incrementView(productId);
-        return ResponseEntity.noContent().build();
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<?> deleteProduct(@PathVariable Long id, @RequestParam Long adminId) {
+        try {
+            productService.deleteProduct(id, adminId);
+            return ResponseEntity.ok("Product deleted successfully");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 
-    @PatchMapping("/sale/{productId}")
-    public ResponseEntity<Void> incrementSale(@PathVariable Long productId) {
-        productService.incrementSales(productId);
-        return ResponseEntity.noContent().build();
+    @GetMapping("/my-products")
+    public ResponseEntity<List<Product>> getMyProducts(@RequestParam Long sellerId) {
+        return ResponseEntity.ok(productService.getProductsBySeller(sellerId));
     }
 }
