@@ -66,6 +66,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/products/update/**").permitAll()
                         .requestMatchers("/api/products/delete/**").permitAll()
                         .requestMatchers("/api/products/**").permitAll()
+
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                         .requestMatchers("/api/admin/**").permitAll()
 
@@ -86,12 +87,17 @@ public class SecurityConfig {
 
 
                         .requestMatchers("/likes/**").permitAll()
+                        .requestMatchers("/orders/**").permitAll()
+
 
                         .requestMatchers(HttpMethod.GET, "/productLike/product-likes").permitAll()
 
                             // Permit User Product Interaction API
                             .requestMatchers(HttpMethod.POST, "/interactions/**").permitAll()
                             .requestMatchers(HttpMethod.GET, "/interactions/**").permitAll()
+
+                                // --- Allow all order endpoints (add this before .anyRequest().authenticated()) ---
+                                .requestMatchers("/orders/**").permitAll()
 
                         .anyRequest().authenticated()
                 )
