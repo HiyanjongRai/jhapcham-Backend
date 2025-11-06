@@ -5,9 +5,8 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
+@Getter @Setter
+@NoArgsConstructor @AllArgsConstructor
 @Builder
 public class OrderStatusHistory {
 
@@ -15,12 +14,13 @@ public class OrderStatusHistory {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "order_id")
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
     private Order order;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private OrderStatus status;
 
+    @Column(nullable = false)
     private LocalDateTime changedAt;
 }

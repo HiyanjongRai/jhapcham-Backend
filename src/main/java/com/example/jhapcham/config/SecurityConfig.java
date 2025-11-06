@@ -70,15 +70,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                         .requestMatchers("/api/admin/**").permitAll()
 
-                        .requestMatchers(HttpMethod.POST,   "/cart/add").permitAll()
-                        .requestMatchers(HttpMethod.GET,    "/cart").permitAll()
-                        .requestMatchers(HttpMethod.DELETE, "/cart/remove").permitAll()
+                        .requestMatchers("/api/cart/**").permitAll()
 
-                            //  Permit Reviews API
-                            .requestMatchers(HttpMethod.GET,  "/reviews").permitAll()
-                            .requestMatchers(HttpMethod.POST, "/reviews/add").permitAll()
 
-                            // Permit User Activity API
+                        //  Permit Reviews API
+                        .requestMatchers(HttpMethod.GET, "/api/products/*/ratings/**").permitAll()
+
+
+                        // Permit User Activity API
                             .requestMatchers(HttpMethod.GET,  "/api/user-activity/**", "/userActivity/**").permitAll()
                             .requestMatchers(HttpMethod.POST, "/api/user-activity/**", "/userActivity/**").permitAll()
                             .requestMatchers(HttpMethod.PUT,  "/api/user-activity/**", "/userActivity/**").permitAll()
@@ -98,6 +97,8 @@ public class SecurityConfig {
 
                                 // --- Allow all order endpoints (add this before .anyRequest().authenticated()) ---
                                 .requestMatchers("/orders/**").permitAll()
+                        .requestMatchers("/api/search-history/**").permitAll()
+
 
                         .anyRequest().authenticated()
                 )

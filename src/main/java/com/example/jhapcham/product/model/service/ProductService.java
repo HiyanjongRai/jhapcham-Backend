@@ -2,6 +2,8 @@ package com.example.jhapcham.product.model.service;
 
 import com.example.jhapcham.product.model.Product;
 import com.example.jhapcham.product.model.dto.ProductDto;
+import com.example.jhapcham.product.model.dto.ProductResponseDTO;
+import com.example.jhapcham.product.model.rating.RatingRepository;
 import com.example.jhapcham.product.model.repository.ProductRepository;
 import com.example.jhapcham.productLike.ProductLikeRepository;
 import com.example.jhapcham.user.model.Role;
@@ -28,6 +30,8 @@ public class ProductService {
     private final ProductLikeRepository productLikeRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
+    private final RatingRepository ratingRepository; // <— NEW
+
 
     private final String uploadDir = "product-images";
 
@@ -231,6 +235,41 @@ public class ProductService {
         return productRepository.findById(id);
     }
 
+    // ProductService.java (add this method)
+    public ProductResponseDTO toResponseDTO(Product p) {
+        int likeCount = productLikeRepository.countByProduct(p);
+
+        // pull a fresh snapshot
+        Double avg = ratingRepository.averageForProduct(p.getId());
+        long   cnt = ratingRepository.countForProduct(p.getId());
+
+        return ProductResponseDTO.builder()
+                .id(p.getId())
+                .name(p.getName())
+                .description(p.getDescription())
+                .shortDescription(p.getShortDescription())
+                .price(p.getPrice())
+                .category(p.getCategory())
+                .sellerId(p.getSellerId())
+                .imagePath(p.getImagePath())
+                .others(p.getOthers())
+                .stock(p.getStock())
+                .totalLikes(likeCount)
+                .totalViews(p.getViews())
+
+                // NEW: card metrics
+                .averageRating(avg == null ? 0.0 : Math.round(avg * 10.0) / 10.0)
+                .ratingCount(cnt)
+
+                // legacy fields you already exposed
+                .rating(p.getRating())
+                .status(p.getStatus() == null ? null : p.getStatus().name())
+                .visible(p.isVisible())
+                .build();
+    }
+
+
+
     // ---------- helpers ----------
     private String buildShortDescription(String shortDesc, String description) {
         String base = (shortDesc != null && !shortDesc.isBlank())
@@ -261,4 +300,6 @@ public class ProductService {
         Files.copy(image.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
         return fileName;
     }
+
+
 }

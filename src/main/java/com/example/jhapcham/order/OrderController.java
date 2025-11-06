@@ -1,9 +1,8 @@
 package com.example.jhapcham.order;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.util.List;
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/orders")
@@ -12,53 +11,45 @@ public class OrderController {
 
     private final OrderService orderService;
 
+    // Single product order
     @PostMapping("/place")
-    public ResponseEntity<?> placeOrder(@RequestParam Long userId, @RequestParam Long productId) {
-        return orderService.placeOrder(userId, productId);
+    public ResponseEntity<?> placeOrderSingle(@RequestParam Long userId,
+                                              @RequestParam Long productId,
+                                              @RequestParam(defaultValue = "1") int quantity) {
+        return orderService.placeOrderSingle(userId, productId, quantity);
     }
 
-    @PostMapping("/place-multi")
-    public ResponseEntity<?> placeMultiOrder(@RequestParam Long userId, @RequestBody List<Long> productIds) {
-        return orderService.placeMultiProductOrder(userId, productIds);
+    // Checkout entire cart
+    @PostMapping("/checkout")
+    public ResponseEntity<?> placeOrderFromCart(@RequestParam Long userId) {
+        return orderService.placeOrderFromCart(userId);
     }
 
+    // User orders (PII-safe DTO)
     @GetMapping("/user/{userId}")
     public ResponseEntity<?> getUserOrders(@PathVariable Long userId) {
         return orderService.getUserOrders(userId);
     }
 
+    // Seller orders
     @GetMapping("/seller/{sellerId}")
     public ResponseEntity<?> getSellerOrders(@PathVariable Long sellerId) {
         return orderService.getSellerOrders(sellerId);
     }
 
+    // One order
+    @GetMapping("/{orderId}")
+    public ResponseEntity<?> getOne(@PathVariable Long orderId) {
+        return orderService.getOne(orderId);
+    }
+
+    // Update status (restock on CANCELLED)
     @PatchMapping("/{orderId}/status")
-    public ResponseEntity<?> updateStatus(@PathVariable Long orderId, @RequestParam OrderStatus status) {
+    public ResponseEntity<?> updateStatus(@PathVariable Long orderId,
+                                          @RequestParam OrderStatus status) {
         return orderService.updateStatus(orderId, status);
     }
 
-    @PatchMapping("/{orderId}/cancel")
-    public ResponseEntity<?> cancelOrder(@PathVariable Long orderId) {
-        return orderService.cancelOrder(orderId);
-    }
-
-    @GetMapping("/{orderId}/total")
-    public ResponseEntity<?> getTotal(@PathVariable Long orderId) {
-        return orderService.getOrderTotal(orderId);
-    }
-
-    @GetMapping("/{orderId}/status-history")
-    public ResponseEntity<?> getStatusHistory(@PathVariable Long orderId) {
-        return orderService.getStatusHistory(orderId);
-    }
-
-    @GetMapping("/seller/{id}/stats")
-    public ResponseEntity<?> getSellerStats(@PathVariable Long id) {
-        return orderService.getSellerStats(id);
-    }
-
-    @GetMapping("/report/monthly")
-    public ResponseEntity<?> getMonthlyReport() {
-        return orderService.getMonthlyReport();
-    }
+    // (Optional) status history endpoint if you decide to expose raw histories later
+    // @GetMapping("/{orderId}/status-history") ...
 }
