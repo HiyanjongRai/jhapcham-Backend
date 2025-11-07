@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface RatingRepository extends JpaRepository<Rating, Long> {
@@ -19,4 +20,7 @@ public interface RatingRepository extends JpaRepository<Rating, Long> {
 
     @Query("select count(r) from Rating r where r.product.id = :pid")
     long countForProduct(@Param("pid") Long productId);
+
+    @Query("select r from Rating r where r.userId = :userId order by r.createdAt desc")
+    List<Rating> findTop200ByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId);
 }

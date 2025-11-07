@@ -19,4 +19,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
            order by o.createdAt desc
            """)
     List<Order> findSellerOrders(@Param("sellerId") Long sellerId);
+    List<Order> findTop200ByCustomer_IdOrderByCreatedAtDesc(Long customerId);
+
 }

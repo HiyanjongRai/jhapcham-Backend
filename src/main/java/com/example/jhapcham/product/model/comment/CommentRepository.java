@@ -8,4 +8,6 @@ import java.util.List;
 public interface CommentRepository extends JpaRepository<Comment, Long> {
     Page<Comment> findByProductAndParentIsNullAndDeletedFalse(Product product, Pageable pageable);
     List<Comment> findByParentIdAndDeletedFalseOrderByCreatedAtAsc(Long parentId);
+    List<Comment> findTop200ByAuthor_IdAndDeletedFalseOrderByCreatedAtDesc(Long userId);
+
 }

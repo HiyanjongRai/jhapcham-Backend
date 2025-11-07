@@ -3,7 +3,7 @@ package com.example.jhapcham.product.model;
 import jakarta.persistence.*;
 import lombok.*;
 
-// imports unchanged
+
 @Entity
 @Data
 @NoArgsConstructor

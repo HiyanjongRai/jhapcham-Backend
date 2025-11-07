@@ -101,6 +101,7 @@ public class SecurityConfig {
 
                         .requestMatchers("/api/views**").permitAll()
 
+                        .requestMatchers(HttpMethod.GET, "/api/users/*/activities").permitAll()
 
                         .requestMatchers(
                                 "/api/products/**",       // product browsing
