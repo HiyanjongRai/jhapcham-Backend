@@ -1,6 +1,7 @@
 package com.example.jhapcham.product.model.Controller;
 
 import com.example.jhapcham.product.model.Product;
+import com.example.jhapcham.product.model.ProductView.ViewTrackingService;
 import com.example.jhapcham.product.model.SearchHistory.SearchHistoryService;
 import com.example.jhapcham.product.model.dto.ProductDto;
 import com.example.jhapcham.product.model.dto.ProductResponseDTO;
@@ -25,11 +26,12 @@ import java.util.stream.Collectors;
 public class ProductController {
 
     private final ProductService productService;
+    private final ViewTrackingService viewTrackingService;
+
 
     @Autowired
     private SearchHistoryService searchHistoryService;
 
-    // -------- READ (returns DTO with likes, ratings, etc.) --------
     @GetMapping
     public ResponseEntity<List<ProductResponseDTO>> getAllProducts() {
         List<ProductResponseDTO> out = productService.getAllProducts()
@@ -40,15 +42,27 @@ public class ProductController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> getProductById(@PathVariable Long id) {
+    public ResponseEntity<?> getProductById(
+            @PathVariable Long id,
+            @RequestParam(required = false) Long userId,
+            @CookieValue(name = "anon", required = false) String anonKey,
+            @RequestHeader(value = "X-Forwarded-For", required = false) String ip,
+            @RequestHeader(value = "User-Agent", required = false) String ua
+    ) {
         try {
             Product p = productService.getProductById(id)
                     .orElseThrow(() -> new Exception("Product not found"));
+
+            try {
+                viewTrackingService.logView(id, userId, (userId == null ? anonKey : null), ip, ua);
+            } catch (Exception ignored) {}
+
             return ResponseEntity.ok(productService.toResponseDTO(p));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
+
 
     // -------- CREATE --------
     @PostMapping("/add")

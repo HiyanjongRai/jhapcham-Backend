@@ -99,6 +99,20 @@ public class SecurityConfig {
                                 .requestMatchers("/orders/**").permitAll()
                         .requestMatchers("/api/search-history/**").permitAll()
 
+                        .requestMatchers("/api/views**").permitAll()
+
+
+                        .requestMatchers(
+                                "/api/products/**",       // product browsing
+                                "/api/views/**",          // product view tracking
+                                "/api/search-history/**", // search history logging
+                                "/orders/**",             // ordering endpoints (optional)
+                                "/cart/**",               // cart operations
+                                "/uploads/**",
+                                "/images/**",
+                                "/api/auth/**"            // login/register APIs
+                        ).permitAll()
+
 
                         .anyRequest().authenticated()
                 )
