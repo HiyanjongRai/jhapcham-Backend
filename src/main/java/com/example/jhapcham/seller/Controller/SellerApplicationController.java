@@ -16,7 +16,6 @@ public class SellerApplicationController {
 
     private final SellerApplicationService applicationService;
 
-    // Seller submits docs after registering
     @PostMapping(value = "/application", consumes = {"multipart/form-data"})
     public ResponseEntity<?> submitApplication(
             @RequestParam Long userId,
@@ -26,13 +25,20 @@ public class SellerApplicationController {
             @RequestParam(required = false) MultipartFile businessLicense,
             @RequestParam(required = false) MultipartFile taxCertificate
     ) {
+
         SellerApplication app = applicationService.submitApplication(
                 userId, storeName, address, idDocument, businessLicense, taxCertificate
         );
-        return ResponseEntity.ok(Map.of(
-                "message", "Application submitted. Waiting for admin approval.",
-                "applicationId", app.getId(),
-                "status", app.getStatus().name()
-        ));
+
+        String userStatus = app.getUser().getStatus().name();
+
+        return ResponseEntity.ok(
+                Map.of(
+                        "message", "Application submitted. Waiting for admin approval.",
+                        "applicationId", app.getId(),
+                        "applicationStatus", app.getStatus().name(),
+                        "userStatus", userStatus
+                )
+        );
     }
 }

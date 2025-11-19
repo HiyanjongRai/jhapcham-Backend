@@ -14,5 +14,11 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :keyword, '%'))")
     List<Product> searchProducts(@Param("keyword") String keyword);
 
+    List<Product> findByOnSaleTrueAndDiscountPercentGreaterThanEqualAndVisibleIsTrueAndStatus(
+            Double discountPercent,
+            Product.Status status
+    );
 
+
+    long countBySellerId(Long sellerId);
 }

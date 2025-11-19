@@ -35,15 +35,12 @@ public class ProductController {
         return ResponseEntity.ok(productService.getAllProducts());
     }
 
-    /**
-     * Get a single product by ID and optionally track view
-     */
+
     @GetMapping("/{id}")
     public ResponseEntity<Product> getProductById(
             @PathVariable Long id,
             @RequestParam(required = false) Long userId) {
         try {
-            // Track user view if userId is provided
             if (userId != null) {
                 recommendationService.recordInteraction(userId, id, "VIEW", null);
             }

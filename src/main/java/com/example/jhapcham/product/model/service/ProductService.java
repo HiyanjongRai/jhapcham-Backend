@@ -6,7 +6,10 @@ import com.example.jhapcham.product.model.dto.ProductResponseDTO;
 import com.example.jhapcham.product.model.rating.RatingRepository;
 import com.example.jhapcham.product.model.repository.ProductRepository;
 import com.example.jhapcham.productLike.ProductLikeRepository;
+import com.example.jhapcham.review.ReviewRepository;
+import com.example.jhapcham.seller.repository.SellerProfileRepository;
 import com.example.jhapcham.user.model.Role;
+import com.example.jhapcham.user.model.Status;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.repository.UserRepository;
 import jakarta.transaction.Transactional;
@@ -30,21 +33,39 @@ public class ProductService {
     private final ProductLikeRepository productLikeRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
-    private final RatingRepository ratingRepository; // <— NEW
+    private final RatingRepository ratingRepository;
+    private final ReviewRepository reviewRepo;
+    private final SellerProfileRepository sellerProfileRepository;
 
 
     private final String uploadDir = "product-images";
+
+    // ---------- BASIC FETCH ----------
 
     public List<Product> getAllProducts() {
         return productRepository.findAll();
     }
 
-    // ---------- Create / Update ----------
+    public Optional<Product> getProductById(Long id) {
+        return productRepository.findById(id);
+    }
+
+    public List<Product> getProductsBySeller(Long sellerId) {
+        return productRepository.findBySellerId(sellerId);
+    }
+
+    // ---------- CREATE / UPDATE ----------
+
     @Transactional
     public Product addProduct(ProductDto dto, Long sellerId) throws Exception {
         User seller = userRepository.findById(sellerId)
                 .orElseThrow(() -> new Exception("Seller not found"));
-        if (seller.getRole() != Role.SELLER) throw new Exception("Only sellers can add products");
+        if (seller.getRole() != Role.SELLER) {
+            throw new Exception("Only sellers can add products");
+        }
+        if (seller.getStatus() != Status.ACTIVE) {
+            throw new Exception("Seller is not approved by admin");
+        }
 
         String fileName = null;
         if (dto.getImage() != null && !dto.getImage().isEmpty()) {
@@ -60,9 +81,11 @@ public class ProductService {
                 .price(dto.getPrice())
                 .category(dto.getCategory())
                 .sellerId(sellerId)
+                .brand(dto.getBrand())
                 .imagePath(fileName)
                 .others(dto.getOthers())
                 .stock(dto.getStock() != null ? dto.getStock() : 0)
+                .colors(dto.getColors())
                 .build();
 
         return productRepository.save(product);
@@ -81,10 +104,14 @@ public class ProductService {
         product.setDescription(dto.getDescription());
         product.setShortDescription(buildShortDescription(dto.getShortDescription(), dto.getDescription()));
         product.setPrice(dto.getPrice());
+        product.setBrand(dto.getBrand());
         product.setCategory(dto.getCategory());
         product.setOthers(dto.getOthers());
+        product.setColors(dto.getColors());
 
-        if (dto.getStock() != null) product.setStock(dto.getStock());
+        if (dto.getStock() != null) {
+            product.setStock(dto.getStock());
+        }
 
         if (dto.getImage() != null && !dto.getImage().isEmpty()) {
             String fileName = saveImage(dto.getImage());
@@ -94,14 +121,14 @@ public class ProductService {
         return productRepository.save(product);
     }
 
-    // ---------- Simple search ----------
+    // ---------- SEARCH / FILTER ----------
+
     public List<ProductDto> searchProducts(String keyword) {
         return productRepository.searchProducts(keyword).stream()
                 .map(this::toProductDto)
                 .collect(Collectors.toList());
     }
 
-    // ---------- New: filter with Specification + paging/sorting ----------
     public Page<Product> filterProducts(
             String name,
             Double minPrice, Double maxPrice,
@@ -159,7 +186,8 @@ public class ProductService {
         return productRepository.findAll(spec, pageable);
     }
 
-    // ---------- Admin / misc ----------
+    // ---------- ADMIN / MISC ----------
+
     @Transactional
     public void deleteProduct(Long productId, Long userId) throws Exception {
         User user = userRepository.findById(userId)
@@ -179,24 +207,6 @@ public class ProductService {
             return;
         }
         throw new Exception("You are not authorized to delete products");
-    }
-
-    public List<Product> getProductsBySeller(Long sellerId) {
-        return productRepository.findBySellerId(sellerId);
-    }
-
-    public ProductDto toProductDto(Product product) {
-        int likeCount = productLikeRepository.countByProduct(product);
-        return ProductDto.builder()
-                .id(product.getId())
-                .name(product.getName())
-                .description(product.getDescription())
-                .shortDescription(product.getShortDescription())
-                .price(product.getPrice())
-                .category(product.getCategory())
-                .others(product.getOthers())
-                .totalLikes(likeCount)
-                .build();
     }
 
     @Transactional
@@ -231,17 +241,105 @@ public class ProductService {
         return productRepository.save(product);
     }
 
-    public Optional<Product> getProductById(Long id) {
-        return productRepository.findById(id);
+    // ---------- SALE LOGIC ----------
+
+    @Transactional
+    public Product putOnSale(Long productId, Long sellerId, Double discountPercent) throws Exception {
+        if (discountPercent == null || discountPercent <= 0 || discountPercent >= 100) {
+            throw new Exception("Discount percent must be between 0 and 100");
+        }
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new Exception("Product not found"));
+
+        if (!product.getSellerId().equals(sellerId)) {
+            throw new Exception("You can only update your own products");
+        }
+
+        product.setOnSale(true);
+        product.setDiscountPercent(discountPercent);
+
+        double salePrice = product.getPrice() * (100.0 - discountPercent) / 100.0;
+        salePrice = Math.round(salePrice * 100.0) / 100.0;
+
+        product.setSalePrice(salePrice);
+
+        return productRepository.save(product);
     }
 
-    // ProductService.java (add this method)
-    public ProductResponseDTO toResponseDTO(Product p) {
-        int likeCount = productLikeRepository.countByProduct(p);
+    @Transactional
+    public Product removeSale(Long productId, Long sellerId) throws Exception {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new Exception("Product not found"));
 
-        // pull a fresh snapshot
-        Double avg = ratingRepository.averageForProduct(p.getId());
-        long   cnt = ratingRepository.countForProduct(p.getId());
+        if (!product.getSellerId().equals(sellerId)) {
+            throw new Exception("You can only update your own products");
+        }
+
+        product.setOnSale(false);
+        product.setDiscountPercent(null);
+        product.setSalePrice(null);
+
+        return productRepository.save(product);
+    }
+
+    public List<ProductResponseDTO> getSaleProducts(Double minDiscountPercent) {
+        if (minDiscountPercent == null) {
+            minDiscountPercent = 30.0;
+        }
+
+        List<Product> products = productRepository
+                .findByOnSaleTrueAndDiscountPercentGreaterThanEqualAndVisibleIsTrueAndStatus(
+                        minDiscountPercent,
+                        Product.Status.ACTIVE
+                );
+
+        return products.stream()
+                .map(this::toResponseDTO)
+                .toList();
+    }
+
+    // ---------- DTO HELPERS ----------
+
+    public ProductDto toProductDto(Product product) {
+        int likeCount = productLikeRepository.countByProduct(product);
+        return ProductDto.builder()
+                .id(product.getId())
+                .name(product.getName())
+                .description(product.getDescription())
+                .shortDescription(product.getShortDescription())
+                .price(product.getPrice())
+                .category(product.getCategory())
+                .others(product.getOthers())
+                .totalLikes(likeCount)
+                .build();
+    }
+    public ProductResponseDTO toResponseDTO(Product p) {
+
+        User seller = null;
+        String storeName = null;
+        String storeAddress = null;
+        String contactNumber = null;
+
+        if (p.getSellerId() != null) {
+            seller = userRepository.findById(p.getSellerId()).orElse(null);
+            if (seller != null) {
+                contactNumber = seller.getContactNumber();
+
+                var profile = sellerProfileRepository.findByUser(seller);
+                if (profile.isPresent()) {
+                    storeName = profile.get().getStoreName();
+                    storeAddress = profile.get().getAddress();
+                }
+            }
+        }
+
+        // ⭐ real review-based rating data
+        Double avgRating = reviewRepo.getAverageRating(p.getId());
+        Long ratingCount = reviewRepo.getReviewCount(p.getId());
+
+        double avg = avgRating != null ? avgRating : 0.0;
+        long count = ratingCount != null ? ratingCount : 0;
 
         return ProductResponseDTO.builder()
                 .id(p.getId())
@@ -251,26 +349,37 @@ public class ProductService {
                 .price(p.getPrice())
                 .category(p.getCategory())
                 .sellerId(p.getSellerId())
+                .brand(p.getBrand())
                 .imagePath(p.getImagePath())
                 .others(p.getOthers())
                 .stock(p.getStock())
-                .totalLikes(likeCount)
+                .colors(p.getColors())
+
+                .totalLikes(productLikeRepository.countByProduct(p))
                 .totalViews(p.getViews())
 
-                // NEW: card metrics
-                .averageRating(avg == null ? 0.0 : Math.round(avg * 10.0) / 10.0)
-                .ratingCount(cnt)
+                // ⭐ Final rating result sent to frontend
+                .averageRating(avg)
+                .ratingCount(count)
+                .rating(avg)
 
-                // legacy fields you already exposed
-                .rating(p.getRating())
-                .status(p.getStatus() == null ? null : p.getStatus().name())
                 .visible(p.isVisible())
+                .status(p.getStatus().name())
+
+                .onSale(p.isOnSale())
+                .discountPercent(p.getDiscountPercent())
+                .salePrice(p.getSalePrice())
+
+                .sellerStoreName(storeName)
+                .sellerStoreAddress(storeAddress)
+                .sellerContactNumber(contactNumber)
+
                 .build();
     }
 
 
+    // ---------- INTERNAL HELPERS ----------
 
-    // ---------- helpers ----------
     private String buildShortDescription(String shortDesc, String description) {
         String base = (shortDesc != null && !shortDesc.isBlank())
                 ? shortDesc
@@ -288,18 +397,18 @@ public class ProductService {
         Files.createDirectories(Paths.get(uploadDir));
         String original = StringUtils.getFilename(image.getOriginalFilename());
         if (original == null) throw new IOException("Invalid filename");
+
         String ext = "";
         int dot = original.lastIndexOf('.');
         if (dot >= 0) ext = original.substring(dot + 1).toLowerCase();
         if (!List.of("jpg", "jpeg", "png", "webp").contains(ext)) {
             throw new IOException("Unsupported image type");
         }
+
         String safeBase = original.replaceAll("[^a-zA-Z0-9._-]", "_");
         String fileName = System.currentTimeMillis() + "_" + safeBase;
         Path filePath = Paths.get(uploadDir, fileName).toAbsolutePath().normalize();
         Files.copy(image.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
         return fileName;
     }
-
-
 }

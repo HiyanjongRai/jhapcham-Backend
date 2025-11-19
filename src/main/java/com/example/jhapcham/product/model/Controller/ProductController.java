@@ -28,10 +28,10 @@ public class ProductController {
     private final ProductService productService;
     private final ViewTrackingService viewTrackingService;
 
-
     @Autowired
     private SearchHistoryService searchHistoryService;
 
+    // -------- GET ALL --------
     @GetMapping
     public ResponseEntity<List<ProductResponseDTO>> getAllProducts() {
         List<ProductResponseDTO> out = productService.getAllProducts()
@@ -41,6 +41,7 @@ public class ProductController {
         return ResponseEntity.ok(out);
     }
 
+    // -------- GET BY ID (with view tracking) --------
     @GetMapping("/{id}")
     public ResponseEntity<?> getProductById(
             @PathVariable Long id,
@@ -63,7 +64,6 @@ public class ProductController {
         }
     }
 
-
     // -------- CREATE --------
     @PostMapping("/add")
     public ResponseEntity<?> addProduct(
@@ -75,6 +75,8 @@ public class ProductController {
             @RequestParam Long sellerId,
             @RequestParam(required = false) Integer stock,
             @RequestParam(required = false) String others,
+            @RequestParam(required = false) String brand,
+            @RequestParam(required = false) List<String> colors,
             @RequestParam(required = false) MultipartFile image
     ) {
         try {
@@ -86,6 +88,8 @@ public class ProductController {
                     .category(category)
                     .stock(stock)
                     .others(others)
+                    .brand(brand)
+                    .colors(colors)
                     .image(image)
                     .build();
 
@@ -108,6 +112,8 @@ public class ProductController {
             @RequestParam Long sellerId,
             @RequestParam(required = false) Integer stock,
             @RequestParam(required = false) String others,
+            @RequestParam(required = false) String brand,
+            @RequestParam(required = false) List<String> colors,
             @RequestParam(required = false) MultipartFile image
     ) {
         try {
@@ -119,8 +125,11 @@ public class ProductController {
                     .category(category)
                     .stock(stock)
                     .others(others)
+                    .brand(brand)
+                    .colors(colors)
                     .image(image)
                     .build();
+
             Product saved = productService.updateProduct(id, dto, sellerId);
             return ResponseEntity.ok(productService.toResponseDTO(saved));
         } catch (Exception e) {
@@ -181,6 +190,43 @@ public class ProductController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    // -------- SALE (PUT ON SALE / REMOVE SALE / LIST) --------
+
+    @PatchMapping("/{id}/sale")
+    public ResponseEntity<?> putOnSale(
+            @PathVariable Long id,
+            @RequestParam Long sellerId,
+            @RequestParam Double discountPercent
+    ) {
+        try {
+            Product updated = productService.putOnSale(id, sellerId, discountPercent);
+            return ResponseEntity.ok(productService.toResponseDTO(updated));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/{id}/sale")
+    public ResponseEntity<?> removeSale(
+            @PathVariable Long id,
+            @RequestParam Long sellerId
+    ) {
+        try {
+            Product updated = productService.removeSale(id, sellerId);
+            return ResponseEntity.ok(productService.toResponseDTO(updated));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/sale")
+    public ResponseEntity<List<ProductResponseDTO>> getSaleProducts(
+            @RequestParam(required = false, defaultValue = "30") Double minDiscount
+    ) {
+        List<ProductResponseDTO> out = productService.getSaleProducts(minDiscount);
+        return ResponseEntity.ok(out);
     }
 
     // -------- SEARCH (integrated + search history logging) --------
@@ -263,6 +309,7 @@ public class ProductController {
         }
     }
 
+    // -------- helper --------
     private Sort parseSort(String sort) {
         String[] parts = sort.split(",", 2);
         String field = parts[0];

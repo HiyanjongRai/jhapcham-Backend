@@ -1,6 +1,5 @@
 package com.example.jhapcham.product.model.rating;
 
-import com.example.jhapcham.product.model.Product;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.*;
@@ -15,12 +14,19 @@ public interface RatingRepository extends JpaRepository<Rating, Long> {
 
     Page<Rating> findByProduct_Id(Long productId, Pageable pageable);
 
-    @Query("select avg(r.stars) from Rating r where r.product.id = :pid")
+    @Query("SELECT AVG(r.stars) FROM Rating r WHERE r.product.id = :pid")
     Double averageForProduct(@Param("pid") Long productId);
 
-    @Query("select count(r) from Rating r where r.product.id = :pid")
+    @Query("SELECT COUNT(r) FROM Rating r WHERE r.product.id = :pid")
     long countForProduct(@Param("pid") Long productId);
 
-    @Query("select r from Rating r where r.userId = :userId order by r.createdAt desc")
+    @Query("SELECT r FROM Rating r WHERE r.userId = :userId ORDER BY r.createdAt DESC")
     List<Rating> findTop200ByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId);
+
+    // ✔ Use correct field name `stars` instead of rating
+    @Query("SELECT AVG(r.stars) FROM Rating r WHERE r.product.id = :productId")
+    Double getAverageRating(@Param("productId") Long productId);
+
+    @Query("SELECT COUNT(r) FROM Rating r WHERE r.product.id = :productId")
+    Integer countRatings(@Param("productId") Long productId);
 }

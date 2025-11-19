@@ -2,6 +2,8 @@ package com.example.jhapcham.product.model.dto;
 
 import lombok.*;
 
+import java.util.List;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -21,11 +23,22 @@ public class ProductResponseDTO {
     private int totalLikes;
     private int totalViews;
 
-    // NEW
-    private Double averageRating; // e.g., 4.3
-    private long ratingCount;     // e.g., 27
+    private Double averageRating;
+    private long ratingCount;
 
-    private Double rating;        // legacy field on Product (kept if you still store it)
-    private String status;        // ACTIVE, INACTIVE, DELETED, DRAFT
+    private Double rating;
+    private String status;
     private boolean visible;
+
+    private List<String> colors;
+
+    private boolean onSale;
+    private Double discountPercent;
+    private Double salePrice;
+
+    private String brand;
+    private String sellerStoreName;
+    private String sellerStoreAddress;
+    private String sellerContactNumber;
+
 }

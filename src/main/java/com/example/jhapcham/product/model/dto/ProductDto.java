@@ -3,6 +3,8 @@ package com.example.jhapcham.product.model.dto;
 import jakarta.validation.constraints.*;
 import lombok.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -15,10 +17,11 @@ public class ProductDto {
     @Size(max = 10_000)
     private String description;
 
-    @Size(max = 300)                 // NEW
-    private String shortDescription; // NEW
+    @Size(max = 300)
+    private String shortDescription;
 
-    @NotNull @Positive
+    @NotNull
+    @Positive
     private Double price;
 
     @NotBlank
@@ -32,7 +35,15 @@ public class ProductDto {
 
     private MultipartFile image;
 
-    // legacy/response helpers
+    private List<String> colors;
+
+    private String brand;
+
     private Long id;
+
     private Integer totalLikes;
+
+    // NEW FIELDS
+    private Double averageRating;
+    private Long reviewCount;
 }

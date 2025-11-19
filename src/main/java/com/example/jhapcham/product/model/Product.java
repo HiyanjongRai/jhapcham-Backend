@@ -1,17 +1,23 @@
 package com.example.jhapcham.product.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.List;
+@Data
 
 @Entity
-@Data
+@Getter
+
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer","handler"})
 public class Product {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false)
@@ -20,8 +26,8 @@ public class Product {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(length = 300)                 // NEW: short description for cards
-    private String shortDescription;      // <— add this
+    @Column(length = 300)
+    private String shortDescription;
 
     @Column(nullable = false)
     private Double price;
@@ -40,6 +46,9 @@ public class Product {
     @Column(columnDefinition = "TEXT")
     private String others;
 
+    @Column(length = 150)
+    private String brand;
+
     @Builder.Default
     private int views = 0;
 
@@ -53,5 +62,21 @@ public class Product {
     @Builder.Default
     private Status status = Status.ACTIVE;
 
-    public enum Status { ACTIVE, INACTIVE, DELETED, DRAFT }
+    @ElementCollection
+    @CollectionTable(name = "product_colors", joinColumns = @JoinColumn(name = "product_id"))
+    @Column(name = "color")
+    private List<String> colors;
+
+    @Builder.Default
+    private boolean onSale = false;
+
+    private Double discountPercent;
+
+    private Double salePrice;
+
+    public enum Status {
+        ACTIVE, INACTIVE, DELETED, DRAFT
+    }
+
+
 }

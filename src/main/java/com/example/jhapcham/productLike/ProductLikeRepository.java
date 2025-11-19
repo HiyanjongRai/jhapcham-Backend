@@ -3,6 +3,8 @@ package com.example.jhapcham.productLike;
 import com.example.jhapcham.product.model.Product;
 import com.example.jhapcham.user.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -19,4 +21,12 @@ public interface ProductLikeRepository extends JpaRepository<ProductLike, Long> 
 
     // Count likes by product
     int countByProduct(Product product);
+
+    @Query("""
+        select count(pl)
+        from ProductLike pl
+        where pl.product.sellerId = :sellerId
+    """)
+    long countBySellerId(@Param("sellerId") Long sellerId);
+
 }

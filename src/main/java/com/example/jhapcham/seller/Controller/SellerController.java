@@ -1,8 +1,10 @@
 package com.example.jhapcham.seller.Controller;
 
 import com.example.jhapcham.seller.Service.SellerService;
+import com.example.jhapcham.seller.Service.SellerProfileStatsService;
+import com.example.jhapcham.seller.dto.SellerProfileStatsDto;
 import com.example.jhapcham.user.model.User;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -10,11 +12,11 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/sellers")
+@RequiredArgsConstructor
 public class SellerController {
 
-    @Autowired
-    private SellerService sellerService;
-
+    private final SellerService sellerService;
+    private final SellerProfileStatsService sellerProfileStatsService;
 
     @PostMapping("/register")
     public ResponseEntity<Map<String, Object>> registerSeller(@RequestBody User seller) {
@@ -40,15 +42,18 @@ public class SellerController {
             return ResponseEntity.ok(Map.of(
                     "message", "Login successful",
                     "userId", user.getId(),
-                    "username", user.getUsername(),
-                    "email", user.getEmail()
+                    "username", user.getUsername()
             ));
         } catch (IllegalStateException e) {
-            // Pending or blocked
             return ResponseEntity.status(403).body(Map.of("message", e.getMessage()));
         } catch (RuntimeException e) {
-            // Invalid credentials or not a seller
             return ResponseEntity.status(401).body(Map.of("message", e.getMessage()));
         }
+    }
+
+    @GetMapping("/{sellerUserId}/profile-stats")
+    public ResponseEntity<SellerProfileStatsDto> getSellerProfileStats(@PathVariable Long sellerUserId) {
+        SellerProfileStatsDto stats = sellerProfileStatsService.getSellerProfileStats(sellerUserId);
+        return ResponseEntity.ok(stats);
     }
 }

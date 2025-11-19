@@ -79,7 +79,7 @@ public class CartService {
             return new CartItemDto(
                     p.getId(),
                     p.getName(),
-                    p.getImagePath(),
+                    "/product-images/" + p.getImagePath(),
                     unit,
                     ci.getQuantity(),
                     unit * ci.getQuantity()

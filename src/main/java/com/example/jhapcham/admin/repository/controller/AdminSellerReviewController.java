@@ -30,24 +30,37 @@ public class AdminSellerReviewController {
 
     // Approve application
     @PostMapping("/applications/{appId}/approve")
-    public ResponseEntity<?> approve(@PathVariable Long appId, @RequestParam(required = false) String note) {
+    public ResponseEntity<?> approve(
+            @PathVariable Long appId,
+            @RequestBody Map<String, String> body
+    ) {
+        String note = body.get("note");
         SellerApplication app = applicationService.approve(appId, note);
+
         return ResponseEntity.ok(Map.of(
                 "message", "Seller approved and profile created.",
                 "applicationId", app.getId(),
-                "status", app.getStatus().name()
+                "status", app.getStatus().name(),
+                "note", note
         ));
     }
 
+
     // Reject application
     @PostMapping("/applications/{appId}/reject")
-    public ResponseEntity<?> reject(@PathVariable Long appId, @RequestParam(required = false) String note) {
+    public ResponseEntity<?> reject(
+            @PathVariable Long appId,
+            @RequestBody Map<String, String> body
+    ) {
+        String note = body.get("note");
         SellerApplication app = applicationService.reject(appId, note);
+
         return ResponseEntity.ok(Map.of(
                 "message", "Seller application rejected.",
                 "applicationId", app.getId(),
                 "status", app.getStatus().name(),
-                "note", app.getReviewNote()
+                "note", note
         ));
     }
 }
+
