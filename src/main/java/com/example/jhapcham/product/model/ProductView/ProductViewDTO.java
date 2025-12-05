@@ -17,10 +17,10 @@ public class ProductViewDTO {
             String category,
             LocalDateTime viewedAt
     ) {
+        this.brand = brand;
         this.productId = productId;
         this.productName = productName;
         this.category = category;
-        this.brand = brand;
         this.viewedAt = viewedAt;
     }
 
