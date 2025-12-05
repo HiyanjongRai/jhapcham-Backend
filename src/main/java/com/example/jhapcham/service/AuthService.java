@@ -20,13 +20,24 @@ public class AuthService {
     /* ---------- Register ---------- */
 
     public User registerCustomer(RegisterRequestDTO req) {
-        validateUniqueness(req);
-        User u = baseUserFrom(req);
+
+        if (users.existsByUsername(req.username()))
+            throw new RuntimeException("Username already exists");
+
+        if (users.existsByEmail(req.email()))
+            throw new RuntimeException("Email already exists");
+
+        User u = new User();
+        u.setUsername(req.username());
+        u.setFullName(req.fullName());
+        u.setEmail(req.email());
         u.setRole(Role.CUSTOMER);
         u.setStatus(Status.ACTIVE);
         u.setPassword(passwordEncoder.encode(req.password()));
+
         return users.save(u);
     }
+
 
     public User registerSeller(RegisterRequestDTO req) {
         validateUniqueness(req);

@@ -22,12 +22,29 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
 
+        // FIXED PRODUCT IMAGES PATH
+        registry.addResourceHandler("/product-images/**")
+                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/products/");
 
+        registry.addResourceHandler("/uploads/product-images/**")
+                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/products/");
+
+        // CUSTOMER PROFILE IMAGES
+        registry.addResourceHandler("/customer-profile/**")
+                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/customer-profile/");
+
+        registry.addResourceHandler("/uploads/customer-profile/**")
+                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/customer-profile/");
+
+        // REVIEW IMAGES
         registry.addResourceHandler("/review-images/**")
                 .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/review-images/");
+
+        registry.addResourceHandler("/uploads/review-images/**")
+                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/review-images/");
+
+        // Serve seller logos
+        registry.addResourceHandler("/seller-logos/**")
+                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/seller_logos/");
     }
-
-
-
-
 }

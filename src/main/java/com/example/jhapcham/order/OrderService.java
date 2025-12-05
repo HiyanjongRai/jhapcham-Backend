@@ -1,4 +1,5 @@
 package com.example.jhapcham.order;
+
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
@@ -25,8 +26,6 @@ public class OrderService {
     @PersistenceContext
     private EntityManager em;
 
-
-
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final OrderStatusHistoryRepository historyRepository;
@@ -34,10 +33,14 @@ public class OrderService {
     private final UserRepository userRepository;
     private final CartItemRepository cartItemRepository;
 
-    /* -------------------------------------------------------
-       PLACE ORDER SINGLE PRODUCT
-    ------------------------------------------------------- */
-    public ResponseEntity<OrderSummaryDTO> placeOrderSingle(Long userId, Long productId, int qty) {
+    /* PLACE ORDER SINGLE PRODUCT */
+    public ResponseEntity<OrderSummaryDTO> placeOrderSingle(
+            Long userId,
+            Long productId,
+            int qty,
+            String fullAddress,
+            Double lat,
+            Double lng) {
 
         User user = userRepository.findById(userId).orElse(null);
         if (user == null)
@@ -53,11 +56,17 @@ public class OrderService {
         p.setStock(p.getStock() - qty);
         productRepository.save(p);
 
+        DeliveryAddress address = new DeliveryAddress();
+        address.setFullAddress(fullAddress);
+        address.setLatitude(lat);
+        address.setLongitude(lng);
+
         Order order = Order.builder()
                 .customer(user)
                 .status(OrderStatus.PENDING)
                 .totalPrice(0.0)
                 .createdAt(LocalDateTime.now())
+                .deliveryAddress(address)
                 .build();
 
         OrderItem item = OrderItem.builder()
@@ -65,6 +74,8 @@ public class OrderService {
                 .product(p)
                 .quantity(qty)
                 .unitPrice(p.getPrice())
+                .selectedColor(null)
+                .selectedStorage(null)
                 .build();
 
         order.addItem(item);
@@ -76,10 +87,9 @@ public class OrderService {
         return ResponseEntity.status(201).body(toDTO(saved));
     }
 
-    /* -------------------------------------------------------
-       PLACE ORDER FROM CART
-    ------------------------------------------------------- */
-    public ResponseEntity<OrderSummaryDTO> placeOrderFromCart(Long userId) {
+    /* PLACE ORDER FROM CART */
+    public ResponseEntity<OrderSummaryDTO> placeOrderFromCart(
+            Long userId, String fullAddress, Double lat, Double lng) {
 
         User user = userRepository.findById(userId).orElse(null);
         if (user == null)
@@ -89,17 +99,20 @@ public class OrderService {
         if (cart.isEmpty())
             return ResponseEntity.status(400).body(null);
 
+        // STOCK CHECK
         for (CartItem ci : cart) {
             if (ci.getProduct().getStock() < ci.getQuantity())
                 return ResponseEntity.status(409).body(null);
         }
 
+        // DEDUCT STOCK
         for (CartItem ci : cart) {
             Product p = ci.getProduct();
             p.setStock(p.getStock() - ci.getQuantity());
             productRepository.save(p);
         }
 
+        // CREATE ORDER
         Order order = Order.builder()
                 .customer(user)
                 .status(OrderStatus.PENDING)
@@ -107,8 +120,16 @@ public class OrderService {
                 .totalPrice(0.0)
                 .build();
 
+        // DELIVERY ADDRESS
+        DeliveryAddress address = new DeliveryAddress();
+        address.setFullAddress(fullAddress);
+        address.setLatitude(lat);
+        address.setLongitude(lng);
+        order.setDeliveryAddress(address);
+
         double total = 0.0;
 
+        // ORDER ITEMS
         for (CartItem ci : cart) {
             Product p = ci.getProduct();
 
@@ -117,6 +138,8 @@ public class OrderService {
                     .product(p)
                     .quantity(ci.getQuantity())
                     .unitPrice(p.getPrice())
+                    .selectedColor(ci.getSelectedColor())
+                    .selectedStorage(ci.getSelectedStorage())
                     .build();
 
             order.addItem(item);
@@ -133,9 +156,7 @@ public class OrderService {
         return ResponseEntity.status(201).body(toDTO(saved));
     }
 
-    /* -------------------------------------------------------
-       GET USER ORDERS
-    ------------------------------------------------------- */
+    /* GET USER ORDERS */
     @Transactional(readOnly = true)
     public ResponseEntity<List<OrderSummaryDTO>> getUserOrders(Long userId) {
 
@@ -147,9 +168,7 @@ public class OrderService {
         return ResponseEntity.ok(orders.stream().map(this::toDTO).toList());
     }
 
-    /* -------------------------------------------------------
-       GET SELLER ORDERS
-    ------------------------------------------------------- */
+    /* GET SELLER ORDERS */
     @Transactional(readOnly = true)
     public ResponseEntity<List<OrderSummaryDTO>> getSellerOrders(Long sellerId) {
 
@@ -158,9 +177,7 @@ public class OrderService {
         return ResponseEntity.ok(orders.stream().map(this::toDTO).toList());
     }
 
-    /* -------------------------------------------------------
-       GET ONE ORDER
-    ------------------------------------------------------- */
+    /* GET ONE ORDER */
     public ResponseEntity<OrderSummaryDTO> getOne(Long orderId) {
 
         Order order = orderRepository.findById(orderId).orElse(null);
@@ -171,9 +188,7 @@ public class OrderService {
         return ResponseEntity.ok(toDTO(order));
     }
 
-    /* -------------------------------------------------------
-       UPDATE ORDER STATUS
-    ------------------------------------------------------- */
+    /* UPDATE ORDER STATUS */
     public ResponseEntity<OrderSummaryDTO> updateStatus(Long orderId, OrderStatus newStatus) {
 
         Order order = orderRepository.findById(orderId).orElse(null);
@@ -194,26 +209,20 @@ public class OrderService {
         orderRepository.save(order);
         saveHistory(order, newStatus);
 
-        // ONLY for delivered status
         if (newStatus == OrderStatus.DELIVERED) {
-
-            OrderTracking reviewNotify = OrderTracking.builder()
+            OrderTracking t = OrderTracking.builder()
                     .order(order)
                     .stage(OrderTrackingStage.DELIVERED)
                     .message("Your order " + order.getId() + " is delivered. Please submit your review.")
                     .updateTime(LocalDateTime.now())
                     .build();
-
-            em.persist(reviewNotify);
+            em.persist(t);
         }
 
         return ResponseEntity.ok(toDTO(order));
     }
 
-
-    /* -------------------------------------------------------
-       SAVE STATUS HISTORY
-    ------------------------------------------------------- */
+    /* SAVE STATUS HISTORY */
     private void saveHistory(Order order, OrderStatus status) {
         historyRepository.save(
                 OrderStatusHistory.builder()
@@ -224,9 +233,7 @@ public class OrderService {
         );
     }
 
-    /* -------------------------------------------------------
-       DTO CONVERTER
-    ------------------------------------------------------- */
+    /* DTO CONVERTER WITH PRODUCT DETAILS */
     private OrderSummaryDTO toDTO(Order order) {
 
         List<OrderItemDTO> itemDTOs = new ArrayList<>();
@@ -242,9 +249,19 @@ public class OrderService {
                             .unitPrice(item.getUnitPrice())
                             .quantity(item.getQuantity())
                             .lineTotal(item.lineTotal())
+
+                            // FIXED FIELDS
+                            .selectedColor(item.getSelectedColor())
+                            .selectedStorage(item.getSelectedStorage())
+                            .categoryName(p.getCategory())   // STRING
+                            .brandName(p.getBrand())         // STRING
+
                             .build()
             );
         }
+
+        User u = order.getCustomer();
+        DeliveryAddress address = order.getDeliveryAddress();
 
         return OrderSummaryDTO.builder()
                 .orderId(order.getId())
@@ -252,7 +269,14 @@ public class OrderService {
                 .status(order.getStatus())
                 .totalPrice(order.getTotalPrice())
                 .items(itemDTOs)
+                .customerId(u.getId())
+                .customerName(u.getFullName())
+                .customerEmail(u.getEmail())
+                .customerImagePath(u.getProfileImagePath())
+                .customerContact(u.getContactNumber())
+                .fullAddress(address != null ? address.getFullAddress() : null)
+                .latitude(address != null ? address.getLatitude() : null)
+                .longitude(address != null ? address.getLongitude() : null)
                 .build();
     }
-
 }

@@ -2,11 +2,13 @@
 package com.example.jhapcham.activity;
 
 public enum ActivityType {
-    SEARCH,     // (optional, if you enable SearchHistory repo later)
-    LIKE,       // (optional, if/when you add ProductLike here)
+    SEARCH,
+    LIKE,
     COMMENT,
     VIEW,
     CART_ADD,
     ORDER,
-    RATING
+    RATING,
+    REVIEW,
+    WISHLIST
 }

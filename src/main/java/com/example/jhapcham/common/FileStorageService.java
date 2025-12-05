@@ -8,9 +8,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.UUID;
 
 @Service
 public class FileStorageService {
@@ -18,19 +15,25 @@ public class FileStorageService {
     private final Path root;
 
     public FileStorageService(
-            @Value("${file.upload.dir:C:/jhapcham/uploads}") String uploadDir // fallback default
+            @Value("${file.upload.dir:H:/Project/Ecomm/jhapcham/uploads}") String uploadDir
     ) {
         this.root = Path.of(uploadDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(this.root); // ensure base dir exists
-            System.out.println("[FileStorage] Root dir = " + this.root); // DEBUG
+            System.out.println("[FileStorage] Root dir = " + this.root);
         } catch (Exception e) {
             throw new RuntimeException("Cannot create upload root: " + this.root, e);
         }
     }
 
-    /** Save under {root}/{subdir}/... and return the absolute path string. */
-    public String save(MultipartFile file, String subdir, String prefix) {
+    /**
+     * Save under {root}/{subdir}/{fileName} exactly as provided
+     * @param file MultipartFile
+     * @param subdir folder name, e.g., seller_docs or seller_logos
+     * @param fileName desired file name, e.g., id_5.pdf
+     * @return relative path for DB: subdir/fileName
+     */
+    public String save(MultipartFile file, String subdir, String fileName) {
         if (file == null || file.isEmpty()) return null;
 
         try {
@@ -39,21 +42,26 @@ public class FileStorageService {
 
             String original = file.getOriginalFilename();
             if (original == null || original.isBlank()) original = "file.bin";
-            // Remove Windows-illegal chars
-            String safeOriginal = original.replaceAll("[\\\\/:*?\"<>|]", "_");
 
-            String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String base = (prefix == null || prefix.isBlank() ? "file" : prefix)
-                    + "_" + ts + "_" + UUID.randomUUID().toString().substring(0, 8)
-                    + "_" + safeOriginal;
+            // Remove illegal characters from fileName
+            fileName = fileName.replaceAll("[\\\\/:*?\"<>|]", "_");
 
-            Path target = dir.resolve(base).normalize();
-            System.out.println("[FileStorage] Writing -> " + target); // DEBUG
+            // Ensure the extension is preserved
+            int dot = original.lastIndexOf('.');
+            if (dot >= 0 && !fileName.contains(".")) {
+                fileName = fileName + original.substring(dot);
+            }
+
+            Path target = dir.resolve(fileName).normalize();
+            System.out.println("[FileStorage] Writing -> " + target);
 
             try (InputStream in = file.getInputStream()) {
                 Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
             }
-            return target.toString();
+
+            // Return relative path for DB
+            return subdir + "/" + fileName;
+
         } catch (Exception e) {
             throw new RuntimeException("Failed to store file: " + e.getMessage(), e);
         }

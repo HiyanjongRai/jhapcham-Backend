@@ -12,7 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -22,9 +23,11 @@ public class ReviewService {
     private final UserRepository userRepo;
     private final ReviewRepository reviewRepo;
 
-    /* -------------------------------------------------------
+    private static final String REVIEW_IMAGE_DIR = "H:/Project/Ecomm/jhapcham/uploads/review-images/";
+
+    /* ----------------------
        SUBMIT REVIEW
-    ------------------------------------------------------- */
+    ---------------------- */
     @Transactional
     public Review submitReview(Long userId, ReviewRequestDTO req) throws Exception {
 
@@ -70,25 +73,21 @@ public class ReviewService {
         return reviewRepo.save(review);
     }
 
-
-    /* -------------------------------------------------------
+    /* ----------------------
        EDIT REVIEW
-    ------------------------------------------------------- */
+    ---------------------- */
     @Transactional
     public Review editReview(Long reviewId, Long userId, ReviewRequestDTO req) throws Exception {
-
         Review review = reviewRepo.findById(reviewId)
                 .orElseThrow(() -> new Exception("Review not found"));
 
         if (!review.getCustomer().getId().equals(userId))
             throw new Exception("You can edit only your own review");
 
-        List<String> imageUrls = new ArrayList<>();
+        List<String> imageUrls = review.getImages();
 
         if (req.getImages() != null && !req.getImages().isEmpty())
             imageUrls = validateAndProcessImages(req.getImages());
-        else
-            imageUrls = review.getImages();
 
         if (req.getRating() != null) {
             if (req.getRating() < 1 || req.getRating() > 5)
@@ -104,13 +103,11 @@ public class ReviewService {
         return reviewRepo.save(review);
     }
 
-
-    /* -------------------------------------------------------
+    /* ----------------------
        DELETE REVIEW
-    ------------------------------------------------------- */
+    ---------------------- */
     @Transactional
     public void deleteReview(Long reviewId, Long userId, boolean isAdmin) throws Exception {
-
         Review review = reviewRepo.findById(reviewId)
                 .orElseThrow(() -> new Exception("Review not found"));
 
@@ -120,40 +117,27 @@ public class ReviewService {
         reviewRepo.delete(review);
     }
 
-
-    /* -------------------------------------------------------
+    /* ----------------------
        LIST REVIEWS FOR PRODUCT
-    ------------------------------------------------------- */
+    ---------------------- */
     public List<Review> listReviewsForProduct(Long productId) {
-        return reviewRepo.findAll().stream()
-                .filter(r -> r.getProduct().getId().equals(productId))
-                .toList();
+        return reviewRepo.findByProduct_Id(productId);
     }
 
-
-    /* -------------------------------------------------------
-       IMAGE VALIDATION
-    ------------------------------------------------------- */
-
-    /* -------------------------------------------------------
-       IMAGE VALIDATION + SAVE TO review-images/
-    ------------------------------------------------------- */
-    private static final String REVIEW_IMAGE_DIR = "H:/Project/Ecomm/jhapcham/uploads/review-images/";
-
+    /* ----------------------
+       VALIDATE & SAVE IMAGES
+    ---------------------- */
     private List<String> validateAndProcessImages(List<MultipartFile> images) throws Exception {
-
         List<String> urls = new ArrayList<>();
 
         if (images == null || images.isEmpty())
             return urls;
 
         File folder = new File(REVIEW_IMAGE_DIR);
-        if (!folder.exists() && !folder.mkdirs()) {
+        if (!folder.exists() && !folder.mkdirs())
             throw new Exception("Failed to create review-images directory");
-        }
 
         for (MultipartFile img : images) {
-
             if (img.getSize() > 2 * 1024 * 1024)
                 throw new Exception("Max file size 2MB");
 
@@ -165,12 +149,9 @@ public class ReviewService {
             if (!(original.endsWith(".jpg") || original.endsWith(".jpeg") || original.endsWith(".png")))
                 throw new Exception("Only JPG, JPEG, PNG allowed");
 
-            // Final destination
             File dest = new File(REVIEW_IMAGE_DIR + original);
-
             img.transferTo(dest);
 
-            // URL for frontend
             urls.add("review-images/" + original);
         }
 

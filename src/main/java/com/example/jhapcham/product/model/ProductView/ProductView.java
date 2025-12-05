@@ -28,8 +28,16 @@ public class ProductView {
     @JoinColumn(name = "user_id")
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "product_id")
+    // FIXED PRODUCT RELATION, ONLY ONE
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+            name = "product_id",
+            foreignKey = @ForeignKey(
+                    name = "fk_product_view_product",
+                    foreignKeyDefinition =
+                            "FOREIGN KEY (product_id) REFERENCES product(id) ON DELETE CASCADE"
+            )
+    )
     private Product product;
 
     @Column(name = "anon_key", length = 64)

@@ -4,6 +4,7 @@ import jakarta.validation.constraints.*;
 import lombok.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.util.List;
 @Data
 @NoArgsConstructor
@@ -30,6 +31,8 @@ public class ProductDto {
     @Size(max = 20_000)
     private String others;
 
+    private Long sellerId;
+
     @Min(0)
     private Integer stock;
 
@@ -37,13 +40,20 @@ public class ProductDto {
 
     private List<String> colors;
 
+    private List<MultipartFile> additionalImages;
+
+    private LocalDate manufacturingDate;
+    private LocalDate expiryDate;
+
     private String brand;
 
     private Long id;
-
+    private String warranty;
     private Integer totalLikes;
-
-    // NEW FIELDS
+    private String features;
+    private String specifications;
+    private List<String> storage;
     private Double averageRating;
     private Long reviewCount;
+
 }

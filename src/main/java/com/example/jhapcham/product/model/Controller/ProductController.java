@@ -7,7 +7,6 @@ import com.example.jhapcham.product.model.dto.ProductDto;
 import com.example.jhapcham.product.model.dto.ProductResponseDTO;
 import com.example.jhapcham.product.model.service.ProductService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.*;
@@ -15,8 +14,11 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -24,14 +26,10 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/products")
 @RequiredArgsConstructor
 public class ProductController {
-
     private final ProductService productService;
     private final ViewTrackingService viewTrackingService;
+    private final SearchHistoryService searchHistoryService;
 
-    @Autowired
-    private SearchHistoryService searchHistoryService;
-
-    // -------- GET ALL --------
     @GetMapping
     public ResponseEntity<List<ProductResponseDTO>> getAllProducts() {
         List<ProductResponseDTO> out = productService.getAllProducts()
@@ -41,7 +39,6 @@ public class ProductController {
         return ResponseEntity.ok(out);
     }
 
-    // -------- GET BY ID (with view tracking) --------
     @GetMapping("/{id}")
     public ResponseEntity<?> getProductById(
             @PathVariable Long id,
@@ -51,148 +48,60 @@ public class ProductController {
             @RequestHeader(value = "User-Agent", required = false) String ua
     ) {
         try {
-            Product p = productService.getProductById(id)
+            Product product = productService.getProductById(id)
                     .orElseThrow(() -> new Exception("Product not found"));
 
             try {
-                viewTrackingService.logView(id, userId, (userId == null ? anonKey : null), ip, ua);
-            } catch (Exception ignored) {}
+                viewTrackingService.logView(id, userId, userId == null ? anonKey : null, ip, ua);
+            } catch (Exception ignored) {
+            }
 
-            return ResponseEntity.ok(productService.toResponseDTO(p));
+            return ResponseEntity.ok(productService.toResponseDTO(product));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
-    // -------- CREATE --------
     @PostMapping("/add")
-    public ResponseEntity<?> addProduct(
-            @RequestParam String name,
-            @RequestParam String description,
-            @RequestParam(required = false) String shortDescription,
-            @RequestParam Double price,
-            @RequestParam String category,
-            @RequestParam Long sellerId,
-            @RequestParam(required = false) Integer stock,
-            @RequestParam(required = false) String others,
-            @RequestParam(required = false) String brand,
-            @RequestParam(required = false) List<String> colors,
-            @RequestParam(required = false) MultipartFile image
-    ) {
+    public ResponseEntity<?> addProduct(@ModelAttribute ProductDto dto) {
         try {
-            ProductDto dto = ProductDto.builder()
-                    .name(name)
-                    .description(description)
-                    .shortDescription(shortDescription)
-                    .price(price)
-                    .category(category)
-                    .stock(stock)
-                    .others(others)
-                    .brand(brand)
-                    .colors(colors)
-                    .image(image)
-                    .build();
+            if (dto.getSellerId() == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "SellerId is required"));
+            }
 
-            Product saved = productService.addProduct(dto, sellerId);
+            Product saved = productService.addProduct(dto, dto.getSellerId());
             return ResponseEntity.ok(productService.toResponseDTO(saved));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
-    // -------- UPDATE --------
     @PutMapping("/update/{id}")
     public ResponseEntity<?> updateProduct(
             @PathVariable Long id,
-            @RequestParam String name,
-            @RequestParam String description,
-            @RequestParam(required = false) String shortDescription,
-            @RequestParam Double price,
-            @RequestParam String category,
-            @RequestParam Long sellerId,
-            @RequestParam(required = false) Integer stock,
-            @RequestParam(required = false) String others,
-            @RequestParam(required = false) String brand,
-            @RequestParam(required = false) List<String> colors,
-            @RequestParam(required = false) MultipartFile image
+            @ModelAttribute ProductDto dto
     ) {
         try {
-            ProductDto dto = ProductDto.builder()
-                    .name(name)
-                    .description(description)
-                    .shortDescription(shortDescription)
-                    .price(price)
-                    .category(category)
-                    .stock(stock)
-                    .others(others)
-                    .brand(brand)
-                    .colors(colors)
-                    .image(image)
-                    .build();
+            if (dto.getSellerId() == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "SellerId is required"));
+            }
 
-            Product saved = productService.updateProduct(id, dto, sellerId);
-            return ResponseEntity.ok(productService.toResponseDTO(saved));
+            Product updated = productService.updateProduct(id, dto, dto.getSellerId());
+            return ResponseEntity.ok(productService.toResponseDTO(updated));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
-    // -------- DELETE --------
     @DeleteMapping("/delete/{id}")
-    public ResponseEntity<?> deleteProduct(@PathVariable Long id, @RequestParam Long userId) {
+    public ResponseEntity<?> deleteProduct(@PathVariable Long id, @RequestParam Long sellerId) {
         try {
-            productService.deleteProduct(id, userId);
+            productService.deleteProduct(id, sellerId);
             return ResponseEntity.ok(Map.of("message", "Product deleted successfully", "productId", id));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
-
-    // -------- VIEWS / STOCK / VISIBILITY / STATUS --------
-    @PostMapping("/{id}/view")
-    public ResponseEntity<?> incrementView(@PathVariable Long id) {
-        try {
-            productService.incrementView(id);
-            return ResponseEntity.ok(Map.of("message", "View count incremented"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PatchMapping("/{id}/stock")
-    public ResponseEntity<?> updateStock(@PathVariable Long id, @RequestParam int stock) {
-        try {
-            Product updated = productService.updateStock(id, stock);
-            return ResponseEntity.ok(productService.toResponseDTO(updated));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PatchMapping("/{id}/visibility")
-    public ResponseEntity<?> toggleVisibility(@PathVariable Long id) {
-        try {
-            Product updated = productService.toggleVisibility(id);
-            return ResponseEntity.ok(productService.toResponseDTO(updated));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PatchMapping("/{id}/status")
-    public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestParam String status) {
-        try {
-            Product.Status s = Product.Status.valueOf(status.toUpperCase());
-            Product updated = productService.updateStatus(id, s);
-            return ResponseEntity.ok(productService.toResponseDTO(updated));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid status value"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    // -------- SALE (PUT ON SALE / REMOVE SALE / LIST) --------
 
     @PatchMapping("/{id}/sale")
     public ResponseEntity<?> putOnSale(
@@ -209,10 +118,7 @@ public class ProductController {
     }
 
     @DeleteMapping("/{id}/sale")
-    public ResponseEntity<?> removeSale(
-            @PathVariable Long id,
-            @RequestParam Long sellerId
-    ) {
+    public ResponseEntity<?> removeSale(@PathVariable Long id, @RequestParam Long sellerId) {
         try {
             Product updated = productService.removeSale(id, sellerId);
             return ResponseEntity.ok(productService.toResponseDTO(updated));
@@ -229,27 +135,20 @@ public class ProductController {
         return ResponseEntity.ok(out);
     }
 
-    // -------- SEARCH (integrated + search history logging) --------
     @GetMapping("/search")
-    public ResponseEntity<List<ProductResponseDTO>> searchProducts(
-            @RequestParam String keyword,
-            @RequestParam(required = false) Long userId
-    ) {
-        if (userId != null) {
-            searchHistoryService.logSearch(userId, keyword);
+    public ResponseEntity<?> searchProducts(@RequestParam String keyword) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("Keyword cannot be empty");
         }
 
-        List<ProductResponseDTO> out = productService.searchProducts(keyword)
-                .stream()
-                .map(dto -> productService.getProductById(dto.getId()).orElse(null))
-                .filter(Objects::nonNull)
+        List<Product> products = productService.searchProducts(keyword.trim());
+        List<ProductResponseDTO> response = products.stream()
                 .map(productService::toResponseDTO)
-                .collect(Collectors.toList());
+                .toList();
 
-        return ResponseEntity.ok(out);
+        return ResponseEntity.ok(response);
     }
 
-    // -------- SELLER PRODUCTS --------
     @GetMapping("/my-products")
     public ResponseEntity<List<ProductResponseDTO>> getMyProducts(@RequestParam Long sellerId) {
         List<ProductResponseDTO> out = productService.getProductsBySeller(sellerId)
@@ -259,7 +158,6 @@ public class ProductController {
         return ResponseEntity.ok(out);
     }
 
-    // -------- FILTER (paged DTOs) --------
     @GetMapping("/filter")
     public ResponseEntity<Page<ProductResponseDTO>> filterProducts(
             @RequestParam(required = false) String name,
@@ -273,43 +171,69 @@ public class ProductController {
             @RequestParam(required = false) Boolean visible,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long sellerId,
+            @RequestParam(required = false) String brand,
+            @RequestParam(required = false) Boolean onSale,
+            @RequestParam(required = false) LocalDate mfgStart,
+            @RequestParam(required = false) LocalDate mfgEnd,
+            @RequestParam(required = false) LocalDate expStart,
+            @RequestParam(required = false) LocalDate expEnd,
+            @RequestParam(required = false) List<String> colors,
+            @RequestParam(required = false) List<String> storage,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "id,desc") String sort
     ) {
+
         Pageable pageable = PageRequest.of(page, size, parseSort(sort));
+
         Page<Product> result = productService.filterProducts(
-                name, minPrice, maxPrice, minRating, maxRating,
-                minViews, maxViews, category, visible, status, sellerId, pageable
+                name,
+                minPrice,
+                maxPrice,
+                minRating,
+                maxRating,
+                minViews,
+                maxViews,
+                category,
+                visible,
+                status,
+                sellerId,
+                brand,
+                onSale,
+                mfgStart,
+                mfgEnd,
+                expStart,
+                expEnd,
+                colors,
+                storage,
+                pageable
         );
+
         Page<ProductResponseDTO> mapped = result.map(productService::toResponseDTO);
         return ResponseEntity.ok(mapped);
     }
 
-    // -------- IMAGES --------
+
     @GetMapping("/images/{filename:.+}")
-    public ResponseEntity<Resource> getImage(@PathVariable String filename) {
-        try {
-            Path base = Path.of("product-images").toAbsolutePath().normalize();
-            Path imagePath = base.resolve(filename).normalize();
-            if (!imagePath.startsWith(base)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    public ResponseEntity<Resource> getImage(@PathVariable String filename) throws IOException {
+        Path base = Paths.get("H:\\Project\\Ecomm\\jhapcham\\uploads\\products").toAbsolutePath().normalize();
+        Path imagePath = base.resolve(filename).normalize();
 
-            Resource resource = new UrlResource(imagePath.toUri());
-            if (!resource.exists() || !resource.isReadable()) return ResponseEntity.notFound().build();
-
-            String contentType = Files.probeContentType(imagePath);
-            if (contentType == null) contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
-
-            return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
-                    .body(resource);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+        if (!Files.exists(imagePath)) {
+            return ResponseEntity.notFound().build();
         }
+
+        Resource resource = new UrlResource(imagePath.toUri());
+        String contentType = Files.probeContentType(imagePath);
+        if (contentType == null) {
+            contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        }
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .body(resource);
     }
 
-    // -------- helper --------
     private Sort parseSort(String sort) {
         String[] parts = sort.split(",", 2);
         String field = parts[0];
@@ -317,4 +241,5 @@ public class ProductController {
                 ? Sort.Direction.ASC : Sort.Direction.DESC;
         return Sort.by(dir, field);
     }
+
 }

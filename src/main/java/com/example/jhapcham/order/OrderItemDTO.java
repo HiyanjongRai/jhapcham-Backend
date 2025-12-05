@@ -12,4 +12,11 @@ public class OrderItemDTO {
     private Double unitPrice;
     private int quantity;
     private Double lineTotal;
+    private String selectedColor;
+    private String selectedStorage;
+    private String categoryName;
+    private String brandName;
+
+
+
 }

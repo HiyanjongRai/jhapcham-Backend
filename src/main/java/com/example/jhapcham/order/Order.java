@@ -32,6 +32,13 @@ public class Order {
 
     private LocalDateTime createdAt;
 
+
+    @OneToOne(cascade = CascadeType.ALL)
+    @JoinColumn(name = "delivery_address_id")
+    private DeliveryAddress deliveryAddress;
+
+
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<OrderItem> items = new ArrayList<>();

@@ -2,6 +2,7 @@ package com.example.jhapcham.product.model.dto;
 
 import lombok.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Data
@@ -19,7 +20,9 @@ public class ProductResponseDTO {
     private String imagePath;
     private String others;
     private int stock;
-
+    private List<String> additionalImages;
+    private LocalDate manufacturingDate;
+    private LocalDate expiryDate;
     private int totalLikes;
     private int totalViews;
 
@@ -35,8 +38,11 @@ public class ProductResponseDTO {
     private boolean onSale;
     private Double discountPercent;
     private Double salePrice;
-
+    private String warranty;
     private String brand;
+    private String features;
+    private String specifications;
+    private List<String> storage;
     private String sellerStoreName;
     private String sellerStoreAddress;
     private String sellerContactNumber;

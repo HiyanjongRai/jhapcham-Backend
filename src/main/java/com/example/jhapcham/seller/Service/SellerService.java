@@ -14,6 +14,7 @@ public class SellerService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+
     public User createSeller(User seller) {
         if (userRepository.existsByUsername(seller.getUsername())) {
             throw new RuntimeException("Username already exists!");

@@ -4,8 +4,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/orders")
+@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 public class OrderController {
 
@@ -14,20 +17,64 @@ public class OrderController {
     private final OrderRepository orderRepo;
 
     /* --------------------------------------------------------
-       PLACE ORDER
+       SINGLE PRODUCT ORDER
     --------------------------------------------------------- */
     @PostMapping("/place")
     public ResponseEntity<?> placeOrderSingle(
             @RequestParam Long userId,
             @RequestParam Long productId,
-            @RequestParam(defaultValue = "1") int quantity) {
+            @RequestParam(defaultValue = "1") int quantity,
+            @RequestParam(required = false) String fullAddress,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lng) {
 
-        return orderService.placeOrderSingle(userId, productId, quantity);
+        boolean hasAddress = fullAddress != null && !fullAddress.isBlank();
+        boolean hasCoords = lat != null && lng != null;
+
+        if (!hasAddress && !hasCoords)
+            return ResponseEntity.badRequest().body("Provide address or coordinates");
+
+        return orderService.placeOrderSingle(userId, productId, quantity, fullAddress, lat, lng);
     }
 
+    /* --------------------------------------------------------
+       CART CHECKOUT ORDER
+    --------------------------------------------------------- */
     @PostMapping("/checkout")
-    public ResponseEntity<?> placeOrderFromCart(@RequestParam Long userId) {
-        return orderService.placeOrderFromCart(userId);
+    public ResponseEntity<?> placeOrderFromCart(
+            @RequestParam Long userId,
+            @RequestParam(required = false) String fullAddress,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lng) {
+
+        boolean hasAddress = fullAddress != null && !fullAddress.isBlank();
+        boolean hasCoords = lat != null && lng != null;
+
+        if (!hasAddress && !hasCoords)
+            return ResponseEntity.badRequest().body("Provide address or coordinates");
+
+        return orderService.placeOrderFromCart(userId, fullAddress, lat, lng);
+    }
+
+    /* --------------------------------------------------------
+       BUY NOW ORDER
+    --------------------------------------------------------- */
+    @PostMapping("/buy-now")
+    public ResponseEntity<?> buyNow(
+            @RequestParam Long userId,
+            @RequestParam Long productId,
+            @RequestParam(defaultValue = "1") int quantity,
+            @RequestParam(required = false) String fullAddress,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lng) {
+
+        boolean hasAddress = fullAddress != null && !fullAddress.isBlank();
+        boolean hasCoords = lat != null && lng != null;
+
+        if (!hasAddress && !hasCoords)
+            return ResponseEntity.badRequest().body("Provide address or coordinates");
+
+        return orderService.placeOrderSingle(userId, productId, quantity, fullAddress, lat, lng);
     }
 
     /* --------------------------------------------------------
@@ -45,7 +92,7 @@ public class OrderController {
 
     @GetMapping("/admin/all")
     public ResponseEntity<?> getAdminAllOrders() {
-        return ResponseEntity.ok(orderRepo.findByStatus(OrderStatus.DELIVERED));
+        return ResponseEntity.ok(orderRepo.findAll());
     }
 
     @GetMapping("/{orderId}")
@@ -54,7 +101,7 @@ public class OrderController {
     }
 
     /* --------------------------------------------------------
-       UPDATE ORDER STATUS ONLY
+       UPDATE ORDER STATUS
     --------------------------------------------------------- */
     @PatchMapping("/{orderId}/status")
     public ResponseEntity<?> updateStatus(
@@ -65,7 +112,7 @@ public class OrderController {
     }
 
     /* --------------------------------------------------------
-       ADD TRACKING ENTRY (movement)
+       ADD TRACKING (Movement)
     --------------------------------------------------------- */
     @PostMapping("/{orderId}/tracking")
     public ResponseEntity<?> addTrackingStage(
@@ -81,7 +128,7 @@ public class OrderController {
     }
 
     /* --------------------------------------------------------
-       GET ORDER TRACKING TIMELINE
+       GET TRACKING TIMELINE
     --------------------------------------------------------- */
     @GetMapping("/{orderId}/tracking")
     public ResponseEntity<?> getTracking(
@@ -92,17 +139,13 @@ public class OrderController {
             var order = orderRepo.findById(orderId)
                     .orElseThrow(() -> new RuntimeException("Order not found"));
 
-            if (!order.getCustomer().getId().equals(userId)) {
+            if (!order.getCustomer().getId().equals(userId))
                 return ResponseEntity.status(403).body("Access denied");
-            }
         }
 
         return ResponseEntity.ok(trackingService.getOrderTracking(orderId));
     }
 
-    /* --------------------------------------------------------
-       MESSAGE BUILDER FOR TRACKING
-    --------------------------------------------------------- */
     private String buildTrackingMessage(OrderTrackingStage stage) {
         return switch (stage) {
             case PROCESSING -> "Your order is now being processed";
@@ -114,31 +157,52 @@ public class OrderController {
         };
     }
 
+    /* --------------------------------------------------------
+       TRACKING LIST FOR USER
+    --------------------------------------------------------- */
+        /* --------------------------------------------------------
+       TRACKING LIST FOR USER
+    --------------------------------------------------------- */
     @GetMapping("/tracking/user/{userId}")
     public ResponseEntity<?> getTrackingForUser(@PathVariable Long userId) {
 
         var list = trackingService.getAllTrackingForUser(userId);
 
         var dtoList = list.stream()
-                .map(t -> new OrderTrackingDTO(
-                        t.getId(),
-                        t.getStage().name(),
-                        t.getMessage(),
-                        t.getBranch() != null ? t.getBranch().name() : null,
-                        t.getUpdateTime(),
-                        t.getOrder().getId()
-                ))
+                .map(t -> {
+                    // Fetch order items and convert to DTOs
+                    List<OrderItemDTO> itemDTOs = t.getOrder().getItems().stream()
+                            .map(item -> OrderItemDTO.builder()
+                                    .productId(item.getProduct().getId())
+                                    .productName(item.getProduct().getName())
+                                    .imagePath(item.getProduct().getImagePath())
+                                    .unitPrice(item.getUnitPrice())
+                                    .quantity(item.getQuantity())
+                                    .lineTotal(item.lineTotal())
+                                    .selectedColor(item.getSelectedColor())
+                                    .selectedStorage(item.getSelectedStorage())
+                                    .build())
+                            .toList();
+
+                    return new OrderTrackingDTO(
+                            t.getId(),
+                            t.getStage().name(),
+                            t.getMessage(),
+                            t.getBranch() != null ? t.getBranch().name() : null,
+                            t.getUpdateTime(),
+                            t.getOrder().getId(),
+                            itemDTOs, // Pass items here
+                            t.getOrder().getTotalPrice(),
+                            t.getOrder().getCreatedAt()
+                    );
+                })
                 .toList();
 
         return ResponseEntity.ok(dtoList);
     }
 
-
     @GetMapping("/tracking/details/{trackingId}")
     public ResponseEntity<?> getTrackingDetails(@PathVariable Long trackingId) {
-        return ResponseEntity.ok(
-                trackingService.getTrackingById(trackingId)
-        );
+        return ResponseEntity.ok(trackingService.getTrackingById(trackingId));
     }
-
 }

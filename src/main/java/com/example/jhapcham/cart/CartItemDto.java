@@ -11,5 +11,10 @@ public class CartItemDto {
     private String imagePath;
     private Double unitPrice;
     private int quantity;
-    private Double lineTotal; // unitPrice * quantity
+    private Double lineTotal;
+    private String selectedColor;
+    private String selectedStorage;
+    private String category;
+    private String brand;
+
 }

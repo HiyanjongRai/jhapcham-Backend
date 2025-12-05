@@ -23,6 +23,7 @@ public class ViewTrackingService {
      */
     @Transactional
     public void logView(Long productId, Long userId, String anonKey, String ip, String userAgent) throws Exception {
+
         Product product = productRepo.findById(productId)
                 .orElseThrow(() -> new Exception("Product not found"));
 
@@ -37,11 +38,13 @@ public class ViewTrackingService {
             recentlySeen = viewRepo.existsByAnonKeyAndProduct_IdAndViewedAtBetween(anonKey, productId, from, now);
         }
 
-        // Always bump total views
-        product.setViews(product.getViews() + 1);
-        productRepo.save(product);
+        // Increase view count ONLY if not seen recently
+        if (!recentlySeen) {
+            product.setViews(product.getViews() + 1);
+            productRepo.save(product);
+        }
 
-        // Record per-user or per-guest history (avoid duplicates)
+        // Save view history only if not recent
         if (!recentlySeen) {
             ProductView.ProductViewBuilder builder = ProductView.builder()
                     .product(product)
@@ -59,4 +62,51 @@ public class ViewTrackingService {
             viewRepo.save(builder.build());
         }
     }
+
+//    @Transactional
+//    public void logView(Long productId, Long userId, String anonKey, String ip, String userAgent) throws Exception {
+//
+//        Product product = productRepo.findById(productId)
+//                .orElseThrow(() -> new Exception("Product not found"));
+//
+//        LocalDateTime now = LocalDateTime.now();
+//        LocalDateTime from = now.minusMinutes(3); // only once every 3 minutes
+//
+//        boolean recentlySeen = false;
+//
+//        if (userId != null) {
+//            recentlySeen = viewRepo.existsByUser_IdAndProduct_IdAndViewedAtBetween(
+//                    userId, productId, from, now
+//            );
+//        } else if (anonKey != null && !anonKey.isBlank()) {
+//            recentlySeen = viewRepo.existsByAnonKeyAndProduct_IdAndViewedAtBetween(
+//                    anonKey, productId, from, now
+//            );
+//        }
+//
+//        // increase view only once per 3 minutes
+//        if (!recentlySeen) {
+//            product.setViews(product.getViews() + 1);
+//            productRepo.save(product);
+//        }
+//
+//        // save view history only once per 3 minutes
+//        if (!recentlySeen) {
+//            ProductView.ProductViewBuilder builder = ProductView.builder()
+//                    .product(product)
+//                    .viewedAt(now)
+//                    .ip(ip)
+//                    .userAgent(userAgent);
+//
+//            if (userId != null) {
+//                User u = userRepo.findById(userId).orElse(null);
+//                if (u != null) builder.user(u);
+//            } else {
+//                builder.anonKey(anonKey);
+//            }
+//
+//            viewRepo.save(builder.build());
+//        }
+//    }
+
 }

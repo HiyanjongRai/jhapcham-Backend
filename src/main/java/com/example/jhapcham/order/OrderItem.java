@@ -33,5 +33,9 @@ public class OrderItem {
         return unitPrice * quantity;
     }
 
+    private String selectedColor;
+    private String selectedStorage;
+
+
 
 }
