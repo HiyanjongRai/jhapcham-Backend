@@ -9,5 +9,9 @@ public class SellerProfileRequestDTO {
     private String address;
     private String about;
     private String description;
+    private Double insideValleyDeliveryFee;
+    private Double outsideValleyDeliveryFee;
+    private Boolean freeShippingEnabled;
+    private Double freeShippingMinOrder;
     private MultipartFile logoImage; // Optional
 }

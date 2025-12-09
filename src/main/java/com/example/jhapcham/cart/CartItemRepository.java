@@ -29,6 +29,8 @@ public interface CartItemRepository extends JpaRepository<CartItem, Long> {
 
     void deleteAllByUser(User user);
 
-    // ✔ ADD THIS
     List<CartItem> findTop200ByUser_IdOrderByCreatedAtDesc(Long userId);
+
+    void deleteAllByUser_Id(Long userId);
+
 }

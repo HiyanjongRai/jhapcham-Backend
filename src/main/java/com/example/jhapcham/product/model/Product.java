@@ -111,6 +111,9 @@ public class Product {
     @JoinColumn(name = "seller_profile_id")
     private SellerProfile sellerProfile;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean freeShipping = false;
 
 
 }

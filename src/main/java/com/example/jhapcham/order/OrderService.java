@@ -1,22 +1,23 @@
 package com.example.jhapcham.order;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
-
+import com.example.jhapcham.Checkout.CheckoutSession;
+import com.example.jhapcham.Checkout.CheckoutSessionRepository;
+import com.example.jhapcham.Checkout.PaymentMethod;
 import com.example.jhapcham.cart.CartItem;
 import com.example.jhapcham.cart.CartItemRepository;
 import com.example.jhapcham.product.model.Product;
 import com.example.jhapcham.product.model.repository.ProductRepository;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.repository.UserRepository;
-
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.*;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -29,44 +30,92 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final OrderStatusHistoryRepository historyRepository;
+    private final CheckoutSessionRepository checkoutRepo;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final CartItemRepository cartItemRepository;
 
-    /* PLACE ORDER SINGLE PRODUCT */
-    public ResponseEntity<OrderSummaryDTO> placeOrderSingle(
-            Long userId,
-            Long productId,
-            int qty,
-            String fullAddress,
-            Double lat,
-            Double lng) {
+    // FROM CHECKOUT
+    public Order createOrderFromCheckout(Long checkoutId) {
+
+        CheckoutSession checkout = checkoutRepo.findById(checkoutId)
+                .orElseThrow(() -> new IllegalStateException("Checkout not found"));
+
+        if (checkout.getPaymentMethod() == PaymentMethod.ONLINE && !checkout.getIsPaid()) {
+            throw new IllegalStateException("Checkout not paid");
+        }
+
+        User user = userRepository.findById(checkout.getUserId())
+                .orElseThrow(() -> new IllegalStateException("User not found"));
+
+        OrderStatus status = checkout.getPaymentMethod() == PaymentMethod.COD
+                ? OrderStatus.PENDING
+                : OrderStatus.PROCESSING;
+
+        Order order = Order.builder()
+                .customer(user)
+                .createdAt(LocalDateTime.now())
+                .status(status)
+                .totalPrice(checkout.getGrandTotal())
+                .build();
+
+        checkout.getItems().forEach(snap -> {
+
+            Product product = productRepository.findById(snap.getProductId())
+                    .orElseThrow();
+
+            if (product.getStock() < snap.getQuantity()) {
+                throw new IllegalStateException("Stock not enough for " + product.getName());
+            }
+
+            product.setStock(product.getStock() - snap.getQuantity());
+            productRepository.save(product);
+
+            OrderItem item = OrderItem.builder()
+                    .order(order)
+                    .product(product)
+                    .quantity(snap.getQuantity())
+                    .unitPrice(snap.getUnitPrice())
+                    .selectedColor(snap.getSelectedColor())
+                    .selectedStorage(snap.getSelectedStorage())
+                    .build();
+
+            order.addItem(item);
+        });
+
+        Order saved = orderRepository.save(order);
+
+        historyRepository.save(
+                OrderStatusHistory.builder()
+                        .order(saved)
+                        .status(saved.getStatus())
+                        .changedAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return saved;
+
+
+    }
+    // SINGLE PRODUCT ORDER
+    public ResponseEntity<?> placeOrderSingle(Long userId, Long productId, int qty,
+                                              String fullAddress, Double lat, Double lng) {
 
         User user = userRepository.findById(userId).orElse(null);
-        if (user == null)
-            return ResponseEntity.status(404).body(null);
-
         Product p = productRepository.findById(productId).orElse(null);
-        if (p == null)
-            return ResponseEntity.status(404).body(null);
 
-        if (p.getStock() < qty)
-            return ResponseEntity.status(409).body(null);
+        if (user == null || p == null || p.getStock() < qty) {
+            return ResponseEntity.badRequest().body("Invalid request");
+        }
 
         p.setStock(p.getStock() - qty);
         productRepository.save(p);
 
-        DeliveryAddress address = new DeliveryAddress();
-        address.setFullAddress(fullAddress);
-        address.setLatitude(lat);
-        address.setLongitude(lng);
-
         Order order = Order.builder()
                 .customer(user)
                 .status(OrderStatus.PENDING)
-                .totalPrice(0.0)
+                .totalPrice(p.getPrice() * qty)
                 .createdAt(LocalDateTime.now())
-                .deliveryAddress(address)
                 .build();
 
         OrderItem item = OrderItem.builder()
@@ -74,45 +123,39 @@ public class OrderService {
                 .product(p)
                 .quantity(qty)
                 .unitPrice(p.getPrice())
-                .selectedColor(null)
-                .selectedStorage(null)
                 .build();
 
         order.addItem(item);
-        order.setTotalPrice(item.lineTotal());
 
         Order saved = orderRepository.save(order);
-        saveHistory(saved, OrderStatus.PENDING);
 
-        return ResponseEntity.status(201).body(toDTO(saved));
+        historyRepository.save(
+                OrderStatusHistory.builder()
+                        .order(saved)
+                        .status(OrderStatus.PENDING)
+                        .changedAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return ResponseEntity.ok(saved);
     }
 
-    /* PLACE ORDER FROM CART */
-    public ResponseEntity<OrderSummaryDTO> placeOrderFromCart(
-            Long userId, String fullAddress, Double lat, Double lng) {
+    // CART ORDER
+    public ResponseEntity<?> placeOrderFromCart(Long userId,
+                                                String fullAddress,
+                                                Double lat,
+                                                Double lng) {
 
         User user = userRepository.findById(userId).orElse(null);
-        if (user == null)
-            return ResponseEntity.status(404).body(null);
+        if (user == null) {
+            return ResponseEntity.badRequest().body("User not found");
+        }
 
         List<CartItem> cart = cartItemRepository.findByUser(user);
-        if (cart.isEmpty())
-            return ResponseEntity.status(400).body(null);
-
-        // STOCK CHECK
-        for (CartItem ci : cart) {
-            if (ci.getProduct().getStock() < ci.getQuantity())
-                return ResponseEntity.status(409).body(null);
+        if (cart.isEmpty()) {
+            return ResponseEntity.badRequest().body("Cart empty");
         }
 
-        // DEDUCT STOCK
-        for (CartItem ci : cart) {
-            Product p = ci.getProduct();
-            p.setStock(p.getStock() - ci.getQuantity());
-            productRepository.save(p);
-        }
-
-        // CREATE ORDER
         Order order = Order.builder()
                 .customer(user)
                 .status(OrderStatus.PENDING)
@@ -120,18 +163,17 @@ public class OrderService {
                 .totalPrice(0.0)
                 .build();
 
-        // DELIVERY ADDRESS
-        DeliveryAddress address = new DeliveryAddress();
-        address.setFullAddress(fullAddress);
-        address.setLatitude(lat);
-        address.setLongitude(lng);
-        order.setDeliveryAddress(address);
-
         double total = 0.0;
 
-        // ORDER ITEMS
         for (CartItem ci : cart) {
             Product p = ci.getProduct();
+
+            if (p.getStock() < ci.getQuantity()) {
+                return ResponseEntity.badRequest().body("Stock issue");
+            }
+
+            p.setStock(p.getStock() - ci.getQuantity());
+            productRepository.save(p);
 
             OrderItem item = OrderItem.builder()
                     .order(order)
@@ -149,81 +191,57 @@ public class OrderService {
         order.setTotalPrice(total);
 
         Order saved = orderRepository.save(order);
-        saveHistory(saved, OrderStatus.PENDING);
 
         cartItemRepository.deleteAll(cart);
 
-        return ResponseEntity.status(201).body(toDTO(saved));
+        historyRepository.save(
+                OrderStatusHistory.builder()
+                        .order(saved)
+                        .status(OrderStatus.PENDING)
+                        .changedAt(LocalDateTime.now())
+                        .build()
+        );
+
+        return ResponseEntity.ok(saved);
     }
 
-    /* GET USER ORDERS */
-    @Transactional(readOnly = true)
-    public ResponseEntity<List<OrderSummaryDTO>> getUserOrders(Long userId) {
-
-        if (!userRepository.existsById(userId))
-            return ResponseEntity.status(404).body(null);
-
-        List<Order> orders = orderRepository.findByCustomer_Id(userId);
-
-        return ResponseEntity.ok(orders.stream().map(this::toDTO).toList());
+    // USER ORDERS
+    public ResponseEntity<?> getUserOrders(Long userId) {
+        return ResponseEntity.ok(orderRepository.findByCustomer_Id(userId));
     }
 
-    /* GET SELLER ORDERS */
-    @Transactional(readOnly = true)
-    public ResponseEntity<List<OrderSummaryDTO>> getSellerOrders(Long sellerId) {
-
-        List<Order> orders = orderRepository.findSellerOrders(sellerId);
-
-        return ResponseEntity.ok(orders.stream().map(this::toDTO).toList());
+    // SELLER ORDERS
+    public ResponseEntity<?> getSellerOrders(Long sellerId) {
+        return ResponseEntity.ok(orderRepository.findSellerOrders(sellerId));
     }
 
-    /* GET ONE ORDER */
-    public ResponseEntity<OrderSummaryDTO> getOne(Long orderId) {
-
-        Order order = orderRepository.findById(orderId).orElse(null);
-
-        if (order == null)
-            return ResponseEntity.status(404).body(null);
-
-        return ResponseEntity.ok(toDTO(order));
+    // GET ONE
+    public ResponseEntity<?> getOne(Long orderId) {
+        return ResponseEntity.ok(
+                orderRepository.findById(orderId)
+                        .orElseThrow(() -> new IllegalStateException("Order not found"))
+        );
     }
 
-    /* UPDATE ORDER STATUS */
-    public ResponseEntity<OrderSummaryDTO> updateStatus(Long orderId, OrderStatus newStatus) {
+    // UPDATE STATUS
+    public ResponseEntity<?> updateStatus(Long orderId, OrderStatus status) {
 
-        Order order = orderRepository.findById(orderId).orElse(null);
-        if (order == null)
-            return ResponseEntity.status(404).body(null);
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalStateException("Order not found"));
 
-        OrderStatus oldStatus = order.getStatus();
+        // If cancelling, restore product stock
+        if (status == OrderStatus.CANCELLED && order.getStatus() != OrderStatus.CANCELLED) {
 
-        if (newStatus == OrderStatus.CANCELLED && oldStatus != OrderStatus.CANCELLED) {
             for (OrderItem item : order.getItems()) {
-                Product p = item.getProduct();
-                p.setStock(p.getStock() + item.getQuantity());
-                productRepository.save(p);
+                Product product = item.getProduct();
+                product.setStock(product.getStock() + item.getQuantity());
+                productRepository.save(product);
             }
         }
 
-        order.setStatus(newStatus);
+        order.setStatus(status);
         orderRepository.save(order);
-        saveHistory(order, newStatus);
 
-        if (newStatus == OrderStatus.DELIVERED) {
-            OrderTracking t = OrderTracking.builder()
-                    .order(order)
-                    .stage(OrderTrackingStage.DELIVERED)
-                    .message("Your order " + order.getId() + " is delivered. Please submit your review.")
-                    .updateTime(LocalDateTime.now())
-                    .build();
-            em.persist(t);
-        }
-
-        return ResponseEntity.ok(toDTO(order));
-    }
-
-    /* SAVE STATUS HISTORY */
-    private void saveHistory(Order order, OrderStatus status) {
         historyRepository.save(
                 OrderStatusHistory.builder()
                         .order(order)
@@ -231,52 +249,10 @@ public class OrderService {
                         .changedAt(LocalDateTime.now())
                         .build()
         );
+
+        return ResponseEntity.ok(order);
     }
 
-    /* DTO CONVERTER WITH PRODUCT DETAILS */
-    private OrderSummaryDTO toDTO(Order order) {
 
-        List<OrderItemDTO> itemDTOs = new ArrayList<>();
 
-        for (OrderItem item : order.getItems()) {
-            Product p = item.getProduct();
-
-            itemDTOs.add(
-                    OrderItemDTO.builder()
-                            .productId(p.getId())
-                            .productName(p.getName())
-                            .imagePath(p.getImagePath())
-                            .unitPrice(item.getUnitPrice())
-                            .quantity(item.getQuantity())
-                            .lineTotal(item.lineTotal())
-
-                            // FIXED FIELDS
-                            .selectedColor(item.getSelectedColor())
-                            .selectedStorage(item.getSelectedStorage())
-                            .categoryName(p.getCategory())   // STRING
-                            .brandName(p.getBrand())         // STRING
-
-                            .build()
-            );
-        }
-
-        User u = order.getCustomer();
-        DeliveryAddress address = order.getDeliveryAddress();
-
-        return OrderSummaryDTO.builder()
-                .orderId(order.getId())
-                .createdAt(order.getCreatedAt())
-                .status(order.getStatus())
-                .totalPrice(order.getTotalPrice())
-                .items(itemDTOs)
-                .customerId(u.getId())
-                .customerName(u.getFullName())
-                .customerEmail(u.getEmail())
-                .customerImagePath(u.getProfileImagePath())
-                .customerContact(u.getContactNumber())
-                .fullAddress(address != null ? address.getFullAddress() : null)
-                .latitude(address != null ? address.getLatitude() : null)
-                .longitude(address != null ? address.getLongitude() : null)
-                .build();
-    }
 }

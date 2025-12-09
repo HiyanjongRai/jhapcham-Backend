@@ -33,6 +33,23 @@ public class SellerProfile {
 
     @Builder.Default
     @Column(nullable = false)
+    private Double insideValleyDeliveryFee = 150.0;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private Double outsideValleyDeliveryFee = 200.0;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean freeShippingEnabled = false;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private Double freeShippingMinOrder = 0.0;
+
+
+    @Builder.Default
+    @Column(nullable = false)
     private Boolean isVerified = false;
 
     private LocalDateTime approvedAt;

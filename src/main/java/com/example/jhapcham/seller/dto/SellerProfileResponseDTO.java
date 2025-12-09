@@ -12,6 +12,7 @@ import java.util.List;
 @Data
 @Builder
 public class SellerProfileResponseDTO {
+
     private Long userId;
     private String username;
     private String fullName;
@@ -29,5 +30,12 @@ public class SellerProfileResponseDTO {
     private LocalDateTime joinedDate;
     private String logoImagePath;
 
+    private Double insideValleyDeliveryFee;
+    private Double outsideValleyDeliveryFee;
+    private Boolean freeShippingEnabled;
+    private Double freeShippingMinOrder;
+
     private List<Product> products;
+
+
 }

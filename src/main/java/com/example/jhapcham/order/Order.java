@@ -2,6 +2,7 @@ package com.example.jhapcham.order;
 
 import com.example.jhapcham.user.model.User;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -35,6 +36,7 @@ public class Order {
 
     @OneToOne(cascade = CascadeType.ALL)
     @JoinColumn(name = "delivery_address_id")
+    @JsonManagedReference
     private DeliveryAddress deliveryAddress;
 
 

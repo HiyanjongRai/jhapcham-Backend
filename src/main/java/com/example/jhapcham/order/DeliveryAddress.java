@@ -1,5 +1,6 @@
 package com.example.jhapcham.order;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,5 +22,6 @@ public class DeliveryAddress {
     private Double longitude;
 
     @OneToOne(mappedBy = "deliveryAddress")
+    @JsonIgnore
     private Order order;
 }
