@@ -1,22 +1,19 @@
 package com.example.jhapcham.wishlist;
 
-import com.example.jhapcham.wishlist.WishlistItem;
+import com.example.jhapcham.product.Product;
+import com.example.jhapcham.user.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 
-public interface WishlistRepository extends JpaRepository<WishlistItem, Long> {
+public interface WishlistRepository extends JpaRepository<Wishlist, Long> {
 
-    boolean existsByUserIdAndProductId(Long userId, Long productId);
+    List<Wishlist> findByUser(User user);
 
-    List<WishlistItem> findAllByUserId(Long userId);
+    Optional<Wishlist> findByUserAndProduct(User user, Product product);
 
-    @Transactional
-    @Modifying
-    @Query("DELETE FROM WishlistItem w WHERE w.user.id = :userId AND w.product.id = :productId")
-    void deleteByUserIdAndProductId(Long userId, Long productId);
+    void deleteByUserAndProduct(User user, Product product);
 
+    boolean existsByUserAndProduct(User user, Product product);
 }

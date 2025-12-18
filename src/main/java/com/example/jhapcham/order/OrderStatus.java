@@ -1,9 +1,10 @@
 package com.example.jhapcham.order;
 
 public enum OrderStatus {
-    PENDING,
+    NEW,
     PROCESSING,
-    SHIPPED,
+    SHIPPED_TO_BRANCH,
+    OUT_FOR_DELIVERY,
     DELIVERED,
-    CANCELLED,
+    CANCELED
 }

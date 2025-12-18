@@ -1,0 +1,28 @@
+package com.example.jhapcham.order;
+
+import lombok.Builder;
+import lombok.Data;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Data
+@Builder
+public class OrderListItemDTO {
+
+    private Long orderId;
+    private OrderStatus status;
+    private BigDecimal grandTotal;
+    private Integer totalItems;
+    private LocalDateTime createdAt;
+    private String storeName;      // for seller view
+    private String customerName;
+
+    private BigDecimal sellerGrossAmount;
+    private BigDecimal sellerShippingCharge;
+    private BigDecimal sellerNetAmount;
+    private DeliveryBranch deliveredBranch;
+
+
+
+}

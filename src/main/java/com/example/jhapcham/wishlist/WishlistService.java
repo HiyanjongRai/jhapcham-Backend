@@ -1,16 +1,17 @@
 package com.example.jhapcham.wishlist;
 
-import com.example.jhapcham.product.model.Product;
-import com.example.jhapcham.product.model.repository.ProductRepository;
+import com.example.jhapcham.product.Product;
+import com.example.jhapcham.product.ProductRepository;
+import com.example.jhapcham.product.ProductResponseDTO;
+import com.example.jhapcham.product.ProductService;
 import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.repository.UserRepository;
+import com.example.jhapcham.user.model.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -19,83 +20,69 @@ public class WishlistService {
     private final WishlistRepository wishlistRepository;
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
-
-    public void add(Long userId, Long productId) {
-
-        boolean exists = wishlistRepository.existsByUserIdAndProductId(userId, productId);
-        if (exists) return;
-
-        User user = userRepository.findById(userId).orElseThrow();
-        Product product = productRepository.findById(productId).orElseThrow();
-
-        WishlistItem item = WishlistItem.builder()
-                .user(user)
-                .product(product)
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        wishlistRepository.save(item);
-    }
+    private final ProductService productService;
 
     @Transactional
-    public void remove(Long userId, Long productId) {
-        wishlistRepository.deleteByUserIdAndProductId(userId, productId);
-    }
+    public void addToWishlist(Long userId, Long productId) {
 
-    public List<WishlistItemDTO> getAll(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        return wishlistRepository.findAllByUserId(userId)
-                .stream()
-                .map(this::toDTO)
-                .collect(Collectors.toList());
-    }
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
 
-    private WishlistItemDTO toDTO(WishlistItem item) {
-
-        Product p = item.getProduct();
-
-        WishlistItemDTO dto = new WishlistItemDTO();
-
-        dto.setId(item.getId());
-        dto.setProductId(p.getId());
-
-        dto.setName(p.getName());
-        dto.setImagePath(p.getImagePath());
-        dto.setPrice(p.getPrice());
-
-        dto.setShortDescription(p.getShortDescription());
-        dto.setRating(p.getRating());
-        dto.setViews(p.getViews());
-
-        dto.setDiscountPercent(p.getDiscountPercent());
-        dto.setSalePrice(p.getSalePrice());
-
-
-
-        return dto;
-    }
-    @Transactional
-    public boolean toggle(Long userId, Long productId) {
-
-        boolean exists = wishlistRepository.existsByUserIdAndProductId(userId, productId);
-
-        if (exists) {
-            wishlistRepository.deleteByUserIdAndProductId(userId, productId);
-            return false;
+        if (wishlistRepository.existsByUserAndProduct(user, product)) {
+            return;
         }
 
-        User user = userRepository.findById(userId).orElseThrow();
-        Product product = productRepository.findById(productId).orElseThrow();
-
-        WishlistItem item = WishlistItem.builder()
+        Wishlist wishlist = Wishlist.builder()
                 .user(user)
                 .product(product)
-                .createdAt(LocalDateTime.now())
                 .build();
 
-        wishlistRepository.save(item);
-        return true;
+        wishlistRepository.save(wishlist);
     }
 
+    @Transactional
+    public void removeFromWishlist(Long userId, Long productId) {
 
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        wishlistRepository.deleteByUserAndProduct(user, product);
+    }
+
+    public List<ProductResponseDTO> getWishlist(Long userId) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        List<Wishlist> items = wishlistRepository.findByUser(user);
+
+        List<ProductResponseDTO> result = new ArrayList<>();
+        for (Wishlist w : items) {
+            result.add(productService.listAllActiveProducts()
+                    .stream()
+                    .filter(p -> p.getId().equals(w.getProduct().getId()))
+                    .findFirst()
+                    .orElse(null));
+        }
+
+        result.removeIf(p -> p == null);
+        return result;
+    }
+
+    public boolean isInWishlist(Long userId, Long productId) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        return wishlistRepository.existsByUserAndProduct(user, product);
+    }
 }

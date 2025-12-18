@@ -1,47 +1,66 @@
-package com.example.jhapcham.cart;
+package com.example.jhapcham.Cart;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.Map;
-
 @RestController
 @RequestMapping("/api/cart")
 @RequiredArgsConstructor
 public class CartController {
-
     private final CartService cartService;
 
-    @PostMapping("/add")
-    public ResponseEntity<?> add(@RequestBody CartAddRequest req) {
-        cartService.addToCart(req.getUserId(), req.getProductId(), req.getQuantity(), req.getColor(), req.getStorage());
-        return ResponseEntity.ok(Map.of("message", "Item added"));
+    @PostMapping("/{userId}/add/{productId}")
+    public ResponseEntity<?> addToCart(
+            @PathVariable Long userId,
+            @PathVariable Long productId,
+            @RequestBody AddToCartRequestDTO dto
+    ) {
+        try {
+            CartResponseDTO cart =
+                    cartService.addToCart(userId, productId, dto);
+
+            return ResponseEntity.ok(cart);
+
+        } catch (RuntimeException e) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(e.getMessage());
+
+        } catch (Exception e) {
+            return ResponseEntity
+                    .status(500)
+                    .body("Unable to add item to cart");
+        }
+
+
     }
 
-    @GetMapping
-    public ResponseEntity<?> get(@RequestParam Long userId) {
-        List<CartItemDto> cart = cartService.getCartItems(userId);
-        double total = cart.stream().mapToDouble(i -> i.getLineTotal()).sum();
-        return ResponseEntity.ok(Map.of("items", cart, "total", total));
+    @PutMapping("/{userId}/update/{cartItemId}")
+    public ResponseEntity<?> updateQuantity(
+            @PathVariable Long userId,
+            @PathVariable Long cartItemId,
+            @RequestParam Integer qty
+    ) {
+        try {
+            CartResponseDTO cart = cartService.updateQuantity(userId, cartItemId, qty);
+            return ResponseEntity.ok(cart);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Failed to update cart item");
+        }
     }
 
-    @PatchMapping("/quantity")
-    public ResponseEntity<?> update(@RequestBody CartAddRequest req) {
-        cartService.updateQuantity(req.getUserId(), req.getProductId(), req.getQuantity(), req.getColor(), req.getStorage());
-        return ResponseEntity.ok(Map.of("message", "Quantity updated"));
+    @GetMapping("/{userId}")
+    public ResponseEntity<?> getCart(@PathVariable Long userId) {
+        try {
+            CartResponseDTO cart = cartService.getCart(userId);
+            return ResponseEntity.ok(cart);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Failed to fetch cart");
+        }
     }
 
-    @DeleteMapping("/remove")
-    public ResponseEntity<?> remove(@RequestBody CartAddRequest req) {
-        cartService.removeCartItem(req.getUserId(), req.getProductId(), req.getColor(), req.getStorage());
-        return ResponseEntity.ok(Map.of("message", "Item removed"));
-    }
-
-    @DeleteMapping("/clear")
-    public ResponseEntity<?> clear(@RequestParam Long userId) {
-        cartService.clearCart(userId);
-        return ResponseEntity.ok(Map.of("message", "Cart cleared"));
-    }
 }

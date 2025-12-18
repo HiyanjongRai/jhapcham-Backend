@@ -8,43 +8,40 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**")
-                .allowedOrigins(
-                        "http://localhost:3000",
-                        "http://127.0.0.1:5500"
-                )
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*");
-    }
+        @Override
+        public void addCorsMappings(CorsRegistry registry) {
+                registry.addMapping("/**")
+                                .allowedOrigins(
+                                                "http://localhost:3000",
+                                                "http://127.0.0.1:5500")
+                                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                                .allowedHeaders("*");
+        }
 
-    @Override
-    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        @Override
+        public void addResourceHandlers(ResourceHandlerRegistry registry) {
 
-        // FIXED PRODUCT IMAGES PATH
-        registry.addResourceHandler("/product-images/**")
-                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/products/");
+                String baseDir = "file:H:/Project/Ecomm/jhapcham/uploads/";
 
-        registry.addResourceHandler("/uploads/product-images/**")
-                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/products/");
+                // single generic handler for everything stored by FileStorageService
+                registry.addResourceHandler("/uploads/**")
+                                .addResourceLocations(baseDir);
 
-        // CUSTOMER PROFILE IMAGES
-        registry.addResourceHandler("/customer-profile/**")
-                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/customer-profile/");
+                // Mapping "product-images" request path to the actual "products" folder on disk
+                registry.addResourceHandler("/product-images/**")
+                                .addResourceLocations(baseDir + "product-images/");
 
-        registry.addResourceHandler("/uploads/customer-profile/**")
-                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/customer-profile/");
+                registry.addResourceHandler("/products/**")
+                                .addResourceLocations(baseDir + "products/");
 
-        // REVIEW IMAGES
-        registry.addResourceHandler("/review-images/**")
-                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/review-images/");
+                registry.addResourceHandler("/customer-profile/**")
+                                .addResourceLocations(baseDir + "customer-profile/");
 
-        registry.addResourceHandler("/uploads/review-images/**")
-                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/review-images/");
+                registry.addResourceHandler("/review-images/**")
+                                .addResourceLocations(baseDir + "review-images/");
 
-        // Serve seller logos
-        registry.addResourceHandler("/seller-logos/**")
-                .addResourceLocations("file:H:/Project/Ecomm/jhapcham/uploads/seller_logos/");
-    }
+                registry.addResourceHandler("/seller_logos/**")
+                                .addResourceLocations(baseDir + "seller_logos/");
+        }
+
 }

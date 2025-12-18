@@ -1,22 +1,20 @@
 package com.example.jhapcham.order;
 
-import lombok.*;
+import lombok.Builder;
+import lombok.Data;
 
-@Getter @Setter
-@NoArgsConstructor @AllArgsConstructor
+import java.math.BigDecimal;
+
+@Data
 @Builder
 public class OrderItemDTO {
+
     private Long productId;
-    private String productName;
-    private String imagePath;
-    private Double unitPrice;
-    private int quantity;
-    private Double lineTotal;
-    private String selectedColor;
-    private String selectedStorage;
-    private String categoryName;
-    private String brandName;
-
-
-
+    private String name;
+    private String brand;
+    private String image;
+    private Integer quantity;
+    private BigDecimal pricePerUnit;
+    private BigDecimal totalPrice;
 }
+

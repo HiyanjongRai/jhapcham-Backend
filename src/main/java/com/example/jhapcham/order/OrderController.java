@@ -1,124 +1,153 @@
 package com.example.jhapcham.order;
 
+import com.example.jhapcham.Error.ErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/orders")
-@CrossOrigin(origins = "*")
+@RequestMapping("/api/orders")
 @RequiredArgsConstructor
 public class OrderController {
 
     private final OrderService orderService;
-    private final OrderTrackingService trackingService;
-    private final OrderRepository orderRepo;
 
-    // CREATE ORDER FROM CHECKOUT
-    @PostMapping("/from-checkout/{checkoutId}")
-    public ResponseEntity<?> createOrderFromCheckout(@PathVariable Long checkoutId) {
-        return ResponseEntity.ok(orderService.createOrderFromCheckout(checkoutId));
+    @PostMapping("/preview")
+    public ResponseEntity<?> preview(@RequestBody CheckoutRequestDTO dto) {
+        try {
+            return ResponseEntity.ok(orderService.previewOrder(dto));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Preview failed: " + e.getMessage()));
+        }
     }
 
-    // USER ORDERS
+    @PostMapping("/cart")
+    public ResponseEntity<?> placeFromCart(@RequestBody CartCheckoutRequestDTO dto) {
+        try {
+            return ResponseEntity.ok(orderService.placeOrderFromCart(dto));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Cart checkout failed"));
+        }
+    }
+
+    @PostMapping
+    public ResponseEntity<?> place(@RequestBody CheckoutRequestDTO dto) {
+        try {
+            return ResponseEntity.ok(orderService.placeOrder(dto));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Placement failed: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/{orderId}")
+    public ResponseEntity<?> getOrder(@PathVariable Long orderId) {
+        try {
+            return ResponseEntity.ok(orderService.getOrder(orderId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Loading failed: " + e.getMessage()));
+        }
+    }
+
     @GetMapping("/user/{userId}")
     public ResponseEntity<?> getUserOrders(@PathVariable Long userId) {
-        return ResponseEntity.ok(orderRepo.findTop200ByCustomer_IdOrderByCreatedAtDesc(userId));
+        try {
+            return ResponseEntity.ok(orderService.getOrdersForUser(userId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Loading failed: " + e.getMessage()));
+        }
     }
 
-    // SELLER ORDERS
+    @GetMapping("/user/{userId}/list")
+    public ResponseEntity<?> getUserOrdersSimple(@PathVariable Long userId) {
+        try {
+            return ResponseEntity.ok(orderService.getOrdersForUserSimple(userId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Loading failed: " + e.getMessage()));
+        }
+    }
+
     @GetMapping("/seller/{sellerId}")
     public ResponseEntity<?> getSellerOrders(@PathVariable Long sellerId) {
-        return ResponseEntity.ok(orderRepo.findSellerOrders(sellerId));
-    }
-
-    // ADMIN ORDERS
-    @GetMapping("/admin/all")
-    public ResponseEntity<?> getAdminAllOrders() {
-        return ResponseEntity.ok(orderRepo.findAll());
-    }
-
-    // GET ONE ORDER
-    @GetMapping("/{orderId}")
-    public ResponseEntity<?> getOne(@PathVariable Long orderId) {
-        return ResponseEntity.ok(
-                orderRepo.findById(orderId)
-                        .orElseThrow(() -> new RuntimeException("Order not found"))
-        );
-    }
-
-    // UPDATE STATUS
-    @PatchMapping("/{orderId}/status")
-    public ResponseEntity<?> updateStatus(
-            @PathVariable Long orderId,
-            @RequestParam OrderStatus status
-    ) {
-        return ResponseEntity.ok(orderService.updateStatus(orderId, status));
-    }
-
-    // ADD TRACKING
-    @PostMapping("/{orderId}/tracking")
-    public ResponseEntity<?> addTrackingStage(
-            @PathVariable Long orderId,
-            @RequestParam OrderTrackingStage stage,
-            @RequestParam(required = false) BranchName branch
-    ) {
-
-        String message = switch (stage) {
-            case PROCESSING -> "Your order is now being processed";
-            case SHIPPED -> "Your order was sent to branch";
-            case ARRIVED_AT_BRANCH -> "Your order arrived at branch";
-            case OUT_FOR_DELIVERY -> "Your order is out for delivery";
-            case DELIVERED -> "Your order has been delivered";
-            case CANCELLED -> "Your order has been cancelled";
-        };
-
-        trackingService.addTracking(orderId, stage, message, branch);
-
-        return ResponseEntity.ok("Tracking stage added");
-    }
-
-    // TRACKING TIMELINE
-    @GetMapping("/{orderId}/tracking")
-    public ResponseEntity<?> getTracking(@PathVariable Long orderId) {
-        return ResponseEntity.ok(trackingService.getOrderTracking(orderId));
-    }
-
-    // USER TRACKING LIST
-    @GetMapping("/tracking/user/{userId}")
-    public ResponseEntity<?> getTrackingForUser(@PathVariable Long userId) {
-        return ResponseEntity.ok(trackingService.getAllTrackingForUser(userId));
-    }
-
-    // TRACKING DETAILS
-    @GetMapping("/tracking/details/{trackingId}")
-    public ResponseEntity<?> getTrackingDetails(@PathVariable Long trackingId) {
-        return ResponseEntity.ok(trackingService.getTrackingById(trackingId));
-    }
-
-
-    // CART CHECKOUT ORDER
-    @PostMapping("/checkout")
-    public ResponseEntity<?> placeOrderFromCart(
-            @RequestParam Long userId,
-            @RequestParam(required = false) String fullAddress,
-            @RequestParam(required = false) Double lat,
-            @RequestParam(required = false) Double lng
-    ) {
-
-        boolean hasAddress = fullAddress != null && !fullAddress.isBlank();
-        boolean hasCoords = lat != null && lng != null;
-
-        if (!hasAddress && !hasCoords) {
-            return ResponseEntity.badRequest().body("Provide address or coordinates");
+        try {
+            return ResponseEntity.ok(orderService.getOrdersForSeller(sellerId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Loading failed: " + e.getMessage()));
         }
+    }
 
-        return orderService.placeOrderFromCart(
-                userId,
-                fullAddress,
-                lat,
-                lng
-        );
+    @PutMapping("/seller/{sellerId}/assign/{orderId}")
+    public ResponseEntity<?> assignBranch(
+            @PathVariable Long sellerId,
+            @PathVariable Long orderId,
+            @RequestBody AssignBranchDTO dto) {
+        try {
+            return ResponseEntity.ok(orderService.sellerAssignBranch(orderId, sellerId, dto));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Branch update failed: " + e.getMessage()));
+        }
+    }
+
+    @PutMapping("/branch/{orderId}/status")
+    public ResponseEntity<?> branchUpdateStatus(
+            @PathVariable Long orderId,
+            @RequestParam DeliveryBranch branch,
+            @RequestParam OrderStatus nextStatus) {
+        return ResponseEntity.ok(
+                orderService.branchUpdateStatus(orderId, branch.name(), nextStatus.name()));
+    }
+
+    @PutMapping("/user/{userId}/cancel/{orderId}")
+    public ResponseEntity<?> customerCancel(
+            @PathVariable Long userId,
+            @PathVariable Long orderId) {
+        try {
+            return ResponseEntity.ok(orderService.customerCancelOrder(orderId, userId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Cancel failed: " + e.getMessage()));
+        }
+    }
+
+    @PutMapping("/seller/{sellerId}/process/{orderId}")
+    public ResponseEntity<?> processOrder(
+            @PathVariable Long sellerId,
+            @PathVariable Long orderId) {
+        try {
+            return ResponseEntity.ok(orderService.sellerProcessOrder(orderId, sellerId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Processing failed: " + e.getMessage()));
+        }
+    }
+
+    @PutMapping("/seller/{sellerId}/cancel/{orderId}")
+    public ResponseEntity<?> sellerCancel(
+            @PathVariable Long sellerId,
+            @PathVariable Long orderId) {
+        try {
+            return ResponseEntity.ok(orderService.sellerCancelOrder(orderId, sellerId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Cancel failed: " + e.getMessage()));
+        }
     }
 }
-

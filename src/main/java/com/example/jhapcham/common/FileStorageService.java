@@ -19,7 +19,7 @@ public class FileStorageService {
     ) {
         this.root = Path.of(uploadDir).toAbsolutePath().normalize();
         try {
-            Files.createDirectories(this.root); // ensure base dir exists
+            Files.createDirectories(this.root);
             System.out.println("[FileStorage] Root dir = " + this.root);
         } catch (Exception e) {
             throw new RuntimeException("Cannot create upload root: " + this.root, e);
@@ -27,26 +27,30 @@ public class FileStorageService {
     }
 
     /**
-     * Save under {root}/{subdir}/{fileName} exactly as provided
-     * @param file MultipartFile
-     * @param subdir folder name, e.g., seller_docs or seller_logos
-     * @param fileName desired file name, e.g., id_5.pdf
-     * @return relative path for DB: subdir/fileName
+     * Save under {root}/{subdir}/{fileName}
+     * Example for seller docs
+     * root = H:/Project/Ecomm/jhapcham/uploads
+     * subdir = seller_docs
+     * final path = H:/Project/Ecomm/jhapcham/uploads/seller_docs/fileName
+     *
+     * @return relative path like seller_docs/fileName for storing in DB
      */
     public String save(MultipartFile file, String subdir, String fileName) {
-        if (file == null || file.isEmpty()) return null;
+        if (file == null || file.isEmpty()) {
+            return null;
+        }
 
         try {
             Path dir = this.root.resolve(subdir).normalize();
             Files.createDirectories(dir);
 
             String original = file.getOriginalFilename();
-            if (original == null || original.isBlank()) original = "file.bin";
+            if (original == null || original.isBlank()) {
+                original = "file.bin";
+            }
 
-            // Remove illegal characters from fileName
             fileName = fileName.replaceAll("[\\\\/:*?\"<>|]", "_");
 
-            // Ensure the extension is preserved
             int dot = original.lastIndexOf('.');
             if (dot >= 0 && !fileName.contains(".")) {
                 fileName = fileName + original.substring(dot);
@@ -59,11 +63,12 @@ public class FileStorageService {
                 Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
             }
 
-            // Return relative path for DB
             return subdir + "/" + fileName;
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to store file: " + e.getMessage(), e);
         }
     }
+
+
 }

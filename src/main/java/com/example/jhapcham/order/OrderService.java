@@ -1,258 +1,513 @@
 package com.example.jhapcham.order;
 
-import com.example.jhapcham.Checkout.CheckoutSession;
-import com.example.jhapcham.Checkout.CheckoutSessionRepository;
-import com.example.jhapcham.Checkout.PaymentMethod;
-import com.example.jhapcham.cart.CartItem;
-import com.example.jhapcham.cart.CartItemRepository;
-import com.example.jhapcham.product.model.Product;
-import com.example.jhapcham.product.model.repository.ProductRepository;
+import com.example.jhapcham.Cart.CartItem;
+import com.example.jhapcham.Cart.CartItemRepository;
+import com.example.jhapcham.product.Product;
+import com.example.jhapcham.product.ProductRepository;
+import com.example.jhapcham.seller.SellerProfile;
+import com.example.jhapcham.seller.SellerProfileRepository;
 import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.repository.UserRepository;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
+import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class OrderService {
-
-    @PersistenceContext
-    private EntityManager em;
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
-    private final OrderStatusHistoryRepository historyRepository;
-    private final CheckoutSessionRepository checkoutRepo;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final CartItemRepository cartItemRepository;
+    private final SellerProfileRepository sellerProfileRepository;
 
-    // FROM CHECKOUT
-    public Order createOrderFromCheckout(Long checkoutId) {
+    // Injected specialized services
+    private final OrderStockService orderStockService;
+    private final OrderAccountingService orderAccountingService;
+    private final OrderStatusService orderStatusService;
 
-        CheckoutSession checkout = checkoutRepo.findById(checkoutId)
-                .orElseThrow(() -> new IllegalStateException("Checkout not found"));
+    // =========================
+    // PREVIEW ORDER
+    // =========================
+    @Transactional
+    public OrderPreviewDTO previewOrder(CheckoutRequestDTO dto) {
+        validateItems(dto);
 
-        if (checkout.getPaymentMethod() == PaymentMethod.ONLINE && !checkout.getIsPaid()) {
-            throw new IllegalStateException("Checkout not paid");
+        // Group items by Seller to simulate the split
+        Map<Long, List<CheckoutItemDTO>> itemsBySeller = groupItemsBySeller(dto.getItems());
+
+        BigDecimal totalItemsCost = BigDecimal.ZERO;
+        BigDecimal totalShipping = BigDecimal.ZERO;
+        BigDecimal totalDiscount = BigDecimal.ZERO;
+        BigDecimal totalGrand = BigDecimal.ZERO;
+        List<OrderItemResponseDTO> allItemResponses = new ArrayList<>();
+
+        for (List<CheckoutItemDTO> sellerItems : itemsBySeller.values()) {
+            CheckoutComputationResult data = computeForItems(sellerItems, dto.getShippingLocation());
+
+            totalItemsCost = totalItemsCost.add(data.itemsTotal);
+            totalShipping = totalShipping.add(data.shippingFee);
+            totalDiscount = totalDiscount.add(data.discountTotal);
+            totalGrand = totalGrand.add(data.grandTotal);
+            allItemResponses.addAll(data.itemResponses);
         }
 
-        User user = userRepository.findById(checkout.getUserId())
-                .orElseThrow(() -> new IllegalStateException("User not found"));
-
-        OrderStatus status = checkout.getPaymentMethod() == PaymentMethod.COD
-                ? OrderStatus.PENDING
-                : OrderStatus.PROCESSING;
-
-        Order order = Order.builder()
-                .customer(user)
-                .createdAt(LocalDateTime.now())
-                .status(status)
-                .totalPrice(checkout.getGrandTotal())
+        return OrderPreviewDTO.builder()
+                .items(allItemResponses)
+                .itemsTotal(totalItemsCost)
+                .shippingFee(totalShipping)
+                .discountTotal(totalDiscount)
+                .grandTotal(totalGrand)
+                .estimatedDelivery(estimateDelivery(dto.getShippingLocation()))
                 .build();
+    }
 
-        checkout.getItems().forEach(snap -> {
+    // =========================
+    // PLACE ORDER
+    // =========================
+    @Transactional
+    public List<OrderSummaryDTO> placeOrder(CheckoutRequestDTO dto) {
+        validateCustomerFields(dto);
+        validateItems(dto);
 
-            Product product = productRepository.findById(snap.getProductId())
-                    .orElseThrow();
+        User user = dto.getUserId() != null
+                ? userRepository.findById(dto.getUserId()).orElse(null)
+                : null;
 
-            if (product.getStock() < snap.getQuantity()) {
-                throw new IllegalStateException("Stock not enough for " + product.getName());
-            }
+        PaymentMethod paymentMethod = parsePaymentMethod(dto.getPaymentMethod());
 
-            product.setStock(product.getStock() - snap.getQuantity());
-            productRepository.save(product);
+        // Group items by Seller to split orders
+        Map<Long, List<CheckoutItemDTO>> itemsBySeller = groupItemsBySeller(dto.getItems());
 
-            OrderItem item = OrderItem.builder()
-                    .order(order)
-                    .product(product)
-                    .quantity(snap.getQuantity())
-                    .unitPrice(snap.getUnitPrice())
-                    .selectedColor(snap.getSelectedColor())
-                    .selectedStorage(snap.getSelectedStorage())
+        List<OrderSummaryDTO> summaries = new ArrayList<>();
+
+        for (Map.Entry<Long, List<CheckoutItemDTO>> entry : itemsBySeller.entrySet()) {
+            List<CheckoutItemDTO> sellerItems = entry.getValue();
+
+            // Calculate for this specific seller's order
+            CheckoutComputationResult data = computeForItems(sellerItems, dto.getShippingLocation());
+
+            Order order = Order.builder()
+                    .user(user)
+                    .customerName(dto.getFullName())
+                    .customerPhone(dto.getPhone())
+                    .customerEmail(dto.getEmail())
+                    .shippingAddress(dto.getAddress())
+                    .shippingLocation(dto.getShippingLocation())
+                    .paymentMethod(paymentMethod)
+                    .status(OrderStatus.NEW)
+                    .itemsTotal(data.itemsTotal)
+                    .shippingFee(data.shippingFee)
+                    .discountTotal(data.discountTotal)
+                    .grandTotal(data.grandTotal)
+                    .createdAt(LocalDateTime.now())
+                    // Initialize accounting fields to ZERO
+                    .sellerGrossAmount(BigDecimal.ZERO)
+                    .sellerShippingCharge(BigDecimal.ZERO)
+                    .sellerNetAmount(BigDecimal.ZERO)
+                    .sellerAccounted(false)
                     .build();
 
-            order.addItem(item);
-        });
+            orderRepository.save(order);
 
-        Order saved = orderRepository.save(order);
+            for (OrderItemResponseDTO r : data.itemResponses) {
+                Product product = data.productById.get(r.getProductId());
 
-        historyRepository.save(
-                OrderStatusHistory.builder()
-                        .order(saved)
-                        .status(saved.getStatus())
-                        .changedAt(LocalDateTime.now())
-                        .build()
-        );
+                // Use specialized stock service
+                orderStockService.deductStock(product, r.getQuantity());
 
-        return saved;
-
-
-    }
-    // SINGLE PRODUCT ORDER
-    public ResponseEntity<?> placeOrderSingle(Long userId, Long productId, int qty,
-                                              String fullAddress, Double lat, Double lng) {
-
-        User user = userRepository.findById(userId).orElse(null);
-        Product p = productRepository.findById(productId).orElse(null);
-
-        if (user == null || p == null || p.getStock() < qty) {
-            return ResponseEntity.badRequest().body("Invalid request");
-        }
-
-        p.setStock(p.getStock() - qty);
-        productRepository.save(p);
-
-        Order order = Order.builder()
-                .customer(user)
-                .status(OrderStatus.PENDING)
-                .totalPrice(p.getPrice() * qty)
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        OrderItem item = OrderItem.builder()
-                .order(order)
-                .product(p)
-                .quantity(qty)
-                .unitPrice(p.getPrice())
-                .build();
-
-        order.addItem(item);
-
-        Order saved = orderRepository.save(order);
-
-        historyRepository.save(
-                OrderStatusHistory.builder()
-                        .order(saved)
-                        .status(OrderStatus.PENDING)
-                        .changedAt(LocalDateTime.now())
-                        .build()
-        );
-
-        return ResponseEntity.ok(saved);
-    }
-
-    // CART ORDER
-    public ResponseEntity<?> placeOrderFromCart(Long userId,
-                                                String fullAddress,
-                                                Double lat,
-                                                Double lng) {
-
-        User user = userRepository.findById(userId).orElse(null);
-        if (user == null) {
-            return ResponseEntity.badRequest().body("User not found");
-        }
-
-        List<CartItem> cart = cartItemRepository.findByUser(user);
-        if (cart.isEmpty()) {
-            return ResponseEntity.badRequest().body("Cart empty");
-        }
-
-        Order order = Order.builder()
-                .customer(user)
-                .status(OrderStatus.PENDING)
-                .createdAt(LocalDateTime.now())
-                .totalPrice(0.0)
-                .build();
-
-        double total = 0.0;
-
-        for (CartItem ci : cart) {
-            Product p = ci.getProduct();
-
-            if (p.getStock() < ci.getQuantity()) {
-                return ResponseEntity.badRequest().body("Stock issue");
-            }
-
-            p.setStock(p.getStock() - ci.getQuantity());
-            productRepository.save(p);
-
-            OrderItem item = OrderItem.builder()
-                    .order(order)
-                    .product(p)
-                    .quantity(ci.getQuantity())
-                    .unitPrice(p.getPrice())
-                    .selectedColor(ci.getSelectedColor())
-                    .selectedStorage(ci.getSelectedStorage())
-                    .build();
-
-            order.addItem(item);
-            total += item.lineTotal();
-        }
-
-        order.setTotalPrice(total);
-
-        Order saved = orderRepository.save(order);
-
-        cartItemRepository.deleteAll(cart);
-
-        historyRepository.save(
-                OrderStatusHistory.builder()
-                        .order(saved)
-                        .status(OrderStatus.PENDING)
-                        .changedAt(LocalDateTime.now())
-                        .build()
-        );
-
-        return ResponseEntity.ok(saved);
-    }
-
-    // USER ORDERS
-    public ResponseEntity<?> getUserOrders(Long userId) {
-        return ResponseEntity.ok(orderRepository.findByCustomer_Id(userId));
-    }
-
-    // SELLER ORDERS
-    public ResponseEntity<?> getSellerOrders(Long sellerId) {
-        return ResponseEntity.ok(orderRepository.findSellerOrders(sellerId));
-    }
-
-    // GET ONE
-    public ResponseEntity<?> getOne(Long orderId) {
-        return ResponseEntity.ok(
-                orderRepository.findById(orderId)
-                        .orElseThrow(() -> new IllegalStateException("Order not found"))
-        );
-    }
-
-    // UPDATE STATUS
-    public ResponseEntity<?> updateStatus(Long orderId, OrderStatus status) {
-
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalStateException("Order not found"));
-
-        // If cancelling, restore product stock
-        if (status == OrderStatus.CANCELLED && order.getStatus() != OrderStatus.CANCELLED) {
-
-            for (OrderItem item : order.getItems()) {
-                Product product = item.getProduct();
-                product.setStock(product.getStock() + item.getQuantity());
-                productRepository.save(product);
-            }
-        }
-
-        order.setStatus(status);
-        orderRepository.save(order);
-
-        historyRepository.save(
-                OrderStatusHistory.builder()
+                OrderItem item = OrderItem.builder()
                         .order(order)
-                        .status(status)
-                        .changedAt(LocalDateTime.now())
-                        .build()
-        );
+                        .product(product)
+                        .productIdSnapshot(product.getId())
+                        .productNameSnapshot(product.getName())
+                        .brandSnapshot(product.getBrand())
+                        .imagePathSnapshot(r.getImagePath())
+                        .quantity(r.getQuantity())
+                        .unitPrice(r.getUnitPrice())
+                        .lineTotal(r.getLineTotal())
+                        .selectedColorSnapshot(r.getSelectedColor())
+                        .selectedStorageSnapshot(r.getSelectedStorage())
+                        .manufactureDateSnapshot(product.getManufactureDate())
+                        .expiryDateSnapshot(product.getExpiryDate())
+                        .productDescriptionSnapshot(product.getDescription())
+                        .specificationSnapshot(product.getSpecification())
+                        .featuresSnapshot(product.getFeatures())
+                        .storageSpecSnapshot(product.getStorageSpec())
+                        .colorOptionsSnapshot(product.getColorOptions())
+                        .build();
 
-        return ResponseEntity.ok(order);
+                orderItemRepository.save(item);
+                order.addItem(item);
+            }
+
+            orderRepository.save(order);
+            summaries.add(toSummaryDTO(order, mapItems(order)));
+            log.info("Order {} placed successfully for customer {}", order.getId(), dto.getFullName());
+        }
+
+        return summaries;
     }
 
+    @Transactional
+    public List<OrderSummaryDTO> placeOrderFromCart(CartCheckoutRequestDTO dto) {
+        User user = userRepository.findById(dto.getUserId())
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
+        List<CartItem> cartItems = cartItemRepository.findByUser(user);
+        if (cartItems.isEmpty()) {
+            throw new RuntimeException("Cart is empty");
+        }
 
+        List<CheckoutItemDTO> checkoutItems = new ArrayList<>();
+        for (CartItem c : cartItems) {
+            CheckoutItemDTO it = new CheckoutItemDTO();
+            it.setProductId(c.getProduct().getId());
+            it.setQuantity(c.getQuantity());
+            it.setSelectedColor(c.getSelectedColor());
+            it.setSelectedStorage(c.getSelectedStorage());
+            checkoutItems.add(it);
+        }
+
+        CheckoutRequestDTO checkout = new CheckoutRequestDTO();
+        checkout.setUserId(user.getId());
+        checkout.setFullName(dto.getFullName());
+        checkout.setPhone(dto.getPhone());
+        checkout.setEmail(dto.getEmail());
+        checkout.setAddress(dto.getAddress());
+        checkout.setShippingLocation(dto.getShippingLocation());
+        checkout.setPaymentMethod(dto.getPaymentMethod());
+        checkout.setItems(checkoutItems);
+
+        List<OrderSummaryDTO> summaries = placeOrder(checkout);
+        cartItemRepository.deleteAll(cartItems);
+
+        return summaries;
+    }
+
+    // =========================
+    // SELLER / BRANCH / CANCEL
+    // =========================
+
+    @Transactional
+    public OrderSummaryDTO sellerProcessOrder(Long orderId, Long sellerId) {
+        Order order = getOrderOrFail(orderId);
+        if (!sellerOwns(order, sellerId)) {
+            throw new RuntimeException("Seller not allowed");
+        }
+
+        orderStatusService.validateTransition(order.getStatus(), OrderStatus.PROCESSING);
+        order.setStatus(OrderStatus.PROCESSING);
+
+        orderRepository.save(order);
+        log.info("Seller {} moved order {} to PROCESSING", sellerId, orderId);
+        return toSummaryDTO(order, mapItems(order));
+    }
+
+    @Transactional
+    public OrderSummaryDTO sellerAssignBranch(Long orderId, Long sellerId, AssignBranchDTO dto) {
+        Order order = getOrderOrFail(orderId);
+        if (!sellerOwns(order, sellerId)) {
+            throw new RuntimeException("Seller not allowed");
+        }
+
+        orderStatusService.validateTransition(order.getStatus(), OrderStatus.SHIPPED_TO_BRANCH);
+
+        order.setAssignedBranch(DeliveryBranch.fromString(dto.getBranch()));
+        order.setStatus(OrderStatus.SHIPPED_TO_BRANCH);
+
+        orderRepository.save(order);
+        log.info("Seller {} assigned branch {} to order {}", sellerId, dto.getBranch(), orderId);
+        return toSummaryDTO(order, mapItems(order));
+    }
+
+    @Transactional
+    public OrderSummaryDTO branchUpdateStatus(Long orderId, String branchRaw, String nextStatusRaw) {
+        Order order = getOrderOrFail(orderId);
+        DeliveryBranch branch = DeliveryBranch.fromString(branchRaw);
+        OrderStatus next = OrderStatus.valueOf(nextStatusRaw.toUpperCase());
+
+        if (order.getAssignedBranch() == null) {
+            throw new RuntimeException("Branch not assigned");
+        }
+        if (order.getAssignedBranch() != branch) {
+            throw new RuntimeException("Branch mismatch");
+        }
+
+        orderStatusService.validateTransition(order.getStatus(), next);
+        order.setStatus(next);
+
+        if (next == OrderStatus.DELIVERED) {
+            order.setDeliveredBranch(branch);
+            // Use specialized accounting service
+            orderAccountingService.applySellerAccounting(order);
+        }
+
+        orderRepository.save(order);
+        log.info("Branch {} updated order {} status to {}", branchRaw, orderId, nextStatusRaw);
+        return toSummaryDTO(order, mapItems(order));
+    }
+
+    @Transactional
+    public OrderSummaryDTO sellerCancelOrder(Long orderId, Long sellerId) {
+        Order order = getOrderOrFail(orderId);
+        if (!sellerOwns(order, sellerId)) {
+            throw new RuntimeException("Seller not allowed");
+        }
+
+        if (!orderStatusService.canCancel(order.getStatus())) {
+            throw new RuntimeException("Cannot cancel order in status: " + order.getStatus());
+        }
+
+        order.setStatus(OrderStatus.CANCELED);
+        // Use specialized stock service
+        orderStockService.restoreStock(order);
+
+        orderRepository.save(order);
+        log.info("Seller {} cancelled order {}", sellerId, orderId);
+        return toSummaryDTO(order, mapItems(order));
+    }
+
+    @Transactional
+    public OrderSummaryDTO customerCancelOrder(Long orderId, Long userId) {
+        Order order = getOrderOrFail(orderId);
+        if (order.getUser() == null || !order.getUser().getId().equals(userId)) {
+            throw new RuntimeException("Customer not allowed");
+        }
+
+        if (!orderStatusService.canCancel(order.getStatus())) {
+            throw new RuntimeException("Order cannot be canceled now");
+        }
+
+        order.setStatus(OrderStatus.CANCELED);
+        // Use specialized stock service
+        orderStockService.restoreStock(order);
+
+        orderRepository.save(order);
+        log.info("Customer {} cancelled order {}", userId, orderId);
+        return toSummaryDTO(order, mapItems(order));
+    }
+
+    // =========================
+    // FETCH (STAYS MOSTLY THE SAME)
+    // =========================
+    public OrderSummaryDTO getOrder(Long orderId) {
+        Order order = getOrderOrFail(orderId);
+        return toSummaryDTO(order, mapItems(order));
+    }
+
+    public List<OrderSummaryDTO> getOrdersForUser(Long userId) {
+        List<Order> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        return orders.stream().map(o -> toSummaryDTO(o, mapItems(o))).collect(Collectors.toList());
+    }
+
+    public List<OrderListItemDTO> getOrdersForUserSimple(Long userId) {
+        List<Order> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        return orders.stream().map(o -> OrderListItemDTO.builder()
+                .orderId(o.getId())
+                .status(o.getStatus())
+                .grandTotal(o.getGrandTotal())
+                .totalItems(o.getItems().size())
+                .createdAt(o.getCreatedAt())
+                .build()).collect(Collectors.toList());
+    }
+
+    public List<OrderListItemDTO> getOrdersForSeller(Long sellerUserId) {
+        List<Order> orders = orderRepository.findOrdersBySeller(sellerUserId);
+        return orders.stream().map(o -> OrderListItemDTO.builder()
+                .orderId(o.getId())
+                .status(o.getStatus())
+                .grandTotal(o.getGrandTotal())
+                .totalItems(o.getItems().size())
+                .sellerGrossAmount(o.getSellerGrossAmount())
+                .sellerShippingCharge(o.getSellerShippingCharge())
+                .sellerNetAmount(o.getSellerNetAmount())
+                .deliveredBranch(o.getDeliveredBranch())
+                .createdAt(o.getCreatedAt())
+                .customerName(o.getCustomerName())
+                .build()).collect(Collectors.toList());
+    }
+
+    // =========================
+    // CORE COMPUTATION
+    // =========================
+
+    private Map<Long, List<CheckoutItemDTO>> groupItemsBySeller(List<CheckoutItemDTO> items) {
+        Set<Long> productIds = items.stream().map(CheckoutItemDTO::getProductId).collect(Collectors.toSet());
+        List<Product> products = productRepository.findAllById(productIds);
+        Map<Long, Product> productMap = products.stream().collect(Collectors.toMap(Product::getId, p -> p));
+
+        Map<Long, List<CheckoutItemDTO>> grouped = new HashMap<>();
+        for (CheckoutItemDTO item : items) {
+            Product p = productMap.get(item.getProductId());
+            if (p == null)
+                throw new RuntimeException("Product not found: " + item.getProductId());
+            Long sellerUserId = p.getSellerProfile().getUser().getId();
+            grouped.computeIfAbsent(sellerUserId, k -> new ArrayList<>()).add(item);
+        }
+        return grouped;
+    }
+
+    private CheckoutComputationResult computeForItems(List<CheckoutItemDTO> items, String shippingLocation) {
+        Map<Long, Integer> quantityMap = items.stream()
+                .collect(Collectors.toMap(CheckoutItemDTO::getProductId, CheckoutItemDTO::getQuantity));
+        List<Product> products = productRepository.findAllById(quantityMap.keySet());
+
+        if (products.size() != quantityMap.size())
+            throw new RuntimeException("Product missing");
+
+        BigDecimal itemsTotal = BigDecimal.ZERO;
+        List<OrderItemResponseDTO> responses = new ArrayList<>();
+        Map<Long, Product> productMap = new HashMap<>();
+
+        for (Product p : products) {
+            int qty = quantityMap.get(p.getId());
+            BigDecimal unitPrice = resolveEffectiveUnitPrice(p);
+            BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
+            itemsTotal = itemsTotal.add(lineTotal);
+
+            CheckoutItemDTO itemDto = items.stream().filter(i -> i.getProductId().equals(p.getId())).findFirst()
+                    .orElse(null);
+
+            responses.add(OrderItemResponseDTO.builder()
+                    .productId(p.getId())
+                    .name(p.getName())
+                    .brand(p.getBrand())
+                    .imagePath(p.getImages().isEmpty() ? null : p.getImages().get(0).getImagePath())
+                    .quantity(qty)
+                    .unitPrice(unitPrice)
+                    .lineTotal(lineTotal)
+                    .selectedColor(itemDto != null ? itemDto.getSelectedColor() : null)
+                    .selectedStorage(itemDto != null ? itemDto.getSelectedStorage() : null)
+                    .manufactureDate(p.getManufactureDate())
+                    .expiryDate(p.getExpiryDate())
+                    .build());
+            productMap.put(p.getId(), p);
+        }
+
+        // Use specialized accounting service for shipping
+        BigDecimal shippingFee = orderAccountingService.calculateShippingFee(products, itemsTotal, shippingLocation);
+        BigDecimal grandTotal = itemsTotal.add(shippingFee);
+
+        CheckoutComputationResult r = new CheckoutComputationResult();
+        r.itemsTotal = itemsTotal;
+        r.shippingFee = shippingFee;
+        r.discountTotal = BigDecimal.ZERO;
+        r.grandTotal = grandTotal;
+        r.itemResponses = responses;
+        r.productById = productMap;
+        return r;
+    }
+
+    // =========================
+    // HELPERS
+    // =========================
+
+    private List<OrderItemResponseDTO> mapItems(Order order) {
+        return order.getItems().stream().map(this::toItemResponse).collect(Collectors.toList());
+    }
+
+    private OrderItemResponseDTO toItemResponse(OrderItem i) {
+        return OrderItemResponseDTO.builder()
+                .productId(i.getProductIdSnapshot())
+                .name(i.getProductNameSnapshot())
+                .brand(i.getBrandSnapshot())
+                .imagePath(i.getImagePathSnapshot())
+                .quantity(i.getQuantity())
+                .unitPrice(i.getUnitPrice())
+                .lineTotal(i.getLineTotal())
+                .selectedColor(i.getSelectedColorSnapshot())
+                .selectedStorage(i.getSelectedStorageSnapshot())
+                .manufactureDate(i.getManufactureDateSnapshot())
+                .expiryDate(i.getExpiryDateSnapshot())
+                .description(i.getProductDescriptionSnapshot())
+                .specification(i.getSpecificationSnapshot())
+                .features(i.getFeaturesSnapshot())
+                .storageSpec(i.getStorageSpecSnapshot())
+                .colorOptions(i.getColorOptionsSnapshot())
+                .build();
+    }
+
+    private OrderSummaryDTO toSummaryDTO(Order o, List<OrderItemResponseDTO> items) {
+        return OrderSummaryDTO.builder()
+                .orderId(o.getId())
+                .status(o.getStatus())
+                .customerName(o.getCustomerName())
+                .customerPhone(o.getCustomerPhone())
+                .customerEmail(o.getCustomerEmail())
+                .shippingAddress(o.getShippingAddress())
+                .shippingLocation(o.getShippingLocation())
+                .paymentMethod(o.getPaymentMethod())
+                .paymentReference(o.getPaymentReference())
+                .itemsTotal(o.getItemsTotal())
+                .shippingFee(o.getShippingFee())
+                .discountTotal(o.getDiscountTotal())
+                .grandTotal(o.getGrandTotal())
+                .createdAt(o.getCreatedAt())
+                .items(items)
+                .customerProfileImagePath(o.getUser() != null ? o.getUser().getProfileImagePath() : null)
+                .build();
+    }
+
+    private BigDecimal resolveEffectiveUnitPrice(Product p) {
+        if (Boolean.TRUE.equals(p.getOnSale()) && p.getSalePrice() != null)
+            return p.getSalePrice();
+        return p.getPrice();
+    }
+
+    private Order getOrderOrFail(Long id) {
+        return orderRepository.findById(id).orElseThrow(() -> new RuntimeException("Order not found"));
+    }
+
+    private boolean sellerOwns(Order order, Long sellerId) {
+        return order.getItems().stream()
+                .allMatch(it -> it.getProduct().getSellerProfile().getUser().getId().equals(sellerId));
+    }
+
+    private String estimateDelivery(String zone) {
+        return "OUTSIDE".equalsIgnoreCase(zone) ? "3 to 5 days" : "1 to 2 days";
+    }
+
+    private PaymentMethod parsePaymentMethod(String raw) {
+        try {
+            return PaymentMethod.valueOf(raw.toUpperCase());
+        } catch (Exception e) {
+            return PaymentMethod.COD; // Fallback
+        }
+    }
+
+    private void validateItems(CheckoutRequestDTO dto) {
+        if (dto.getItems() == null || dto.getItems().isEmpty())
+            throw new RuntimeException("No items");
+    }
+
+    private void validateCustomerFields(CheckoutRequestDTO dto) {
+        if (dto.getFullName() == null || dto.getFullName().isBlank())
+            throw new RuntimeException("Name required");
+        if (dto.getPhone() == null || dto.getPhone().isBlank())
+            throw new RuntimeException("Phone required");
+        if (dto.getEmail() == null || dto.getEmail().isBlank())
+            throw new RuntimeException("Email required");
+        if (dto.getAddress() == null || dto.getAddress().isBlank())
+            throw new RuntimeException("Address required");
+    }
+
+    private static class CheckoutComputationResult {
+        BigDecimal itemsTotal;
+        BigDecimal shippingFee;
+        BigDecimal discountTotal;
+        BigDecimal grandTotal;
+        List<OrderItemResponseDTO> itemResponses;
+        Map<Long, Product> productById;
+    }
 }

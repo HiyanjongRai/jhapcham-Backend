@@ -1,15 +1,19 @@
 package com.example.jhapcham.message;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
 import java.util.List;
 
+@Repository
 public interface MessageRepository extends JpaRepository<Message, Long> {
+    List<Message> findByReceiverIdOrderByCreatedAtDesc(Long receiverId);
 
-    // Get full conversation between two users
-    List<Message> findBySenderIdAndReceiverIdOrReceiverIdAndSenderId(
-            Long senderId, Long receiverId, Long receiverId2, Long senderId2
-    );
+    List<Message> findBySenderIdOrderByCreatedAtDesc(Long senderId);
 
-    // Get all messages received by a user
-    List<Message> findByReceiverId(Long receiverId);
+    // Find conversation between two users
+    @Query("SELECT m FROM Message m WHERE (m.sender.id = :user1 AND m.receiver.id = :user2) OR (m.sender.id = :user2 AND m.receiver.id = :user1) ORDER BY m.createdAt DESC")
+    List<Message> findConversation(@Param("user1") Long user1, @Param("user2") Long user2);
 }

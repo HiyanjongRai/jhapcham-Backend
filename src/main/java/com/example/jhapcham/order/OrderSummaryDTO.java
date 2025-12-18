@@ -1,27 +1,41 @@
 package com.example.jhapcham.order;
 
-import com.example.jhapcham.order.OrderStatus;
-import lombok.*;
+import lombok.Builder;
+import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Getter @Setter
-@NoArgsConstructor @AllArgsConstructor
+@Data
 @Builder
 public class OrderSummaryDTO {
+
     private Long orderId;
-    private Long customerId;
-    private String customerImagePath;
-    private LocalDateTime createdAt;
     private OrderStatus status;
-    private Double totalPrice;
-    private List<OrderItemDTO> items;
+
     private String customerName;
+    private String customerPhone;
     private String customerEmail;
-    private String customerContact;
-    private String fullAddress;
-    private Double latitude;
-    private Double longitude;
+    private String shippingAddress;
+    private String shippingLocation;
+    private String customerProfileImagePath;
+
+    private PaymentMethod paymentMethod;
+    private String paymentReference;
+
+    private BigDecimal itemsTotal;
+    private BigDecimal shippingFee;
+    private BigDecimal discountTotal;
+    private BigDecimal grandTotal;
+
+    private LocalDateTime createdAt;
+
+    private List<OrderItemResponseDTO> items;
+
+    BigDecimal sellerGrossAmount;
+    BigDecimal sellerShippingCharge;
+    BigDecimal sellerNetAmount;
+    DeliveryBranch deliveredBranch;
 
 }

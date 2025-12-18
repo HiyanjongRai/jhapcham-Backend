@@ -1,82 +1,98 @@
 package com.example.jhapcham.message;
 
-import com.example.jhapcham.product.model.Product;
-import com.example.jhapcham.product.model.repository.ProductRepository;
+import com.example.jhapcham.product.Product;
+import com.example.jhapcham.product.ProductImage;
+import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.repository.UserRepository;
+import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class MessageService {
 
-    private final MessageRepository messageRepo;
-    private final UserRepository userRepo;
-    private final ProductRepository productRepo;  // inject product repo
+    private final MessageRepository messageRepository;
+    private final UserRepository userRepository;
+    private final ProductRepository productRepository;
 
-    public MessageResponseDTO sendMessage(MessageRequestDTO dto, String type) {
-
-        User sender = userRepo.findById(dto.getSenderId())
+    @Transactional
+    public MessageDTO sendMessage(Long senderId, SendMessageRequest request) {
+        User sender = userRepository.findById(senderId)
                 .orElseThrow(() -> new RuntimeException("Sender not found"));
-
-        User receiver = userRepo.findById(dto.getReceiverId())
+        User receiver = userRepository.findById(request.getReceiverId())
                 .orElseThrow(() -> new RuntimeException("Receiver not found"));
 
-        Message msg = Message.builder()
+        Product product = null;
+        if (request.getProductId() != null) {
+            product = productRepository.findById(request.getProductId())
+                    .orElse(null);
+        }
+
+        Message message = Message.builder()
                 .sender(sender)
                 .receiver(receiver)
-                .productId(dto.getProductId())
-                .content(dto.getContent())
-                .messageType(type)
-                .sentAt(LocalDateTime.now())
+                .content(request.getContent())
+                .product(product)
+                .isRead(false)
                 .build();
 
-        Message saved = messageRepo.save(msg);
-
-        return mapToDTO(saved);
+        Message savedMessage = messageRepository.save(message);
+        return convertToDTO(savedMessage);
     }
 
-    public List<MessageResponseDTO> getConversation(Long user1, Long user2) {
-        List<Message> messages = messageRepo.findBySenderIdAndReceiverIdOrReceiverIdAndSenderId(
-                user1, user2, user1, user2
-        );
-
-        return messages.stream().map(this::mapToDTO).toList();
+    public List<MessageDTO> getMessagesForUser(Long userId) {
+        // This gets ALL messages where user is receiver
+        List<Message> messages = messageRepository.findByReceiverIdOrderByCreatedAtDesc(userId);
+        return messages.stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
-    public List<MessageResponseDTO> getMessagesForReceiver(Long receiverId) {
-        List<Message> messages = messageRepo.findByReceiverId(receiverId);
-        return messages.stream().map(this::mapToDTO).toList();
+    public List<MessageDTO> getSentMessages(Long userId) {
+        List<Message> messages = messageRepository.findBySenderIdOrderByCreatedAtDesc(userId);
+        return messages.stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
-    private MessageResponseDTO mapToDTO(Message msg) {
-        String productName = null;
-        String productImage = null;
+    // Get conversation between two users
+    public List<MessageDTO> getConversation(Long userId1, Long userId2) {
+        List<Message> messages = messageRepository.findConversation(userId1, userId2);
+        return messages.stream().map(this::convertToDTO).collect(Collectors.toList());
+    }
 
-        if (msg.getProductId() != null) {
-            Product product = productRepo.findById(msg.getProductId()).orElse(null);
-            if (product != null) {
-                productName = product.getName();
-                productImage = product.getImagePath();
+    private MessageDTO convertToDTO(Message message) {
+        MessageDTO dto = new MessageDTO();
+        dto.setId(message.getId());
+        dto.setSenderId(message.getSender().getId());
+        dto.setSenderName(message.getSender().getUsername()); // Or FullName
+        dto.setSenderProfileImage(message.getSender().getProfileImagePath());
+
+        dto.setReceiverId(message.getReceiver().getId());
+        dto.setReceiverName(message.getReceiver().getUsername());
+
+        dto.setContent(message.getContent());
+
+        if (message.getProduct() != null) {
+            dto.setProductId(message.getProduct().getId());
+            dto.setProductName(message.getProduct().getName());
+
+            // Find main image
+            Optional<ProductImage> mainImage = message.getProduct().getImages().stream()
+                    .filter(ProductImage::isMainImage)
+                    .findFirst();
+
+            if (mainImage.isPresent()) {
+                dto.setProductImage(mainImage.get().getImagePath());
+            } else if (!message.getProduct().getImages().isEmpty()) {
+                dto.setProductImage(message.getProduct().getImages().get(0).getImagePath());
             }
         }
 
-        return MessageResponseDTO.builder()
-                .id(msg.getId())
-                .senderId(msg.getSender().getId())
-                .senderUsername(msg.getSender().getUsername())
-                .receiverId(msg.getReceiver().getId())
-                .receiverUsername(msg.getReceiver().getUsername())
-                .productId(msg.getProductId())
-                .productName(productName)        // added
-                .productImage(productImage)      // added
-                .messageType(msg.getMessageType())
-                .content(msg.getContent())
-                .sentAt(msg.getSentAt())
-                .build();
+        dto.setCreatedAt(message.getCreatedAt());
+        dto.setRead(message.isRead());
+        return dto;
     }
 }

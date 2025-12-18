@@ -1,160 +1,106 @@
 package com.example.jhapcham.review;
 
-import com.example.jhapcham.order.Order;
-import com.example.jhapcham.order.OrderRepository;
-import com.example.jhapcham.order.OrderStatus;
-import com.example.jhapcham.product.model.Product;
+import com.example.jhapcham.common.FileStorageService;
+import com.example.jhapcham.order.OrderItemRepository;
+import com.example.jhapcham.product.Product;
+import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.repository.UserRepository;
+import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class ReviewService {
 
-    private final OrderRepository orderRepo;
-    private final UserRepository userRepo;
-    private final ReviewRepository reviewRepo;
+    private final ReviewRepository reviewRepository;
+    private final OrderItemRepository orderItemRepository;
+    private final ProductRepository productRepository;
+    private final UserRepository userRepository;
+    private final FileStorageService fileStorageService;
 
-    private static final String REVIEW_IMAGE_DIR = "H:/Project/Ecomm/jhapcham/uploads/review-images/";
+    private static final String REVIEW_IMAGE_DIR = "review-images";
 
-    /* ----------------------
-       SUBMIT REVIEW
-    ---------------------- */
     @Transactional
-    public Review submitReview(Long userId, ReviewRequestDTO req) throws Exception {
+    public ReviewResponseDTO addReview(Long userId, Long productId, Integer rating, String comment,
+            MultipartFile image) {
+        // 1. Verify user exists
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        Order order = orderRepo.findById(req.getOrderId())
-                .orElseThrow(() -> new Exception("Order not found"));
+        // 2. Verify product exists
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
 
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> new Exception("User not found"));
+        // 3. Verify purchase and delivery
+        boolean hasPurchased = orderItemRepository.hasUserPurchasedProduct(userId, productId);
+        if (!hasPurchased) {
+            throw new RuntimeException("You can only review products that you have purchased and received.");
+        }
 
-        Product product = order.getItems().get(0).getProduct();
+        // 4. Check for existing review (optional - allow mainly one review per product
+        // per user?)
+        // Let's allow multiple or block? Usually one review per product.
+        if (reviewRepository.existsByUserIdAndProductId(userId, productId)) {
+            // For now, maybe allow updating? Or throw?
+            // As per request "new controller to write a review", simple add.
+            // We can check if we want to block dupes. Let's block for now to be safe.
+            // throw new RuntimeException("You have already reviewed this product.");
+            // Actually, commented out to be flexible unless requested.
+        }
 
-        if (!order.getCustomer().getId().equals(userId))
-            throw new Exception("You cannot review this order");
+        // 5. Handle image
+        String imagePath = null;
+        if (image != null && !image.isEmpty()) {
+            // save(file, subdir, filename)
+            // filename can be review_uid_pid_timestamp
+            String filename = "review_" + userId + "_" + productId + "_" + System.currentTimeMillis();
+            imagePath = fileStorageService.save(image, REVIEW_IMAGE_DIR, filename);
+        }
 
-        if (order.getStatus() != OrderStatus.DELIVERED)
-            throw new Exception("Review allowed only after delivery");
+        // 6. Save
+        Review review = new Review();
+        review.setUser(user);
+        review.setProduct(product);
+        review.setRating(rating);
+        review.setComment(comment);
+        review.setImagePath(imagePath);
 
-        if (product.getSellerId() != null && product.getSellerId().equals(userId))
-            throw new Exception("Seller cannot review their own product");
+        review = reviewRepository.save(review);
 
-        if (reviewRepo.existsByOrder_Id(order.getId()))
-            throw new Exception("Review already submitted for this order");
+        return mapToDTO(review);
+    }
 
-        boolean noRating = req.getRating() == null;
-        boolean noComment = req.getComment() == null || req.getComment().isBlank();
-        boolean noImages = req.getImages() == null || req.getImages().isEmpty();
+    @Transactional(readOnly = true)
+    public List<ReviewResponseDTO> getReviewsByProduct(Long productId) {
+        return reviewRepository.findByProductId(productId).stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
 
-        if (noRating && noComment && noImages)
-            throw new Exception("Submit rating, comment, or images");
+    @Transactional(readOnly = true)
+    public List<ReviewResponseDTO> getReviewsByUser(Long userId) {
+        return reviewRepository.findByUserId(userId).stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
 
-        List<String> imageUrls = validateAndProcessImages(req.getImages());
-
-        Review review = Review.builder()
-                .customer(user)
-                .product(product)
-                .order(order)
-                .rating(noRating ? null : req.getRating())
-                .comment(noComment ? null : req.getComment())
-                .images(imageUrls)
-                .verifiedPurchase(true)
+    private ReviewResponseDTO mapToDTO(Review r) {
+        return ReviewResponseDTO.builder()
+                .id(r.getId())
+                .userName(r.getUser().getFullName())
+                .userProfileImage(r.getUser().getProfileImagePath())
+                .productId(r.getProduct().getId())
+                .productName(r.getProduct().getName())
+                .rating(r.getRating())
+                .comment(r.getComment())
+                .imagePath(r.getImagePath())
+                .createdAt(r.getCreatedAt())
                 .build();
-
-        return reviewRepo.save(review);
-    }
-
-    /* ----------------------
-       EDIT REVIEW
-    ---------------------- */
-    @Transactional
-    public Review editReview(Long reviewId, Long userId, ReviewRequestDTO req) throws Exception {
-        Review review = reviewRepo.findById(reviewId)
-                .orElseThrow(() -> new Exception("Review not found"));
-
-        if (!review.getCustomer().getId().equals(userId))
-            throw new Exception("You can edit only your own review");
-
-        List<String> imageUrls = review.getImages();
-
-        if (req.getImages() != null && !req.getImages().isEmpty())
-            imageUrls = validateAndProcessImages(req.getImages());
-
-        if (req.getRating() != null) {
-            if (req.getRating() < 1 || req.getRating() > 5)
-                throw new Exception("Rating must be 1 to 5");
-            review.setRating(req.getRating());
-        }
-
-        if (req.getComment() != null)
-            review.setComment(req.getComment());
-
-        review.setImages(imageUrls);
-
-        return reviewRepo.save(review);
-    }
-
-    /* ----------------------
-       DELETE REVIEW
-    ---------------------- */
-    @Transactional
-    public void deleteReview(Long reviewId, Long userId, boolean isAdmin) throws Exception {
-        Review review = reviewRepo.findById(reviewId)
-                .orElseThrow(() -> new Exception("Review not found"));
-
-        if (!isAdmin && !review.getCustomer().getId().equals(userId))
-            throw new Exception("You can delete only your own review");
-
-        reviewRepo.delete(review);
-    }
-
-    /* ----------------------
-       LIST REVIEWS FOR PRODUCT
-    ---------------------- */
-    public List<Review> listReviewsForProduct(Long productId) {
-        return reviewRepo.findByProduct_Id(productId);
-    }
-
-    /* ----------------------
-       VALIDATE & SAVE IMAGES
-    ---------------------- */
-    private List<String> validateAndProcessImages(List<MultipartFile> images) throws Exception {
-        List<String> urls = new ArrayList<>();
-
-        if (images == null || images.isEmpty())
-            return urls;
-
-        File folder = new File(REVIEW_IMAGE_DIR);
-        if (!folder.exists() && !folder.mkdirs())
-            throw new Exception("Failed to create review-images directory");
-
-        for (MultipartFile img : images) {
-            if (img.getSize() > 2 * 1024 * 1024)
-                throw new Exception("Max file size 2MB");
-
-            String original = img.getOriginalFilename();
-            if (original == null) throw new Exception("Invalid file name");
-
-            original = original.toLowerCase().trim();
-
-            if (!(original.endsWith(".jpg") || original.endsWith(".jpeg") || original.endsWith(".png")))
-                throw new Exception("Only JPG, JPEG, PNG allowed");
-
-            File dest = new File(REVIEW_IMAGE_DIR + original);
-            img.transferTo(dest);
-
-            urls.add("review-images/" + original);
-        }
-
-        return urls;
     }
 }

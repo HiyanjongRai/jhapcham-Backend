@@ -1,12 +1,14 @@
 package com.example.jhapcham.order;
 
-import com.example.jhapcham.product.model.Product;
-import com.fasterxml.jackson.annotation.JsonBackReference;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.example.jhapcham.product.Product;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
 @Entity
+@Table(name = "order_items")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -18,24 +20,55 @@ public class OrderItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JsonBackReference
+    // link to parent order
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "order_id")
     private Order order;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JsonIgnoreProperties({"hibernateLazyInitializer","handler"})
+    // link back to product
+    @ManyToOne
+    @JoinColumn(name = "product_id")
     private Product product;
 
-    private int quantity;
-    private Double unitPrice;
+    // snapshot fields
+    @Column(nullable = false)
+    private Long productIdSnapshot;
 
-    public Double lineTotal() {
-        return unitPrice * quantity;
-    }
+    @Column(nullable = false)
+    private String productNameSnapshot;
 
-    private String selectedColor;
-    private String selectedStorage;
+    private String brandSnapshot;
 
+    private String imagePathSnapshot;
 
+    @Column(nullable = false)
+    private Integer quantity;
+
+    @Column(nullable = false)
+    private BigDecimal unitPrice;
+
+    @Column(nullable = false)
+    private BigDecimal lineTotal;
+
+    private String selectedColorSnapshot;
+    private String selectedStorageSnapshot;
+
+    private LocalDate manufactureDateSnapshot;
+    private LocalDate expiryDateSnapshot;
+
+    @Column(columnDefinition = "TEXT")
+    private String productDescriptionSnapshot;
+
+    @Column(columnDefinition = "TEXT")
+    private String specificationSnapshot;
+
+    @Column(columnDefinition = "TEXT")
+    private String featuresSnapshot;
+
+    @Column(columnDefinition = "TEXT")
+    private String storageSpecSnapshot;
+
+    @Column(columnDefinition = "TEXT")
+    private String colorOptionsSnapshot;
 
 }

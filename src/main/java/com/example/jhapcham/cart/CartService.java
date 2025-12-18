@@ -1,17 +1,17 @@
-package com.example.jhapcham.cart;
+package com.example.jhapcham.Cart;
 
-import com.example.jhapcham.product.model.Product;
-import com.example.jhapcham.product.model.repository.ProductRepository;
-import com.example.jhapcham.user.model.Role;
+import com.example.jhapcham.Cart.CartItemRepository;
+import com.example.jhapcham.product.Product;
+import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.repository.UserRepository;
+import com.example.jhapcham.user.model.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -22,121 +22,114 @@ public class CartService {
     private final UserRepository userRepository;
 
     @Transactional
-    public void addToCart(Long userId, Long productId, int quantity, String color, String storage) {
+    public CartResponseDTO addToCart(
+            Long userId,
+            Long productId,
+            AddToCartRequestDTO dto
+    ) {
 
-        if (quantity <= 0) throw new IllegalArgumentException("Quantity must be > 0");
+        if (dto.getQuantity() == null || dto.getQuantity() <= 0) {
+            throw new RuntimeException("Quantity must be greater than zero");
+        }
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        if (user.getRole() != Role.CUSTOMER)
-            throw new IllegalStateException("Only customers can use the cart");
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found"));
+                .orElseThrow(() -> new RuntimeException("Product not found"));
 
-        if (product.getStatus() != Product.Status.ACTIVE || !product.isVisible())
-            throw new IllegalStateException("Product is not available");
+        CartItem item = cartItemRepository.findByUserAndProduct(user, product)
+                .orElse(
+                        CartItem.builder()
+                                .user(user)
+                                .product(product)
+                                .quantity(0)
+                                .build()
+                );
 
-        if (product.getStock() < quantity)
-            throw new IllegalStateException("Insufficient stock");
+        item.setQuantity(item.getQuantity() + dto.getQuantity());
+        item.setSelectedColor(dto.getSelectedColor());
+        item.setSelectedStorage(dto.getSelectedStorage());
 
-        if (color != null && !color.isBlank()
-                && (product.getColors() == null || !product.getColors().contains(color))) {
-            throw new IllegalArgumentException("Color not available");
-        }
+        cartItemRepository.save(item);
+        return getCart(userId);
 
-        if (storage != null && !storage.isBlank()
-                && (product.getStorage() == null || !product.getStorage().contains(storage))) {
-            throw new IllegalArgumentException("Storage not available");
-        }
 
-        Optional<CartItem> existing = cartItemRepository
-                .findByUserAndProductAndSelectedColorAndSelectedStorage(user, product, color, storage);
-
-        if (existing.isPresent()) {
-            CartItem item = existing.get();
-            int newQty = item.getQuantity() + quantity;
-            if (product.getStock() < newQty) throw new IllegalStateException("Insufficient stock");
-            item.setQuantity(newQty);
-            cartItemRepository.save(item);
-        } else {
-            CartItem item = new CartItem();
-            item.setUser(user);
-            item.setProduct(product);
-            item.setQuantity(quantity);
-            item.setSelectedColor(color);
-            item.setSelectedStorage(storage);
-            cartItemRepository.save(item);
-        }
     }
 
-    public List<CartItemDto> getCartItems(Long userId) {
+    @Transactional
+    public CartResponseDTO updateQuantity(Long userId, Long cartItemId, Integer qty) {
+
+        if (qty == null) {
+            throw new RuntimeException("Quantity is required");
+        }
+
+        CartItem item = cartItemRepository.findById(cartItemId)
+                .orElseThrow(() -> new RuntimeException("Cart item not found"));
+
+        if (!item.getUser().getId().equals(userId)) {
+            throw new RuntimeException("You are not allowed to modify this cart item");
+        }
+
+        if (qty <= 0) {
+            cartItemRepository.delete(item);
+        } else {
+            item.setQuantity(qty);
+            cartItemRepository.save(item);
+        }
+
+        return getCart(userId);
+    }
+
+    public CartResponseDTO getCart(Long userId) {
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
         List<CartItem> items = cartItemRepository.findByUser(user);
 
-        return items.stream().map(ci -> {
-            Product p = ci.getProduct();
-            double unit = p.getPrice() == null ? 0.0 : p.getPrice();
-            return new CartItemDto(
-                    p.getId(),
-                    p.getName(),
-                    "/product-images/" + p.getImagePath(),
-                    unit,
-                    ci.getQuantity(),
-                    unit * ci.getQuantity(),
-                    ci.getSelectedColor(),
-                    ci.getSelectedStorage(),
-                    p.getCategory(),
-                    p.getBrand()
+        List<CartItemResponseDTO> list = new ArrayList<>();
+        BigDecimal subtotal = BigDecimal.ZERO;
+
+        for (CartItem item : items) {
+
+            Product p = item.getProduct();
+
+            BigDecimal unitPrice =
+                    Boolean.TRUE.equals(p.getOnSale()) && p.getSalePrice() != null
+                            ? p.getSalePrice()
+                            : p.getPrice();
+
+            BigDecimal lineTotal =
+                    unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
+
+            subtotal = subtotal.add(lineTotal);
+
+            String image = p.getImages() != null && !p.getImages().isEmpty()
+                    ? p.getImages().get(0).getImagePath()
+                    : null;
+
+            list.add(
+                    CartItemResponseDTO.builder()
+                            .cartItemId(item.getId())
+                            .productId(p.getId())
+                            .name(p.getName())
+                            .brand(p.getBrand())
+                            .image(image)
+                            .quantity(item.getQuantity())
+                            .price(unitPrice)
+                            .selectedColor(item.getSelectedColor())
+                            .selectedStorage(item.getSelectedStorage())
+                            .build()
             );
+        }
 
-        }).collect(Collectors.toList());
+        return CartResponseDTO.builder()
+                .subtotal(subtotal.doubleValue())
+                .items(list)
+                .build();
+
+
     }
 
-    @Transactional
-    public void updateQuantity(Long userId, Long productId, int quantity, String color, String storage) {
-
-        if (quantity <= 0) throw new IllegalArgumentException("Quantity must be > 0");
-
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found"));
-
-        CartItem item = cartItemRepository
-                .findByUserAndProductAndSelectedColorAndSelectedStorage(user, product, color, storage)
-                .orElseThrow(() -> new IllegalArgumentException("Cart item not found"));
-
-        if (product.getStock() < quantity)
-            throw new IllegalStateException("Insufficient stock");
-
-        item.setQuantity(quantity);
-        cartItemRepository.save(item);
-    }
-
-    @Transactional
-    public void removeCartItem(Long userId, Long productId, String color, String storage) {
-
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found"));
-
-        cartItemRepository.deleteByUserAndProductAndSelectedColorAndSelectedStorage(user, product, color, storage);
-    }
-
-    @Transactional
-    public void clearCart(Long userId) {
-
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        cartItemRepository.deleteAllByUser(user);
-    }
 }

@@ -1,7 +1,10 @@
 package com.example.jhapcham.message;
 
+import com.example.jhapcham.user.model.User;
+import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -12,34 +15,44 @@ import java.util.List;
 public class MessageController {
 
     private final MessageService messageService;
+    private final UserRepository userRepository;
 
-    // Send product enquiry
-    @PostMapping("/product")
-    public ResponseEntity<MessageResponseDTO> sendProductEnquiry(@RequestBody MessageRequestDTO dto) {
-        return ResponseEntity.ok(messageService.sendMessage(dto, "PRODUCT_ENQUIRY"));
+    @PostMapping
+    public ResponseEntity<?> sendMessage(@RequestBody SendMessageRequest request,
+            Authentication authentication) {
+        try {
+            String username = authentication.getName();
+            // Authentication principal is email
+            User user = userRepository.findByEmail(username)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            return ResponseEntity.ok(messageService.sendMessage(user.getId(), request));
+        } catch (Exception e) {
+            e.printStackTrace();
+            String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
+            return ResponseEntity.badRequest().body("Error: " + errorMsg);
+        }
     }
 
-    // Send store message
-    @PostMapping("/store")
-    public ResponseEntity<MessageResponseDTO> sendStoreMessage(@RequestBody MessageRequestDTO dto) {
-        return ResponseEntity.ok(messageService.sendMessage(dto, "STORE_MESSAGE"));
+    @GetMapping("/inbox")
+    public ResponseEntity<List<MessageDTO>> getInbox(Authentication authentication) {
+        String username = authentication.getName();
+        User user = userRepository.findByEmail(username).orElseThrow(() -> new RuntimeException("User not found"));
+        return ResponseEntity.ok(messageService.getMessagesForUser(user.getId()));
     }
 
-    // Send chat reply
-    @PostMapping("/reply")
-    public ResponseEntity<MessageResponseDTO> replyMessage(@RequestBody MessageRequestDTO dto) {
-        return ResponseEntity.ok(messageService.sendMessage(dto, "CHAT_REPLY"));
+    @GetMapping("/sent")
+    public ResponseEntity<List<MessageDTO>> getSent(Authentication authentication) {
+        String username = authentication.getName();
+        User user = userRepository.findByEmail(username).orElseThrow(() -> new RuntimeException("User not found"));
+        return ResponseEntity.ok(messageService.getSentMessages(user.getId()));
     }
 
-    // Get conversation between two users
-    @GetMapping("/chat/{user1}/{user2}")
-    public ResponseEntity<List<MessageResponseDTO>> getConversation(@PathVariable Long user1, @PathVariable Long user2) {
-        return ResponseEntity.ok(messageService.getConversation(user1, user2));
-    }
-
-    // Get all messages for a specific receiver
-    @GetMapping("/receiver/{receiverId}")
-    public ResponseEntity<List<MessageResponseDTO>> getMessagesForReceiver(@PathVariable Long receiverId) {
-        return ResponseEntity.ok(messageService.getMessagesForReceiver(receiverId));
+    @GetMapping("/conversation/{otherUserId}")
+    public ResponseEntity<List<MessageDTO>> getConversation(@PathVariable Long otherUserId,
+            Authentication authentication) {
+        String username = authentication.getName();
+        User user = userRepository.findByEmail(username).orElseThrow(() -> new RuntimeException("User not found"));
+        return ResponseEntity.ok(messageService.getConversation(user.getId(), otherUserId));
     }
 }

@@ -14,8 +14,15 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
+import lombok.RequiredArgsConstructor;
+import com.example.jhapcham.security.SimpleTokenService;
+
 @Configuration
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final SimpleTokenService simpleTokenService;
+    private final com.example.jhapcham.security.CustomUserDetailsService customUserDetailsService;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -42,8 +49,8 @@ public class SecurityConfig {
                         "/review-images/**",
                         "/uploads/review-images/**",
                         "/user-images/**",
-                        "/uploads/user-images/**"
-                ).permitAll()
+                        "/uploads/user-images/**")
+                .permitAll()
 
                 // PUBLIC AUTH & LOGIN
                 .requestMatchers("/api/auth/**").permitAll()
@@ -81,14 +88,17 @@ public class SecurityConfig {
 
                 .requestMatchers("/api/seller-reviews/**").permitAll() // allow access to seller review endpoints
 
-                .requestMatchers("/api/messages/**").permitAll()
+                .requestMatchers("/api/messages/**").authenticated()
                 .requestMatchers("/api/auth/**").permitAll() // Al
 
                 // EVERYTHING ELSE ALLOWED
-                .anyRequest().permitAll()
-        );
+                .anyRequest().permitAll());
 
         http.httpBasic(httpBasic -> httpBasic.disable());
+
+        http.addFilterBefore(
+                new com.example.jhapcham.security.SimpleTokenFilter(simpleTokenService, customUserDetailsService),
+                org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
@@ -101,8 +111,7 @@ public class SecurityConfig {
                 "http://localhost:3000",
                 "http://localhost:3001",
                 "http://localhost:3002",
-                "http://127.0.0.1:5500"
-        ));
+                "http://127.0.0.1:5500"));
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
