@@ -1,5 +1,6 @@
 package com.example.jhapcham.order;
 
+import com.example.jhapcham.Error.BusinessValidationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -29,7 +30,7 @@ public class OrderStatusService {
         Set<OrderStatus> allowed = VALID_TRANSITIONS.get(from);
         if (allowed == null || !allowed.contains(to)) {
             log.error("Invalid status transition: {} -> {}", from, to);
-            throw new RuntimeException("Cannot transition order from " + from + " to " + to);
+            throw new BusinessValidationException("Cannot transition order from " + from + " to " + to);
         }
     }
 

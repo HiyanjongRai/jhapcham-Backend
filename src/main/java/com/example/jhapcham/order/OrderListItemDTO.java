@@ -15,14 +15,14 @@ public class OrderListItemDTO {
     private BigDecimal grandTotal;
     private Integer totalItems;
     private LocalDateTime createdAt;
-    private String storeName;      // for seller view
+    private String storeName; // for seller view
     private String customerName;
 
     private BigDecimal sellerGrossAmount;
     private BigDecimal sellerShippingCharge;
     private BigDecimal sellerNetAmount;
     private DeliveryBranch deliveredBranch;
-
-
+    private DeliveryBranch assignedBranch;
+    private String productNames;
 
 }

@@ -86,11 +86,11 @@ public class AdminService {
         return sellerApplicationService.listPending();
     }
 
-    public void approveSellerApplication(Long appId) {
-        sellerApplicationService.approve(appId, "Approved by Admin");
+    public void approveSellerApplication(Long appId, String note) {
+        sellerApplicationService.approve(appId, note);
     }
 
-    public void rejectSellerApplication(Long appId) {
-        sellerApplicationService.reject(appId, "Rejected by Admin");
+    public void rejectSellerApplication(Long appId, String note) {
+        sellerApplicationService.reject(appId, note);
     }
 }

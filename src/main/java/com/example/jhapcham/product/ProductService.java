@@ -7,8 +7,12 @@ import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 
-import com.example.jhapcham.Cart.CartItem;
-import com.example.jhapcham.Cart.CartItemRepository;
+import com.example.jhapcham.cart.CartItem;
+import com.example.jhapcham.cart.CartItemRepository;
+import com.example.jhapcham.Error.AuthorizationException;
+import com.example.jhapcham.Error.BusinessValidationException;
+import com.example.jhapcham.Error.ResourceNotFoundException;
+import com.example.jhapcham.Error.RoleBasedAccessException;
 import com.example.jhapcham.common.FileStorageService;
 import com.example.jhapcham.order.OrderItem;
 import com.example.jhapcham.order.OrderItemRepository;
@@ -59,19 +63,19 @@ public class ProductService {
     public ProductResponseDTO createProductForSeller(Long sellerUserId, ProductCreateRequestDTO dto) {
 
         User sellerUser = userRepository.findById(sellerUserId)
-                .orElseThrow(() -> new RuntimeException("Seller user not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Seller not found"));
 
         if (sellerUser.getRole() != Role.SELLER)
-            throw new RuntimeException("User is not a seller");
+            throw new RoleBasedAccessException("Only sellers are allowed to perform this action.");
 
         if (sellerUser.getStatus() != Status.ACTIVE)
-            throw new RuntimeException("Seller account not active");
+            throw new AuthorizationException("Seller account not active");
 
         SellerProfile profile = sellerProfileRepository.findByUser(sellerUser)
-                .orElseThrow(() -> new RuntimeException("Seller profile not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Seller profile not found"));
 
         if (profile.getStatus() != Status.ACTIVE)
-            throw new RuntimeException("Seller profile not active");
+            throw new AuthorizationException("Seller profile not active");
 
         LocalDate mfg = parseDate(dto.manufactureDate());
         LocalDate exp = parseDate(dto.expiryDate());
@@ -133,7 +137,7 @@ public class ProductService {
     public ProductResponseDTO updateProduct(Long productId, ProductUpdateRequestDTO dto) {
 
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
         SellerProfile profile = product.getSellerProfile();
 
@@ -255,7 +259,7 @@ public class ProductService {
         // Discount sent but sale switch missing
         if (dto.onSale() == null &&
                 (dto.salePercentage() != null || dto.discountPrice() != null)) {
-            throw new RuntimeException("Sale must be enabled to apply discount");
+            throw new BusinessValidationException("Sale must be enabled to apply discount");
         }
 
         // Turn sale OFF
@@ -269,14 +273,14 @@ public class ProductService {
 
         BigDecimal price = product.getPrice();
         if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Invalid product price");
+            throw new BusinessValidationException("Invalid product price");
         }
 
         boolean hasPercentage = dto.salePercentage() != null;
         boolean hasFinalPrice = dto.discountPrice() != null;
 
         if (hasPercentage == hasFinalPrice) {
-            throw new RuntimeException("Provide either sale percentage or final sale price");
+            throw new BusinessValidationException("Provide either sale percentage or final sale price");
         }
 
         // Reset previous sale data
@@ -292,7 +296,7 @@ public class ProductService {
 
             if (pct.compareTo(BigDecimal.ZERO) <= 0 ||
                     pct.compareTo(BigDecimal.valueOf(100)) >= 0) {
-                throw new RuntimeException("Invalid sale percentage");
+                throw new BusinessValidationException("Invalid sale percentage");
             }
 
             BigDecimal discount = price
@@ -314,7 +318,7 @@ public class ProductService {
 
         if (salePrice.compareTo(BigDecimal.ZERO) <= 0 ||
                 salePrice.compareTo(price) >= 0) {
-            throw new RuntimeException("Invalid sale price");
+            throw new BusinessValidationException("Invalid sale price");
         }
 
         BigDecimal discount = price
@@ -330,7 +334,7 @@ public class ProductService {
     public ProductDetailDTO getProductDetail(Long id) {
 
         Product p = productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
         SellerProfile profile = p.getSellerProfile();
         User seller = profile.getUser();
@@ -412,10 +416,10 @@ public class ProductService {
     public List<ProductResponseDTO> listProductsForSeller(Long sellerUserId) {
 
         User seller = userRepository.findById(sellerUserId)
-                .orElseThrow(() -> new RuntimeException("Seller not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Seller not found"));
 
         SellerProfile profile = sellerProfileRepository.findByUser(seller)
-                .orElseThrow(() -> new RuntimeException("Seller profile missing"));
+                .orElseThrow(() -> new ResourceNotFoundException("Seller profile not found"));
 
         return productRepository.findBySellerProfile(profile)
                 .stream().map(this::toResponse).toList();
@@ -480,10 +484,10 @@ public class ProductService {
     public List<ProductResponseDTO> listActiveProductsForSeller(Long sellerUserId) {
 
         User seller = userRepository.findById(sellerUserId)
-                .orElseThrow(() -> new RuntimeException("Seller not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Seller not found"));
 
         SellerProfile profile = sellerProfileRepository.findByUser(seller)
-                .orElseThrow(() -> new RuntimeException("Seller profile missing"));
+                .orElseThrow(() -> new ResourceNotFoundException("Seller profile not found"));
 
         List<Product> products = productRepository.findBySellerProfileAndStatus(profile, ProductStatus.ACTIVE);
 
@@ -494,18 +498,18 @@ public class ProductService {
     public void hardDeleteProductWithOrderCheck(Long productId, Long sellerUserId) {
 
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
         SellerProfile profile = product.getSellerProfile();
 
         if (!profile.getUser().getId().equals(sellerUserId)) {
-            throw new RuntimeException("Seller not allowed");
+            throw new AuthorizationException("You do not have permission to delete this product");
         }
 
         boolean activeOrderExists = orderRepository.existsByItemsProductAndStatusNot(product, OrderStatus.CANCELED);
 
         if (activeOrderExists) {
-            throw new RuntimeException("Product is in active order");
+            throw new BusinessValidationException("Cannot delete product with active orders");
         }
 
         List<OrderItem> orderItems = orderItemRepository.findByProduct(product);
@@ -613,7 +617,7 @@ public class ProductService {
     @Transactional
     public void updateProductStatus(Long productId, ProductStatus status) {
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
         product.setStatus(status);
         productRepository.save(product);
     }

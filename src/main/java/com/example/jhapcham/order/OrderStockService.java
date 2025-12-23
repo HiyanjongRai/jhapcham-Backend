@@ -1,5 +1,6 @@
 package com.example.jhapcham.order;
 
+import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.product.ProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +20,7 @@ public class OrderStockService {
         if (product.getStockQuantity() < quantity) {
             log.error("Insufficient stock for product {}: requested {}, available {}",
                     product.getId(), quantity, product.getStockQuantity());
-            throw new RuntimeException("Not enough stock for " + product.getName());
+            throw new BusinessValidationException("Not enough stock for " + product.getName());
         }
         product.setStockQuantity(product.getStockQuantity() - quantity);
         productRepository.save(product);

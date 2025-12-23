@@ -1,4 +1,4 @@
-package com.example.jhapcham.Cart;
+package com.example.jhapcham.cart;
 
 import lombok.Builder;
 import lombok.Data;

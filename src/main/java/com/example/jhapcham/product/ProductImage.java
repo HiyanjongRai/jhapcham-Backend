@@ -1,5 +1,6 @@
 package com.example.jhapcham.product;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -19,6 +20,7 @@ public class ProductImage {
     // image belongs to one product
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "product_id", nullable = false)
+    @JsonIgnore
     private Product product;
 
     @Column(name = "image_path", nullable = false, length = 255)
@@ -29,6 +31,5 @@ public class ProductImage {
 
     @Column(name = "sort_order")
     private Integer sortOrder;
-
 
 }

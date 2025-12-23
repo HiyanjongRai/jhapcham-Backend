@@ -1,5 +1,6 @@
 package com.example.jhapcham.order;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.example.jhapcham.product.Product;
 import jakarta.persistence.*;
 import lombok.*;
@@ -23,6 +24,7 @@ public class OrderItem {
     // link to parent order
     @ManyToOne(optional = false)
     @JoinColumn(name = "order_id")
+    @JsonIgnore
     private Order order;
 
     // link back to product

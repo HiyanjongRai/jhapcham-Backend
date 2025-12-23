@@ -61,28 +61,36 @@ public class AdminController {
         return ResponseEntity.ok(adminService.getAllReports());
     }
 
-    @PutMapping("/reports/{reportId}/resolve")
-    public ResponseEntity<Void> resolveReport(@PathVariable Long reportId) {
-        // Simple resolution for now
-        adminService.createReportResolution(reportId, "RESOLVED");
+    @PostMapping("/reports/{reportId}/resolve")
+    public ResponseEntity<Void> resolveReport(
+            @PathVariable Long reportId,
+            @RequestBody(required = false) java.util.Map<String, String> body) {
+        String note = (body != null && body.containsKey("note")) ? body.get("note") : "RESOLVED";
+        adminService.createReportResolution(reportId, note);
         return ResponseEntity.ok().build();
     }
 
     // Pending Seller Applications
-    @GetMapping("/seller-applications/pending")
+    @GetMapping("/sellers/applications/pending")
     public ResponseEntity<List<com.example.jhapcham.seller.SellerApplication>> getPendingApplications() {
         return ResponseEntity.ok(adminService.getPendingApplications());
     }
 
-    @PutMapping("/seller-applications/{appId}/approve")
-    public ResponseEntity<Void> approveApplication(@PathVariable Long appId) {
-        adminService.approveSellerApplication(appId);
+    @PostMapping("/sellers/applications/{appId}/approve")
+    public ResponseEntity<Void> approveApplication(
+            @PathVariable Long appId,
+            @RequestBody(required = false) java.util.Map<String, String> body) {
+        String note = (body != null && body.containsKey("note")) ? body.get("note") : "Approved by admin";
+        adminService.approveSellerApplication(appId, note);
         return ResponseEntity.ok().build();
     }
 
-    @PutMapping("/seller-applications/{appId}/reject")
-    public ResponseEntity<Void> rejectApplication(@PathVariable Long appId) {
-        adminService.rejectSellerApplication(appId);
+    @PostMapping("/sellers/applications/{appId}/reject")
+    public ResponseEntity<Void> rejectApplication(
+            @PathVariable Long appId,
+            @RequestBody(required = false) java.util.Map<String, String> body) {
+        String note = (body != null && body.containsKey("note")) ? body.get("note") : "Rejected by admin";
+        adminService.rejectSellerApplication(appId, note);
         return ResponseEntity.ok().build();
     }
 }

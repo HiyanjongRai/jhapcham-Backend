@@ -1,5 +1,8 @@
 package com.example.jhapcham.seller;
 
+import com.example.jhapcham.Error.BusinessValidationException;
+import com.example.jhapcham.Error.ResourceNotFoundException;
+import com.example.jhapcham.Error.RoleBasedAccessException;
 import com.example.jhapcham.common.FileStorageService;
 import com.example.jhapcham.user.model.Role;
 import com.example.jhapcham.user.model.Status;
@@ -31,14 +34,14 @@ public class SellerApplicationService {
             MultipartFile licenseDoc,
             MultipartFile taxDoc) {
         User seller = userRepo.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Seller user not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Seller user not found"));
 
         if (seller.getRole() != Role.SELLER) {
-            throw new RuntimeException("User is not a seller");
+            throw new RoleBasedAccessException("Only sellers can submit applications");
         }
 
         if (applicationRepo.existsByUser(seller)) {
-            throw new RuntimeException("Application already submitted");
+            throw new BusinessValidationException("Application already submitted");
         }
 
         String idPath = idDoc != null
@@ -73,7 +76,7 @@ public class SellerApplicationService {
 
     public SellerApplication getApplication(Long appId) {
         return applicationRepo.findById(appId)
-                .orElseThrow(() -> new RuntimeException("Application not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
     }
 
     @Transactional

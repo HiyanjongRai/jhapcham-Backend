@@ -1,7 +1,10 @@
 package com.example.jhapcham.order;
 
-import com.example.jhapcham.Cart.CartItem;
-import com.example.jhapcham.Cart.CartItemRepository;
+import com.example.jhapcham.cart.CartItem;
+import com.example.jhapcham.cart.CartItemRepository;
+import com.example.jhapcham.Error.AuthorizationException;
+import com.example.jhapcham.Error.BusinessValidationException;
+import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.seller.SellerProfile;
@@ -162,11 +165,11 @@ public class OrderService {
     @Transactional
     public List<OrderSummaryDTO> placeOrderFromCart(CartCheckoutRequestDTO dto) {
         User user = userRepository.findById(dto.getUserId())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         List<CartItem> cartItems = cartItemRepository.findByUser(user);
         if (cartItems.isEmpty()) {
-            throw new RuntimeException("Cart is empty");
+            throw new BusinessValidationException("Cart is empty");
         }
 
         List<CheckoutItemDTO> checkoutItems = new ArrayList<>();
@@ -203,7 +206,7 @@ public class OrderService {
     public OrderSummaryDTO sellerProcessOrder(Long orderId, Long sellerId) {
         Order order = getOrderOrFail(orderId);
         if (!sellerOwns(order, sellerId)) {
-            throw new RuntimeException("Seller not allowed");
+            throw new AuthorizationException("You do not have permission to process this order");
         }
 
         orderStatusService.validateTransition(order.getStatus(), OrderStatus.PROCESSING);
@@ -218,7 +221,7 @@ public class OrderService {
     public OrderSummaryDTO sellerAssignBranch(Long orderId, Long sellerId, AssignBranchDTO dto) {
         Order order = getOrderOrFail(orderId);
         if (!sellerOwns(order, sellerId)) {
-            throw new RuntimeException("Seller not allowed");
+            throw new AuthorizationException("You do not have permission to assign branches to this order");
         }
 
         orderStatusService.validateTransition(order.getStatus(), OrderStatus.SHIPPED_TO_BRANCH);
@@ -238,10 +241,10 @@ public class OrderService {
         OrderStatus next = OrderStatus.valueOf(nextStatusRaw.toUpperCase());
 
         if (order.getAssignedBranch() == null) {
-            throw new RuntimeException("Branch not assigned");
+            throw new BusinessValidationException("Branch not assigned to this order");
         }
         if (order.getAssignedBranch() != branch) {
-            throw new RuntimeException("Branch mismatch");
+            throw new BusinessValidationException("Branch mismatch for this order");
         }
 
         orderStatusService.validateTransition(order.getStatus(), next);
@@ -262,11 +265,11 @@ public class OrderService {
     public OrderSummaryDTO sellerCancelOrder(Long orderId, Long sellerId) {
         Order order = getOrderOrFail(orderId);
         if (!sellerOwns(order, sellerId)) {
-            throw new RuntimeException("Seller not allowed");
+            throw new AuthorizationException("You do not have permission to cancel this order");
         }
 
         if (!orderStatusService.canCancel(order.getStatus())) {
-            throw new RuntimeException("Cannot cancel order in status: " + order.getStatus());
+            throw new BusinessValidationException("Cannot cancel order in status: " + order.getStatus());
         }
 
         order.setStatus(OrderStatus.CANCELED);
@@ -282,11 +285,11 @@ public class OrderService {
     public OrderSummaryDTO customerCancelOrder(Long orderId, Long userId) {
         Order order = getOrderOrFail(orderId);
         if (order.getUser() == null || !order.getUser().getId().equals(userId)) {
-            throw new RuntimeException("Customer not allowed");
+            throw new AuthorizationException("You do not have permission to cancel this order");
         }
 
         if (!orderStatusService.canCancel(order.getStatus())) {
-            throw new RuntimeException("Order cannot be canceled now");
+            throw new BusinessValidationException("Order cannot be canceled now");
         }
 
         order.setStatus(OrderStatus.CANCELED);
@@ -333,8 +336,12 @@ public class OrderService {
                 .sellerShippingCharge(o.getSellerShippingCharge())
                 .sellerNetAmount(o.getSellerNetAmount())
                 .deliveredBranch(o.getDeliveredBranch())
+                .assignedBranch(o.getAssignedBranch())
                 .createdAt(o.getCreatedAt())
                 .customerName(o.getCustomerName())
+                .productNames(o.getItems().stream()
+                        .map(OrderItem::getProductNameSnapshot)
+                        .collect(Collectors.joining(", ")))
                 .build()).collect(Collectors.toList());
     }
 
@@ -351,7 +358,7 @@ public class OrderService {
         for (CheckoutItemDTO item : items) {
             Product p = productMap.get(item.getProductId());
             if (p == null)
-                throw new RuntimeException("Product not found: " + item.getProductId());
+                throw new ResourceNotFoundException("Product not found: " + item.getProductId());
             Long sellerUserId = p.getSellerProfile().getUser().getId();
             grouped.computeIfAbsent(sellerUserId, k -> new ArrayList<>()).add(item);
         }
@@ -364,7 +371,7 @@ public class OrderService {
         List<Product> products = productRepository.findAllById(quantityMap.keySet());
 
         if (products.size() != quantityMap.size())
-            throw new RuntimeException("Product missing");
+            throw new ResourceNotFoundException("One or more products not found");
 
         BigDecimal itemsTotal = BigDecimal.ZERO;
         List<OrderItemResponseDTO> responses = new ArrayList<>();
@@ -466,7 +473,7 @@ public class OrderService {
     }
 
     private Order getOrderOrFail(Long id) {
-        return orderRepository.findById(id).orElseThrow(() -> new RuntimeException("Order not found"));
+        return orderRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Order not found"));
     }
 
     private boolean sellerOwns(Order order, Long sellerId) {
@@ -488,18 +495,18 @@ public class OrderService {
 
     private void validateItems(CheckoutRequestDTO dto) {
         if (dto.getItems() == null || dto.getItems().isEmpty())
-            throw new RuntimeException("No items");
+            throw new BusinessValidationException("No items in order");
     }
 
     private void validateCustomerFields(CheckoutRequestDTO dto) {
         if (dto.getFullName() == null || dto.getFullName().isBlank())
-            throw new RuntimeException("Name required");
+            throw new BusinessValidationException("Customer name is required");
         if (dto.getPhone() == null || dto.getPhone().isBlank())
-            throw new RuntimeException("Phone required");
+            throw new BusinessValidationException("Customer phone is required");
         if (dto.getEmail() == null || dto.getEmail().isBlank())
-            throw new RuntimeException("Email required");
+            throw new BusinessValidationException("Customer email is required");
         if (dto.getAddress() == null || dto.getAddress().isBlank())
-            throw new RuntimeException("Address required");
+            throw new BusinessValidationException("Shipping address is required");
     }
 
     private static class CheckoutComputationResult {

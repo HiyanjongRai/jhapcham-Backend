@@ -1,5 +1,9 @@
 package com.example.jhapcham.user.model;
 
+import com.example.jhapcham.Error.AuthenticationException;
+import com.example.jhapcham.Error.AuthorizationException;
+import com.example.jhapcham.Error.BusinessValidationException;
+import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.common.FileStorageService;
 import com.example.jhapcham.seller.SellerProfileRepository;
 import jakarta.transaction.Transactional;
@@ -26,10 +30,10 @@ public class AuthService {
     @Transactional
     public User registerCustomer(RegisterRequestDTO req) {
         if (users.existsByUsername(req.username())) {
-            throw new IllegalArgumentException("Username already exists");
+            throw new BusinessValidationException("Username already exists");
         }
         if (users.existsByEmail(req.email())) {
-            throw new IllegalArgumentException("Email already exists");
+            throw new BusinessValidationException("Email already exists");
         }
 
         User user = User.builder()
@@ -48,10 +52,10 @@ public class AuthService {
     @Transactional
     public User registerSeller(RegisterRequestDTO req) {
         if (users.existsByUsername(req.username())) {
-            throw new IllegalArgumentException("Username already exists");
+            throw new BusinessValidationException("Username already exists");
         }
         if (users.existsByEmail(req.email())) {
-            throw new IllegalArgumentException("Email already exists");
+            throw new BusinessValidationException("Email already exists");
         }
 
         User user = User.builder()
@@ -69,10 +73,10 @@ public class AuthService {
     @PreAuthorize("hasRole('ADMIN')")
     public User registerAdmin(RegisterRequestDTO req) {
         if (users.existsByUsername(req.username())) {
-            throw new IllegalArgumentException("Username already exists");
+            throw new BusinessValidationException("Username already exists");
         }
         if (users.existsByEmail(req.email())) {
-            throw new IllegalArgumentException("Email already exists");
+            throw new BusinessValidationException("Email already exists");
         }
 
         User user = User.builder()
@@ -91,10 +95,10 @@ public class AuthService {
     public User login(LoginRequestDTO req) {
         User user = users.findByUsername(req.usernameOrEmail())
                 .or(() -> users.findByEmail(req.usernameOrEmail()))
-                .orElseThrow(() -> new IllegalArgumentException("Invalid username or password"));
+                .orElseThrow(() -> new AuthenticationException("Incorrect email or password. Please try again."));
 
         if (!passwordEncoder.matches(req.password(), user.getPassword())) {
-            throw new IllegalArgumentException("Invalid username or password");
+            throw new AuthenticationException("Incorrect email or password. Please try again.");
         }
 
         if (user.getRole() == Role.SELLER) {
@@ -103,16 +107,16 @@ public class AuthService {
                 // If they haven't submitted, allow them to login so they can submit.
                 boolean hasApplication = applicationRepository.existsByUser(user);
                 if (hasApplication) {
-                    throw new IllegalStateException("Your application is pending approval");
+                    throw new AuthorizationException("Your application is pending approval");
                 }
                 // If no application, proceed (allow login)
             }
             if (user.getStatus() == Status.BLOCKED) {
-                throw new IllegalStateException("Your account is blocked, contact support");
+                throw new AuthorizationException("Your account is blocked, contact support");
             }
         } else {
             if (user.getStatus() != Status.ACTIVE) {
-                throw new RuntimeException("Account is not active");
+                throw new AuthorizationException("Account is not active");
             }
         }
 
@@ -122,7 +126,7 @@ public class AuthService {
     @Transactional
     public User updateUserById(Long userId, UserProfileUpdateRequestDTO dto) {
         User user = users.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (dto.getFullName() != null && !dto.getFullName().isBlank()) {
             user.setFullName(dto.getFullName());
@@ -135,11 +139,11 @@ public class AuthService {
         if (dto.getNewPassword() != null && !dto.getNewPassword().isBlank()) {
             if (dto.getCurrentPassword() == null
                     || !passwordEncoder.matches(dto.getCurrentPassword(), user.getPassword())) {
-                throw new IllegalArgumentException("Current password is incorrect");
+                throw new BusinessValidationException("Current password is incorrect");
             }
             if (dto.getConfirmPassword() != null
                     && !dto.getNewPassword().equals(dto.getConfirmPassword())) {
-                throw new IllegalArgumentException("New password and confirm password do not match");
+                throw new BusinessValidationException("New password and confirm password do not match");
             }
             user.setPassword(passwordEncoder.encode(dto.getNewPassword()));
         }
@@ -171,7 +175,7 @@ public class AuthService {
     @Transactional
     public User updateUserStatus(Long userId, Status newStatus) {
         User user = users.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         user.setStatus(newStatus);
         User saved = users.save(user);

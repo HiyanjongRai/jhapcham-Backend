@@ -1,4 +1,4 @@
-package com.example.jhapcham.Cart;
+package com.example.jhapcham.cart;
 
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.user.model.User;
@@ -12,4 +12,6 @@ public interface CartItemRepository extends JpaRepository<CartItem, Long> {
     List<CartItem> findByUser(User user);
 
     Optional<CartItem> findByUserAndProduct(User user, Product product);
-    List<CartItem> findAllByProduct(Product product);}
+
+    List<CartItem> findAllByProduct(Product product);
+}

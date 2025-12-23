@@ -1,5 +1,7 @@
 package com.example.jhapcham.review;
 
+import com.example.jhapcham.Error.BusinessValidationException;
+import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.common.FileStorageService;
 import com.example.jhapcham.order.OrderItemRepository;
 import com.example.jhapcham.product.Product;
@@ -31,16 +33,16 @@ public class ReviewService {
             MultipartFile image) {
         // 1. Verify user exists
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         // 2. Verify product exists
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
         // 3. Verify purchase and delivery
         boolean hasPurchased = orderItemRepository.hasUserPurchasedProduct(userId, productId);
         if (!hasPurchased) {
-            throw new RuntimeException("You can only review products that you have purchased and received.");
+            throw new BusinessValidationException("You can only review products that you have purchased and received.");
         }
 
         // 4. Check for existing review (optional - allow mainly one review per product

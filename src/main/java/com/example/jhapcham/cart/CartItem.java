@@ -1,4 +1,4 @@
-package com.example.jhapcham.Cart;
+package com.example.jhapcham.cart;
 
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.user.model.User;

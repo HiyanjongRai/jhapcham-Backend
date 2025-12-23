@@ -1,5 +1,6 @@
 package com.example.jhapcham.seller;
 
+import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.common.FileStorageService;
 import com.example.jhapcham.order.Order;
 import com.example.jhapcham.order.OrderRepository;
@@ -35,7 +36,7 @@ public class SellerService {
         public SellerProfileResponseDTO getSellerProfile(Long sellerUserId) {
 
                 SellerProfile profile = sellerProfileRepository.findByUserId(sellerUserId)
-                                .orElseThrow(() -> new RuntimeException("Seller profile not found"));
+                                .orElseThrow(() -> new ResourceNotFoundException("Seller profile not found"));
 
                 List<Product> products = productRepository.findBySellerProfile(profile);
                 long followerCount = followRepository.countBySeller(profile);
@@ -49,7 +50,7 @@ public class SellerService {
         public SellerProfile updateSeller(Long sellerUserId, SellerUpdateRequestDTO dto) {
 
                 SellerProfile profile = sellerProfileRepository.findByUserId(sellerUserId)
-                                .orElseThrow(() -> new RuntimeException("Seller not found"));
+                                .orElseThrow(() -> new ResourceNotFoundException("Seller not found"));
 
                 // basic info
                 if (dto.storeName() != null)
@@ -90,10 +91,10 @@ public class SellerService {
         public SellerIncomeDTO getSellerIncome(Long sellerUserId) {
 
                 User seller = userRepository.findById(sellerUserId)
-                                .orElseThrow(() -> new RuntimeException("Seller not found"));
+                                .orElseThrow(() -> new ResourceNotFoundException("Seller not found"));
 
                 SellerProfile profile = sellerProfileRepository.findByUser(seller)
-                                .orElseThrow(() -> new RuntimeException("Seller profile not found"));
+                                .orElseThrow(() -> new ResourceNotFoundException("Seller profile not found"));
 
                 return new SellerIncomeDTO(
                                 profile.getId(),
