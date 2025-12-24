@@ -4,6 +4,7 @@ import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -18,6 +19,7 @@ public class ReportService {
     private final com.example.jhapcham.seller.SellerProfileRepository sellerProfileRepository;
     private final com.example.jhapcham.notification.NotificationService notificationService;
 
+    @Transactional
     public ReportDTO createReport(Long reporterId, ReportCreateRequest request) {
         User reporter = userRepository.findById(reporterId)
                 .orElseThrow(() -> new RuntimeException("Reporter not found"));
@@ -27,16 +29,26 @@ public class ReportService {
                 .reportedEntityId(request.getReportedEntityId())
                 .reason(request.getReason())
                 .reporter(reporter)
-                .status(ReportStatus.PENDING)
+                .status(ReportStatus.NEW)
                 .build();
+
+        // Populate details before saving (sets Name and Image)
+        try {
+            populateEntityDetails(report);
+        } catch (Exception e) {
+            // Log but don't fail report submission
+            System.err.println("Failed to populate report entity details: " + e.getMessage());
+        }
 
         Report savedReport = reportRepository.save(report);
 
-        // Notify Admin
-        notifyAdmins(savedReport);
-
-        // Notify Seller if applicable
-        notifySeller(savedReport);
+        // Async notifications (simulated via transactional context)
+        try {
+            notifyAdmins(savedReport);
+            notifySeller(savedReport);
+        } catch (Exception e) {
+            System.err.println("Notification failed during report creation: " + e.getMessage());
+        }
 
         return mapToDTO(savedReport);
     }
@@ -78,6 +90,7 @@ public class ReportService {
         }
     }
 
+    @Transactional(readOnly = true)
     public List<ReportDTO> getAllReports() {
         return reportRepository.findAll().stream()
                 .map(this::mapToDTO)
@@ -90,6 +103,11 @@ public class ReportService {
                 .collect(Collectors.toList());
     }
 
+    public Report getReportById(Long id) {
+        return reportRepository.findById(id).orElse(null);
+    }
+
+    @Transactional
     public ReportDTO updateReportStatus(Long reportId, ReportStatus status) {
         Report report = reportRepository.findById(reportId)
                 .orElseThrow(() -> new RuntimeException("Report not found"));
@@ -97,46 +115,71 @@ public class ReportService {
         return mapToDTO(reportRepository.save(report));
     }
 
-    private ReportDTO mapToDTO(Report report) {
-        String entityName = "Unknown";
-        String entityImage = null;
-
+    private void populateEntityDetails(Report report) {
         if (report.getType() == ReportType.PRODUCT) {
             var p = productRepository.findById(report.getReportedEntityId()).orElse(null);
             if (p != null) {
-                entityName = p.getName();
+                report.setReportedEntityName(p.getName());
                 if (!p.getImages().isEmpty()) {
-                    entityImage = p.getImages().get(0).getImagePath();
+                    report.setReportedEntityImage(p.getImages().get(0).getImagePath());
                 }
             }
         } else if (report.getType() == ReportType.SELLER) {
-            // reportedEntityId for SELLER reports is likely the User ID of the seller
-            // Let's verify if ReportModal sends sellerId (User ID) or SellerProfile ID.
-            // Looking at similar code, it's usually User ID in URLs.
-            // Let's assume User ID first, check profile.
             var u = userRepository.findById(report.getReportedEntityId()).orElse(null);
             if (u != null) {
-                // Try to find seller profile
                 var profile = sellerProfileRepository.findByUser(u).orElse(null);
                 if (profile != null) {
-                    entityName = profile.getStoreName();
-                    entityImage = profile.getLogoImagePath();
+                    report.setReportedEntityName(profile.getStoreName());
+                    report.setReportedEntityImage(profile.getLogoImagePath());
                 } else {
-                    entityName = u.getFullName();
-                    entityImage = u.getProfileImagePath();
+                    report.setReportedEntityName(u.getFullName());
+                    report.setReportedEntityImage(u.getProfileImagePath());
                 }
             }
+        }
+    }
+
+    private ReportDTO mapToDTO(Report report) {
+        // Fallback for older reports that don't have these fields populated
+        String entityName = report.getReportedEntityName();
+        String entityImage = report.getReportedEntityImage();
+
+        if (entityName == null) {
+            // Quick on-the-fly fetch if missing (legacy support)
+            if (report.getType() == ReportType.PRODUCT) {
+                var p = productRepository.findById(report.getReportedEntityId()).orElse(null);
+                if (p != null) {
+                    entityName = p.getName();
+                    if (!p.getImages().isEmpty())
+                        entityImage = p.getImages().get(0).getImagePath();
+                }
+            } else {
+                var u = userRepository.findById(report.getReportedEntityId()).orElse(null);
+                if (u != null)
+                    entityName = u.getFullName();
+            }
+        }
+
+        Long sellerUserId = null;
+        if (report.getType() == ReportType.PRODUCT) {
+            var p = productRepository.findById(report.getReportedEntityId()).orElse(null);
+            if (p != null)
+                sellerUserId = p.getSellerProfile().getUser().getId();
+        } else {
+            // If reporting a seller, the entity ID is the seller's user ID
+            sellerUserId = report.getReportedEntityId();
         }
 
         return ReportDTO.builder()
                 .id(report.getId())
                 .type(report.getType())
                 .reportedEntityId(report.getReportedEntityId())
-                .reportedEntityName(entityName)
+                .reportedEntityName(entityName != null ? entityName : "Unknown Entity")
                 .reportedEntityImage(entityImage)
                 .reason(report.getReason())
-                .reporterId(report.getReporter().getId())
-                .reporterName(report.getReporter().getFullName())
+                .reporterId(report.getReporter() != null ? report.getReporter().getId() : null)
+                .reporterName(report.getReporter() != null ? report.getReporter().getFullName() : "System/Guest")
+                .sellerUserId(sellerUserId)
                 .status(report.getStatus())
                 .createdAt(report.getCreatedAt())
                 .build();

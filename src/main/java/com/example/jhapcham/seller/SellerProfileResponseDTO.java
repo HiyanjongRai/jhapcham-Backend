@@ -28,6 +28,7 @@ public class SellerProfileResponseDTO {
     private Double freeShippingMinOrder;
 
     private String logoImagePath;
+    private String profileImagePath;
     private String status;
     private Boolean isVerified;
     private java.time.LocalDateTime joinedDate;
@@ -53,6 +54,7 @@ public class SellerProfileResponseDTO {
                 .freeShippingEnabled(profile.getFreeShippingEnabled())
                 .freeShippingMinOrder(profile.getFreeShippingMinOrder())
                 .logoImagePath(profile.getLogoImagePath())
+                .profileImagePath(profile.getUser().getProfileImagePath())
                 .status(profile.getStatus().name())
                 .isVerified(profile.getIsVerified())
                 .joinedDate(profile.getJoinedDate())

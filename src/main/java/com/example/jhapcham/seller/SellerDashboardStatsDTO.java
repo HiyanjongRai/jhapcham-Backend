@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @Builder
@@ -33,4 +34,13 @@ public class SellerDashboardStatsDTO {
     // Recent activity
     private BigDecimal last30DaysIncome;
     private Long last30DaysOrders;
+
+    // Store Branding
+    private String storeName;
+    private String logoImagePath;
+    private String profileImagePath;
+
+    // Dynamic Dashboard Data
+    private List<BigDecimal> weeklySales;
+    private List<ProductSummaryDTO> topSellingProducts;
 }

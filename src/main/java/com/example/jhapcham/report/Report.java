@@ -39,6 +39,9 @@ public class Report {
     @Column(nullable = false)
     private ReportStatus status;
 
+    private String reportedEntityName;
+    private String reportedEntityImage;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

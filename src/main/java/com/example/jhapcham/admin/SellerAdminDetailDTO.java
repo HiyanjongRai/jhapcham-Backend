@@ -18,5 +18,6 @@ public class SellerAdminDetailDTO {
     private String storeName;
     private int totalOrders;
     private int totalProducts;
-    // Add income if needed
+    private double totalIncome;
+    private int totalDelivered;
 }

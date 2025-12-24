@@ -38,6 +38,7 @@ public class OrderService {
     private final OrderStockService orderStockService;
     private final OrderAccountingService orderAccountingService;
     private final OrderStatusService orderStatusService;
+    private final com.example.jhapcham.notification.NotificationService notificationService;
 
     // =========================
     // PREVIEW ORDER
@@ -214,6 +215,19 @@ public class OrderService {
 
         orderRepository.save(order);
         log.info("Seller {} moved order {} to PROCESSING", sellerId, orderId);
+
+        // Notify Customer
+        try {
+            notificationService.createNotification(
+                    order.getUser(),
+                    "Order Update: Processing",
+                    "Your order #" + order.getId() + " is now being processed by the merchant.",
+                    com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
+                    order.getId());
+        } catch (Exception e) {
+            log.error("Failed to notify customer of order processing", e);
+        }
+
         return toSummaryDTO(order, mapItems(order));
     }
 
@@ -231,6 +245,19 @@ public class OrderService {
 
         orderRepository.save(order);
         log.info("Seller {} assigned branch {} to order {}", sellerId, dto.getBranch(), orderId);
+
+        // Notify Customer
+        try {
+            notificationService.createNotification(
+                    order.getUser(),
+                    "Order Update: Shipped to Branch",
+                    "Your order #" + order.getId() + " has been shipped to the " + dto.getBranch() + " branch.",
+                    com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
+                    order.getId());
+        } catch (Exception e) {
+            log.error("Failed to notify customer of branch assignment", e);
+        }
+
         return toSummaryDTO(order, mapItems(order));
     }
 
@@ -258,6 +285,19 @@ public class OrderService {
 
         orderRepository.save(order);
         log.info("Branch {} updated order {} status to {}", branchRaw, orderId, nextStatusRaw);
+
+        // Notify Customer
+        try {
+            notificationService.createNotification(
+                    order.getUser(),
+                    "Order Update: " + nextStatusRaw,
+                    "The status of your order #" + order.getId() + " has been updated to: " + nextStatusRaw + ".",
+                    com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
+                    order.getId());
+        } catch (Exception e) {
+            log.error("Failed to notify customer of branch status update", e);
+        }
+
         return toSummaryDTO(order, mapItems(order));
     }
 
@@ -278,6 +318,19 @@ public class OrderService {
 
         orderRepository.save(order);
         log.info("Seller {} cancelled order {}", sellerId, orderId);
+
+        // Notify Customer
+        try {
+            notificationService.createNotification(
+                    order.getUser(),
+                    "Order Canceled by Merchant",
+                    "We regret to inform you that your order #" + order.getId() + " was canceled by the merchant.",
+                    com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
+                    order.getId());
+        } catch (Exception e) {
+            log.error("Failed to notify customer of order cancellation", e);
+        }
+
         return toSummaryDTO(order, mapItems(order));
     }
 

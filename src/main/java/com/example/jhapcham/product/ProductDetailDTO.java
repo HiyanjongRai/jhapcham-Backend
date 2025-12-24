@@ -59,6 +59,7 @@ public class ProductDetailDTO {
     private String storeAddress;
     private com.example.jhapcham.user.model.Status sellerProfileStatus;
     private String logoImagePath;
+    private String profileImagePath;
 
     private Double averageRating;
     private Integer totalReviews;

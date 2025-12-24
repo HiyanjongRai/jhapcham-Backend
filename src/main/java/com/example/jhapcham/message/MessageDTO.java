@@ -11,6 +11,7 @@ public class MessageDTO {
     private String senderProfileImage;
     private Long receiverId;
     private String receiverName;
+    private String receiverProfileImage;
     private String content;
     private Long productId;
     private String productName;

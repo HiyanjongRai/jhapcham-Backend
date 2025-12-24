@@ -22,19 +22,22 @@ public class ReportController {
         public ResponseEntity<?> createReport(
                         @RequestBody ReportCreateRequest request,
                         @AuthenticationPrincipal UserDetails userDetails) {
+                try {
+                        if (userDetails == null) {
+                                return ResponseEntity.status(401).body(new ErrorResponse("Please log in to report"));
+                        }
 
-                if (userDetails == null) {
-                        return ResponseEntity.status(401)
-                                        .body(new ErrorResponse("Unauthorized"));
+                        User user = userRepository.findByEmail(userDetails.getUsername())
+                                        .orElseThrow(() -> new RuntimeException("Logged in user not found"));
+
+                        if (request.getType() == null || request.getReportedEntityId() == null) {
+                                return ResponseEntity.badRequest().body(new ErrorResponse("Invalid report data"));
+                        }
+
+                        return ResponseEntity.ok(reportService.createReport(user.getId(), request));
+                } catch (Exception e) {
+                        return ResponseEntity.status(500).body(new ErrorResponse(e.getMessage()));
                 }
-
-                String email = userDetails.getUsername();
-
-                User user = userRepository.findByEmail(email)
-                                .orElseThrow(() -> new RuntimeException("User not found: " + email));
-
-                return ResponseEntity.ok(
-                                reportService.createReport(user.getId(), request));
         }
 
         @GetMapping("/seller/me")

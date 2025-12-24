@@ -36,6 +36,11 @@ public class AdminController {
         return ResponseEntity.ok().build();
     }
 
+    @GetMapping("/sellers")
+    public ResponseEntity<List<SellerAdminDetailDTO>> getAllSellers() {
+        return ResponseEntity.ok(adminService.getAllSellersMetrics());
+    }
+
     @GetMapping("/sellers/{sellerId}")
     public ResponseEntity<SellerAdminDetailDTO> getSellerDetails(@PathVariable Long sellerId) {
         return ResponseEntity.ok(adminService.getSellerDetails(sellerId));
@@ -66,7 +71,8 @@ public class AdminController {
             @PathVariable Long reportId,
             @RequestBody(required = false) java.util.Map<String, String> body) {
         String note = (body != null && body.containsKey("note")) ? body.get("note") : "RESOLVED";
-        adminService.createReportResolution(reportId, note);
+        String status = (body != null && body.containsKey("status")) ? body.get("status") : "RESOLVED";
+        adminService.createReportResolution(reportId, status, note);
         return ResponseEntity.ok().build();
     }
 

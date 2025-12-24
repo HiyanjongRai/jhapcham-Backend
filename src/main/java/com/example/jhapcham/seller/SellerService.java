@@ -148,6 +148,32 @@ public class SellerService {
                         }
                 }
 
+                // Weekly statistics (last 7 days)
+                LocalDateTime sevenDaysAgo = LocalDateTime.now().minusDays(7);
+                List<Order> weeklyOrders = orderRepository.findOrdersBySellerSince(sellerUserId, sevenDaysAgo);
+
+                List<BigDecimal> weeklySales = new java.util.ArrayList<>(
+                                java.util.Collections.nCopies(7, BigDecimal.ZERO));
+                LocalDateTime now = LocalDateTime.now();
+
+                for (Order order : weeklyOrders) {
+                        if (order.getStatus() == OrderStatus.DELIVERED && order.getSellerNetAmount() != null) {
+                                long daysAgo = java.time.temporal.ChronoUnit.DAYS.between(order.getCreatedAt(), now);
+                                if (daysAgo >= 0 && daysAgo < 7) {
+                                        int index = 6 - (int) daysAgo;
+                                        weeklySales.set(index, weeklySales.get(index).add(order.getSellerNetAmount()));
+                                }
+                        }
+                }
+
+                // Get some products to display as "Top Selling" (just first 4 for visual
+                // consistency)
+                List<ProductSummaryDTO> topSellingProducts = productRepository.findBySellerProfile(profile).stream()
+                                .filter(p -> p.getStatus() == ProductStatus.ACTIVE)
+                                .limit(4)
+                                .map(ProductSummaryDTO::from)
+                                .collect(java.util.stream.Collectors.toList());
+
                 return SellerDashboardStatsDTO.builder()
                                 // Income metrics (from SellerProfile accumulated values)
                                 .totalIncome(profile.getTotalIncome())
@@ -170,6 +196,11 @@ public class SellerService {
                                 // Recent activity
                                 .last30DaysIncome(last30DaysIncome)
                                 .last30DaysOrders(last30DaysOrderCount)
+                                .storeName(profile.getStoreName())
+                                .logoImagePath(profile.getLogoImagePath())
+                                .profileImagePath(profile.getUser().getProfileImagePath())
+                                .weeklySales(weeklySales)
+                                .topSellingProducts(topSellingProducts)
                                 .build();
         }
 }

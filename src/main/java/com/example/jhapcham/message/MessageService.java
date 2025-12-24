@@ -20,6 +20,7 @@ public class MessageService {
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
+    private final com.example.jhapcham.seller.SellerProfileRepository sellerProfileRepository;
 
     @Transactional
     public MessageDTO sendMessage(Long senderId, SendMessageRequest request) {
@@ -63,15 +64,45 @@ public class MessageService {
         return messages.stream().map(this::convertToDTO).collect(Collectors.toList());
     }
 
+    public long getUnreadCount(Long userId) {
+        return messageRepository.countByReceiverIdAndIsReadFalse(userId);
+    }
+
+    @Transactional
+    public void markAsRead(Long receiverId, Long senderId) {
+        messageRepository.markConversationAsRead(receiverId, senderId);
+    }
+
     private MessageDTO convertToDTO(Message message) {
         MessageDTO dto = new MessageDTO();
         dto.setId(message.getId());
-        dto.setSenderId(message.getSender().getId());
-        dto.setSenderName(message.getSender().getUsername()); // Or FullName
-        dto.setSenderProfileImage(message.getSender().getProfileImagePath());
 
-        dto.setReceiverId(message.getReceiver().getId());
-        dto.setReceiverName(message.getReceiver().getUsername());
+        User sender = message.getSender();
+        User receiver = message.getReceiver();
+
+        // Sender Info
+        dto.setSenderId(sender.getId());
+        var senderSeller = sellerProfileRepository.findByUser(sender);
+        if (senderSeller.isPresent()) {
+            dto.setSenderName(senderSeller.get().getStoreName());
+            String logo = senderSeller.get().getLogoImagePath();
+            dto.setSenderProfileImage(logo != null ? logo : sender.getProfileImagePath());
+        } else {
+            dto.setSenderName(sender.getFullName() != null ? sender.getFullName() : sender.getUsername());
+            dto.setSenderProfileImage(sender.getProfileImagePath());
+        }
+
+        // Receiver Info
+        dto.setReceiverId(receiver.getId());
+        var receiverSeller = sellerProfileRepository.findByUser(receiver);
+        if (receiverSeller.isPresent()) {
+            dto.setReceiverName(receiverSeller.get().getStoreName());
+            String logo = receiverSeller.get().getLogoImagePath();
+            dto.setReceiverProfileImage(logo != null ? logo : receiver.getProfileImagePath());
+        } else {
+            dto.setReceiverName(receiver.getFullName() != null ? receiver.getFullName() : receiver.getUsername());
+            dto.setReceiverProfileImage(receiver.getProfileImagePath());
+        }
 
         dto.setContent(message.getContent());
 

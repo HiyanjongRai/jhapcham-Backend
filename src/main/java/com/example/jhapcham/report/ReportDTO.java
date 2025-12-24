@@ -20,6 +20,7 @@ public class ReportDTO {
     private String reason;
     private Long reporterId;
     private String reporterName;
+    private Long sellerUserId; // User ID of the seller to message
     private ReportStatus status;
     private LocalDateTime createdAt;
 }

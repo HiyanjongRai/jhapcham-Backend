@@ -24,6 +24,7 @@ public class SellerApplicationService {
     private final SellerProfileRepository profileRepo;
     private final UserRepository userRepo;
     private final FileStorageService storage;
+    private final com.example.jhapcham.notification.NotificationService notificationService;
 
     @Transactional
     public SellerApplication submitApplication(
@@ -114,6 +115,19 @@ public class SellerApplicationService {
 
         profileRepo.save(profile);
 
+        // Notify Seller
+        try {
+            notificationService.createNotification(
+                    seller,
+                    "Application Approved",
+                    "Congratulations! Your seller application for '" + app.getStoreName() + "' has been approved. "
+                            + (note != null ? "Note: " + note : ""),
+                    com.example.jhapcham.notification.NotificationType.SYSTEM_ALERT,
+                    app.getId());
+        } catch (Exception e) {
+            System.err.println("Failed to send approval notification: " + e.getMessage());
+        }
+
         return applicationRepo.save(app);
     }
 
@@ -124,6 +138,19 @@ public class SellerApplicationService {
         app.setStatus(ApplicationStatus.REJECTED);
         app.setReviewNote(note);
         app.setReviewedAt(LocalDateTime.now());
+
+        // Notify Seller
+        try {
+            notificationService.createNotification(
+                    app.getUser(),
+                    "Application Rejected",
+                    "Your seller application for '" + app.getStoreName() + "' was rejected. Reason: "
+                            + (note != null ? note : "No specific reason provided."),
+                    com.example.jhapcham.notification.NotificationType.REPORT_ALERT,
+                    app.getId());
+        } catch (Exception e) {
+            System.err.println("Failed to send rejection notification: " + e.getMessage());
+        }
 
         return applicationRepo.save(app);
     }

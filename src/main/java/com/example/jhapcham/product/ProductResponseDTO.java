@@ -50,4 +50,6 @@ public class ProductResponseDTO {
     private Double averageRating;
     private Integer totalReviews;
     private String sellerFullName;
+    private String logoImagePath;
+    private String profileImagePath;
 }

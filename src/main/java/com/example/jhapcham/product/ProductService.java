@@ -383,6 +383,7 @@ public class ProductService {
                 .sellerProfileStatus(profile.getStatus())
 
                 .logoImagePath(profile.getLogoImagePath())
+                .profileImagePath(seller.getProfileImagePath())
                 .averageRating(reviewRepository.findAverageRatingByProductId(p.getId()))
                 .totalReviews(reviewRepository.countByProductId(p.getId()))
                 .build();
@@ -468,6 +469,8 @@ public class ProductService {
                 .averageRating(reviewRepository.findAverageRatingByProductId(p.getId()))
                 .totalReviews(reviewRepository.countByProductId(p.getId()))
                 .sellerFullName(p.getSellerProfile().getUser().getFullName())
+                .logoImagePath(p.getSellerProfile().getLogoImagePath())
+                .profileImagePath(p.getSellerProfile().getUser().getProfileImagePath())
                 .build();
     }
 

@@ -16,4 +16,10 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     // Find conversation between two users
     @Query("SELECT m FROM Message m WHERE (m.sender.id = :user1 AND m.receiver.id = :user2) OR (m.sender.id = :user2 AND m.receiver.id = :user1) ORDER BY m.createdAt DESC")
     List<Message> findConversation(@Param("user1") Long user1, @Param("user2") Long user2);
+
+    long countByReceiverIdAndIsReadFalse(Long receiverId);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("UPDATE Message m SET m.isRead = true WHERE m.receiver.id = :receiverId AND m.sender.id = :senderId AND m.isRead = false")
+    void markConversationAsRead(@Param("receiverId") Long receiverId, @Param("senderId") Long senderId);
 }
