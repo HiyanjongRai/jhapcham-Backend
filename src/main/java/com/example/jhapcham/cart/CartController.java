@@ -1,9 +1,9 @@
 package com.example.jhapcham.cart;
 
-import com.example.jhapcham.cart.CartService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 @RestController
 @RequestMapping("/api/cart")
 @RequiredArgsConstructor
@@ -14,11 +14,9 @@ public class CartController {
     public ResponseEntity<?> addToCart(
             @PathVariable Long userId,
             @PathVariable Long productId,
-            @RequestBody AddToCartRequestDTO dto
-    ) {
+            @RequestBody AddToCartRequestDTO dto) {
         try {
-            CartResponseDTO cart =
-                    cartService.addToCart(userId, productId, dto);
+            CartResponseDTO cart = cartService.addToCart(userId, productId, dto);
 
             return ResponseEntity.ok(cart);
 
@@ -33,15 +31,13 @@ public class CartController {
                     .body("Unable to add item to cart");
         }
 
-
     }
 
     @PutMapping("/{userId}/update/{cartItemId}")
     public ResponseEntity<?> updateQuantity(
             @PathVariable Long userId,
             @PathVariable Long cartItemId,
-            @RequestParam Integer qty
-    ) {
+            @RequestParam Integer qty) {
         try {
             CartResponseDTO cart = cartService.updateQuantity(userId, cartItemId, qty);
             return ResponseEntity.ok(cart);

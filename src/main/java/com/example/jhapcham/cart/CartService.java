@@ -3,7 +3,6 @@ package com.example.jhapcham.cart;
 import com.example.jhapcham.Error.AuthorizationException;
 import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
-import com.example.jhapcham.cart.CartItemRepository;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.user.model.User;
@@ -15,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -34,10 +34,11 @@ public class CartService {
                         throw new BusinessValidationException("Quantity must be greater than zero");
                 }
 
-                User user = userRepository.findById(userId)
+                User user = userRepository.findById(Objects.requireNonNull(userId, "User ID cannot be null"))
                                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-                Product product = productRepository.findById(productId)
+                Product product = productRepository
+                                .findById(Objects.requireNonNull(productId, "Product ID cannot be null"))
                                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
                 CartItem item = cartItemRepository.findByUserAndProduct(user, product)
@@ -64,7 +65,8 @@ public class CartService {
                         throw new BusinessValidationException("Quantity is required");
                 }
 
-                CartItem item = cartItemRepository.findById(cartItemId)
+                CartItem item = cartItemRepository
+                                .findById(Objects.requireNonNull(cartItemId, "Cart item ID cannot be null"))
                                 .orElseThrow(() -> new ResourceNotFoundException("Cart item not found"));
 
                 if (!item.getUser().getId().equals(userId)) {
@@ -83,7 +85,7 @@ public class CartService {
 
         public CartResponseDTO getCart(Long userId) {
 
-                User user = userRepository.findById(userId)
+                User user = userRepository.findById(Objects.requireNonNull(userId, "User ID cannot be null"))
                                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
                 List<CartItem> items = cartItemRepository.findByUser(user);

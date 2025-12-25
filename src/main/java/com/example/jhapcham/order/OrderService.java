@@ -108,6 +108,9 @@ public class OrderService {
                     .customerEmail(dto.getEmail())
                     .shippingAddress(dto.getAddress())
                     .shippingLocation(dto.getShippingLocation())
+                    .customerAlternativePhone(dto.getAlternativePhone()) // NEW
+                    .deliveryTimePreference(dto.getDeliveryTimePreference()) // NEW
+                    .orderNote(dto.getOrderNote()) // NEW
                     .paymentMethod(paymentMethod)
                     .status(OrderStatus.NEW)
                     .itemsTotal(data.itemsTotal)
@@ -189,6 +192,9 @@ public class OrderService {
         checkout.setPhone(dto.getPhone());
         checkout.setEmail(dto.getEmail());
         checkout.setAddress(dto.getAddress());
+        checkout.setAlternativePhone(dto.getAlternativePhone()); // NEW
+        checkout.setDeliveryTimePreference(dto.getDeliveryTimePreference()); // NEW
+        checkout.setOrderNote(dto.getOrderNote()); // NEW
         checkout.setShippingLocation(dto.getShippingLocation());
         checkout.setPaymentMethod(dto.getPaymentMethod());
         checkout.setItems(checkoutItems);
@@ -507,6 +513,9 @@ public class OrderService {
                 .customerEmail(o.getCustomerEmail())
                 .shippingAddress(o.getShippingAddress())
                 .shippingLocation(o.getShippingLocation())
+                .customerAlternativePhone(o.getCustomerAlternativePhone()) // NEW
+                .deliveryTimePreference(o.getDeliveryTimePreference()) // NEW
+                .orderNote(o.getOrderNote()) // NEW
                 .paymentMethod(o.getPaymentMethod())
                 .paymentReference(o.getPaymentReference())
                 .itemsTotal(o.getItemsTotal())

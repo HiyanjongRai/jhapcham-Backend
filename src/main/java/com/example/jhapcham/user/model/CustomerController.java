@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.*;
 public class CustomerController {
 
     private final AuthService authService;
-    private final UserRepository userRepository; // Added to check role if needed
 
     /**
      * Update Customer Profile

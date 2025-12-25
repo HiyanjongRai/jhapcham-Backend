@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Objects;
+
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
@@ -14,7 +16,7 @@ public class UserController {
 
     @GetMapping("/{userId}")
     public ResponseEntity<?> getUserProfile(@PathVariable Long userId) {
-        var user = userRepository.findById(userId);
+        var user = userRepository.findById(Objects.requireNonNull(userId, "User ID cannot be null"));
         if (user.isPresent()) {
             return ResponseEntity.ok(mapToDto(user.get()));
         }

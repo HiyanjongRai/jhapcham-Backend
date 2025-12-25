@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -24,14 +25,16 @@ public class MessageService {
 
     @Transactional
     public MessageDTO sendMessage(Long senderId, SendMessageRequest request) {
-        User sender = userRepository.findById(senderId)
+        User sender = userRepository.findById(Objects.requireNonNull(senderId, "Sender ID cannot be null"))
                 .orElseThrow(() -> new RuntimeException("Sender not found"));
-        User receiver = userRepository.findById(request.getReceiverId())
+        User receiver = userRepository
+                .findById(Objects.requireNonNull(request.getReceiverId(), "Receiver ID cannot be null"))
                 .orElseThrow(() -> new RuntimeException("Receiver not found"));
 
         Product product = null;
         if (request.getProductId() != null) {
-            product = productRepository.findById(request.getProductId())
+            product = productRepository
+                    .findById(Objects.requireNonNull(request.getProductId(), "Product ID cannot be null"))
                     .orElse(null);
         }
 
@@ -43,7 +46,7 @@ public class MessageService {
                 .isRead(false)
                 .build();
 
-        Message savedMessage = messageRepository.save(message);
+        Message savedMessage = Objects.requireNonNull(messageRepository.save(message), "Saved message cannot be null");
         return convertToDTO(savedMessage);
     }
 

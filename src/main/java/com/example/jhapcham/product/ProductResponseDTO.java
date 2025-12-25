@@ -52,4 +52,5 @@ public class ProductResponseDTO {
     private String sellerFullName;
     private String logoImagePath;
     private String profileImagePath;
+    private java.time.LocalDateTime saleEndTime;
 }

@@ -9,6 +9,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -43,7 +44,8 @@ public class AdminController {
 
     @GetMapping("/sellers/{sellerId}")
     public ResponseEntity<SellerAdminDetailDTO> getSellerDetails(@PathVariable Long sellerId) {
-        return ResponseEntity.ok(adminService.getSellerDetails(sellerId));
+        return ResponseEntity
+                .ok(adminService.getSellerDetails(Objects.requireNonNull(sellerId, "Seller ID cannot be null")));
     }
 
     // Products

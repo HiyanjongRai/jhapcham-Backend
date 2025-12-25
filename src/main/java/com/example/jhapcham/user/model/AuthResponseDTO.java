@@ -1,7 +1,5 @@
 package com.example.jhapcham.user.model;
 
-import com.example.jhapcham.user.model.Role;
-import com.example.jhapcham.user.model.Status;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

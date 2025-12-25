@@ -20,6 +20,9 @@ public class OrderSummaryDTO {
     private String shippingAddress;
     private String shippingLocation;
     private String customerProfileImagePath;
+    private String customerAlternativePhone; // NEW
+    private String deliveryTimePreference; // NEW
+    private String orderNote; // NEW
 
     private PaymentMethod paymentMethod;
     private String paymentReference;

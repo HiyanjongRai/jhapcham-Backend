@@ -386,6 +386,7 @@ public class ProductService {
                 .profileImagePath(seller.getProfileImagePath())
                 .averageRating(reviewRepository.findAverageRatingByProductId(p.getId()))
                 .totalReviews(reviewRepository.countByProductId(p.getId()))
+                .saleEndTime(p.getSaleEndTime())
                 .build();
     }
 
@@ -395,12 +396,19 @@ public class ProductService {
             return null;
         }
 
+        // 1. Prefer stored label from Campaign (e.g. "Winter Sale")
+        if (p.getSaleLabel() != null && !p.getSaleLabel().isBlank()) {
+            return p.getSaleLabel();
+        }
+
+        // 2. Fallback to percentage
         if (p.getSalePercentage() != null) {
             return p.getSalePercentage()
                     .stripTrailingZeros()
                     .toPlainString() + "% OFF";
         }
 
+        // 3. Fallback to generic
         if (p.getDiscountPrice() != null) {
             return "SALE";
         }
@@ -471,6 +479,7 @@ public class ProductService {
                 .sellerFullName(p.getSellerProfile().getUser().getFullName())
                 .logoImagePath(p.getSellerProfile().getLogoImagePath())
                 .profileImagePath(p.getSellerProfile().getUser().getProfileImagePath())
+                .saleEndTime(p.getSaleEndTime())
                 .build();
     }
 

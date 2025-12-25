@@ -1,7 +1,5 @@
 package com.example.jhapcham.user.model;
 
-import com.example.jhapcham.user.model.Role;
-import com.example.jhapcham.user.model.Status;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
@@ -18,6 +16,5 @@ public class AdminUserDTO {
     private String contactNumber;
     private Role role;
     private Status status;
-
 
 }

@@ -101,5 +101,7 @@ public class Product {
     private Double outsideValleyShipping;
     private Double sellerFreeShippingMinOrder;
 
+    private java.time.LocalDateTime saleEndTime;
+    private String saleLabel;
 
 }

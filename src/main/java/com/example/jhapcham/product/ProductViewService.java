@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -19,7 +20,7 @@ public class ProductViewService {
     // record view for logged in and guest
     @Transactional
     public void recordView(Long productId, Long userId) {
-        Product product = productRepository.findById(productId)
+        Product product = productRepository.findById(Objects.requireNonNull(productId, "Product ID cannot be null"))
                 .orElseThrow(() -> new RuntimeException("Product not found"));
 
         User user = null;
@@ -33,12 +34,12 @@ public class ProductViewService {
                 .user(user)
                 .build();
 
-        productViewRepository.save(view);
+        productViewRepository.save(Objects.requireNonNull(view, "Product view cannot be null"));
     }
 
     // recent views of a user (for future recommendations)
     public List<ProductView> getRecentViewsForUser(Long userId) {
-        User user = userRepository.findById(userId)
+        User user = userRepository.findById(Objects.requireNonNull(userId, "User ID cannot be null"))
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         return productViewRepository.findTop50ByUserOrderByViewedAtDesc(user);
@@ -46,10 +47,9 @@ public class ProductViewService {
 
     // total views for one product
     public long getTotalViewsForProduct(Long productId) {
-        Product product = productRepository.findById(productId)
+        Product product = productRepository.findById(Objects.requireNonNull(productId, "Product ID cannot be null"))
                 .orElseThrow(() -> new RuntimeException("Product not found"));
         return productViewRepository.countByProduct(product);
     }
-
 
 }

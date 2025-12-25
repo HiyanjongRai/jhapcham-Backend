@@ -16,10 +16,12 @@ import com.example.jhapcham.user.model.Status;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -142,8 +144,8 @@ public class AdminService {
         }).toList();
     }
 
-    public SellerAdminDetailDTO getSellerDetails(Long sellerUserId) {
-        User user = userRepository.findById(sellerUserId)
+    public SellerAdminDetailDTO getSellerDetails(@NonNull Long sellerUserId) {
+        User user = userRepository.findById(Objects.requireNonNull(sellerUserId, "Seller user ID cannot be null"))
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         SellerProfile profile = sellerProfileRepository.findByUser(user)

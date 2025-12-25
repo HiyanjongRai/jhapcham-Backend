@@ -63,4 +63,5 @@ public class ProductDetailDTO {
 
     private Double averageRating;
     private Integer totalReviews;
+    private java.time.LocalDateTime saleEndTime;
 }

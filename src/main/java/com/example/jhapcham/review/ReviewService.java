@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -32,11 +33,11 @@ public class ReviewService {
     public ReviewResponseDTO addReview(Long userId, Long productId, Integer rating, String comment,
             MultipartFile image) {
         // 1. Verify user exists
-        User user = userRepository.findById(userId)
+        User user = userRepository.findById(Objects.requireNonNull(userId, "User ID cannot be null"))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         // 2. Verify product exists
-        Product product = productRepository.findById(productId)
+        Product product = productRepository.findById(Objects.requireNonNull(productId, "Product ID cannot be null"))
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
         // 3. Verify purchase and delivery

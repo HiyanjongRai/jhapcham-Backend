@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -25,7 +26,7 @@ public class NotificationService {
                 .type(type)
                 .relatedEntityId(relatedEntityId)
                 .build();
-        notificationRepository.save(notification);
+        notificationRepository.save(Objects.requireNonNull(notification, "Notification cannot be null"));
     }
 
     public List<Notification> getUserNotifications(String username) {
@@ -36,9 +37,26 @@ public class NotificationService {
 
     @Transactional
     public void markAsRead(Long notificationId) {
-        notificationRepository.findById(notificationId).ifPresent(n -> {
-            n.setIsRead(true);
-            notificationRepository.save(n);
-        });
+        notificationRepository.findById(Objects.requireNonNull(notificationId, "Notification ID cannot be null"))
+                .ifPresent(n -> {
+                    n.setIsRead(true);
+                    notificationRepository.save(n);
+                });
+    }
+
+    @Transactional
+    public void notifyAllSellers(String title, String message, Long relatedEntityId) {
+        List<User> sellers = userRepository.findByRole(com.example.jhapcham.user.model.Role.SELLER);
+        for (User seller : sellers) {
+            createNotification(seller, title, message, NotificationType.SELLER_ALERT, relatedEntityId);
+        }
+    }
+
+    @Transactional
+    public void notifyAllCustomers(String title, String message, Long relatedEntityId) {
+        List<User> customers = userRepository.findByRole(com.example.jhapcham.user.model.Role.CUSTOMER);
+        for (User customer : customers) {
+            createNotification(customer, title, message, NotificationType.SYSTEM_ALERT, relatedEntityId);
+        }
     }
 }

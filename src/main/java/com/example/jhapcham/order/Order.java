@@ -33,6 +33,14 @@ public class Order {
     @Column(nullable = false)
     private String customerPhone;
 
+    private String customerAlternativePhone; // NEW
+
+    @Column(columnDefinition = "TEXT")
+    private String deliveryTimePreference; // NEW
+
+    @Column(columnDefinition = "TEXT")
+    private String orderNote; // NEW
+
     @Column(nullable = false)
     private String customerEmail;
 
@@ -84,7 +92,6 @@ public class Order {
     @Enumerated(EnumType.STRING)
     private DeliveryBranch assignedBranch;
 
-
     @Column(nullable = false)
     private BigDecimal sellerGrossAmount;
 
@@ -98,6 +105,7 @@ public class Order {
     private DeliveryBranch deliveredBranch;
 
     @Column(nullable = false)
+    @Builder.Default
     private boolean sellerAccounted = false;
 
 }
