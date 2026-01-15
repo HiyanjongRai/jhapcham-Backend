@@ -22,7 +22,7 @@ public class WebConfig implements WebMvcConfigurer {
         @Override
         public void addResourceHandlers(@NonNull ResourceHandlerRegistry registry) {
 
-                String baseDir = "file:H:/Project/Ecomm/jhapcham/uploads/";
+                String baseDir = "file:H:/Project/Ecomm/Jhapcham1/jhapcham-Backend/uploads/";
 
                 // single generic handler for everything stored by FileStorageService
                 registry.addResourceHandler("/uploads/**")

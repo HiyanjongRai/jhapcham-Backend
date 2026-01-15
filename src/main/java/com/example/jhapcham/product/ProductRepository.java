@@ -17,4 +17,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Long countBySellerProfileAndStatus(SellerProfile sellerProfile, ProductStatus status);
 
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT p.category FROM Product p WHERE p.status = 'ACTIVE' AND p.category IS NOT NULL")
+    List<String> findDistinctCategories();
+
 }

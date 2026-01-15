@@ -634,4 +634,8 @@ public class ProductService {
         productRepository.save(product);
     }
 
+    public List<String> getAllCategories() {
+        return productRepository.findDistinctCategories();
+    }
+
 }
