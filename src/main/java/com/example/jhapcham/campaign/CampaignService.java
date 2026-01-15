@@ -20,9 +20,16 @@ public class CampaignService {
     private final SellerCampaignRepository sellerCampaignRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final ProductRepository productRepository;
+    private final com.example.jhapcham.common.FileStorageService fileStorageService;
     private final com.example.jhapcham.notification.NotificationService notificationService;
 
     public CampaignResponseDTO createCampaign(CampaignCreateRequestDTO dto) {
+        String imagePath = null;
+        if (dto.getImage() != null && !dto.getImage().isEmpty()) {
+            imagePath = fileStorageService.save(dto.getImage(), "campaign-images",
+                    "campaign_" + System.currentTimeMillis());
+        }
+
         Campaign campaign = Campaign.builder()
                 .name(dto.getName())
                 .type(dto.getType())
@@ -31,6 +38,7 @@ public class CampaignService {
                 .discountType(dto.getDiscountType())
                 .status(CampaignStatus.UPCOMING)
                 .priority(dto.getPriority())
+                .imagePath(imagePath)
                 .build();
         Campaign savedCampaign = campaignRepository.save(campaign);
 
@@ -226,21 +234,38 @@ public class CampaignService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<CampaignProductResponseDTO> getPublicCampaignProducts(
+            @org.springframework.lang.NonNull Long campaignId) {
+        return campaignProductRepository.findByCampaignIdAndStatus(campaignId, CampaignProductStatus.APPROVED)
+                .stream()
+                .map(this::mapToDTO)
+                .toList();
+    }
+
     private CampaignProductResponseDTO mapToDTO(CampaignProduct cp) {
-        String img = (cp.getProduct().getImages() != null && !cp.getProduct().getImages().isEmpty())
-                ? cp.getProduct().getImages().get(0).getImagePath()
-                : null;
+        String img = null;
+        if (cp.getProduct() != null && cp.getProduct().getImages() != null && !cp.getProduct().getImages().isEmpty()) {
+            img = cp.getProduct().getImages().get(0).getImagePath();
+        }
+
+        String sellerName = "Unknown Seller";
+        Long sellerId = null;
+        if (cp.getProduct() != null && cp.getProduct().getSellerProfile() != null) {
+            sellerName = cp.getProduct().getSellerProfile().getStoreName();
+            sellerId = cp.getProduct().getSellerProfile().getId();
+        }
 
         return CampaignProductResponseDTO.builder()
                 .id(cp.getId())
-                .productId(cp.getProduct().getId())
-                .productName(cp.getProduct().getName())
+                .productId(cp.getProduct() != null ? cp.getProduct().getId() : null)
+                .productName(cp.getProduct() != null ? cp.getProduct().getName() : "Unknown Product")
                 .productImage(img)
-                .originalPrice(cp.getProduct().getPrice())
+                .originalPrice(cp.getProduct() != null ? cp.getProduct().getPrice() : null)
                 .salePrice(cp.getSalePrice())
                 .stockLimit(cp.getStockLimit())
-                .sellerName(cp.getProduct().getSellerProfile().getStoreName())
-                .sellerId(cp.getProduct().getSellerProfile().getId())
+                .sellerName(sellerName)
+                .sellerId(sellerId)
                 .status(cp.getStatus())
                 .build();
     }
@@ -255,6 +280,7 @@ public class CampaignService {
                 .discountType(campaign.getDiscountType())
                 .status(campaign.getStatus())
                 .priority(campaign.getPriority())
+                .imagePath(campaign.getImagePath())
                 .build();
     }
 }

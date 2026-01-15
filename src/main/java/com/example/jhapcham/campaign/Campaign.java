@@ -42,6 +42,8 @@ public class Campaign {
     @Column(nullable = false)
     private Integer priority;
 
+    private String imagePath;
+
     @OneToMany(mappedBy = "campaign", cascade = CascadeType.ALL, orphanRemoval = true)
     @com.fasterxml.jackson.annotation.JsonIgnore
     private java.util.List<CampaignProduct> campaignProducts;

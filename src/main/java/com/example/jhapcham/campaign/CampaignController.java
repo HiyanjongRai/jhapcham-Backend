@@ -14,8 +14,8 @@ public class CampaignController {
     private final CampaignService campaignService;
 
     // Admin Endpoints
-    @PostMapping("/admin/campaigns")
-    public ResponseEntity<CampaignResponseDTO> createCampaign(@RequestBody CampaignCreateRequestDTO dto) {
+    @PostMapping(value = "/admin/campaigns", consumes = { "multipart/form-data" })
+    public ResponseEntity<CampaignResponseDTO> createCampaign(@ModelAttribute CampaignCreateRequestDTO dto) {
         return ResponseEntity.ok(campaignService.createCampaign(dto));
     }
 
@@ -52,6 +52,18 @@ public class CampaignController {
     public ResponseEntity<List<CampaignProductResponseDTO>> getPendingProducts(
             @PathVariable @org.springframework.lang.NonNull Long id) {
         return ResponseEntity.ok(campaignService.getPendingProducts(id));
+    }
+
+    // Public Endpoints
+    @GetMapping("/campaigns")
+    public ResponseEntity<List<CampaignResponseDTO>> getPublicCampaigns() {
+        return ResponseEntity.ok(campaignService.getUpcomingCampaigns());
+    }
+
+    @GetMapping("/campaigns/{id}/products")
+    public ResponseEntity<List<CampaignProductResponseDTO>> getPublicCampaignProducts(
+            @PathVariable @org.springframework.lang.NonNull Long id) {
+        return ResponseEntity.ok(campaignService.getPublicCampaignProducts(id));
     }
 
     // Seller Endpoints

@@ -43,6 +43,9 @@ public class WebConfig implements WebMvcConfigurer {
 
                 registry.addResourceHandler("/seller_logos/**")
                                 .addResourceLocations(baseDir + "seller_logos/");
+
+                registry.addResourceHandler("/campaign-images/**")
+                                .addResourceLocations(baseDir + "campaign-images/");
         }
 
 }

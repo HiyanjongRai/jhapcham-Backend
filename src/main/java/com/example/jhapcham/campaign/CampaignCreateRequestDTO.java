@@ -11,4 +11,5 @@ public class CampaignCreateRequestDTO {
     private LocalDateTime endTime;
     private DiscountType discountType;
     private Integer priority;
+    private org.springframework.web.multipart.MultipartFile image;
 }

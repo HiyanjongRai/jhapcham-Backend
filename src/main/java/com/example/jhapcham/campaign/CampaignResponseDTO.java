@@ -15,4 +15,5 @@ public class CampaignResponseDTO {
     private DiscountType discountType;
     private CampaignStatus status;
     private Integer priority;
+    private String imagePath;
 }
