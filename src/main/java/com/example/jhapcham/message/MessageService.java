@@ -121,7 +121,8 @@ public class MessageService {
             if (mainImage.isPresent()) {
                 dto.setProductImage(mainImage.get().getImagePath());
             } else if (!message.getProduct().getImages().isEmpty()) {
-                dto.setProductImage(message.getProduct().getImages().get(0).getImagePath());
+                dto.setProductImage(message.getProduct().getImages().stream().findFirst()
+                        .map(ProductImage::getImagePath).orElse(null));
             }
         }
 

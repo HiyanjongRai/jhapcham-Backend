@@ -1,6 +1,7 @@
 package com.example.jhapcham.seller;
 
 import com.example.jhapcham.product.Product;
+import com.example.jhapcham.product.ProductImage;
 import lombok.Builder;
 import lombok.Data;
 
@@ -24,9 +25,8 @@ public class ProductSummaryDTO {
                 .price(p.getPrice().doubleValue())
                 .mainImage(
                         p.getImages() != null && !p.getImages().isEmpty()
-                                ? p.getImages().get(0).getImagePath()
-                                : null
-                )
+                                ? p.getImages().stream().findFirst().map(ProductImage::getImagePath).orElse(null)
+                                : null)
                 .build();
     }
 }

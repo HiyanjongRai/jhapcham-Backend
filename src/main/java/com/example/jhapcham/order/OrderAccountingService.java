@@ -60,7 +60,11 @@ public class OrderAccountingService {
             return;
         }
 
-        SellerProfile seller = order.getItems().get(0).getProduct().getSellerProfile();
+        SellerProfile seller = order.getItems().stream()
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Order has no items"))
+                .getProduct()
+                .getSellerProfile();
 
         BigDecimal gross = order.getItemsTotal();
         BigDecimal shippingFeePaidByCustomer = order.getShippingFee() != null ? order.getShippingFee()

@@ -8,6 +8,7 @@ import com.example.jhapcham.activity.ActivityType;
 import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.product.Product;
+import com.example.jhapcham.product.ProductImage;
 import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.seller.SellerProfile;
 import com.example.jhapcham.seller.SellerProfileRepository;
@@ -409,7 +410,8 @@ public class OrderService {
 
             log.info("Order {}: found {} items for this seller", o.getId(), sellerItems.size());
 
-            OrderItem firstItem = sellerItems.isEmpty() ? (!o.getItems().isEmpty() ? o.getItems().get(0) : null)
+            OrderItem firstItem = sellerItems.isEmpty()
+                    ? o.getItems().stream().findFirst().orElse(null)
                     : sellerItems.get(0);
 
             String image = null;
@@ -417,7 +419,10 @@ public class OrderService {
                 image = firstItem.getImagePathSnapshot();
                 log.info("  Item {}: Snapshot image: {}", firstItem.getId(), image);
                 if (image == null && firstItem.getProduct() != null && !firstItem.getProduct().getImages().isEmpty()) {
-                    image = firstItem.getProduct().getImages().get(0).getImagePath();
+                    image = firstItem.getProduct().getImages().stream()
+                            .findFirst()
+                            .map(ProductImage::getImagePath)
+                            .orElse(null);
                     log.info("  Item {}: Fallback product image: {}", firstItem.getId(), image);
                 }
             }
@@ -491,7 +496,8 @@ public class OrderService {
                     .productId(p.getId())
                     .name(p.getName())
                     .brand(p.getBrand())
-                    .imagePath(p.getImages().isEmpty() ? null : p.getImages().get(0).getImagePath())
+                    .imagePath(p.getImages().isEmpty() ? null
+                            : p.getImages().stream().findFirst().map(ProductImage::getImagePath).orElse(null))
                     .quantity(qty)
                     .unitPrice(unitPrice)
                     .lineTotal(lineTotal)
@@ -532,7 +538,8 @@ public class OrderService {
                 .brand(i.getBrandSnapshot())
                 .imagePath(i.getImagePathSnapshot() != null ? i.getImagePathSnapshot()
                         : (i.getProduct() != null && !i.getProduct().getImages().isEmpty()
-                                ? i.getProduct().getImages().get(0).getImagePath()
+                                ? i.getProduct().getImages().stream().findFirst().map(ProductImage::getImagePath)
+                                        .orElse(null)
                                 : null))
                 .quantity(i.getQuantity())
                 .unitPrice(i.getUnitPrice())

@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import com.example.jhapcham.product.ProductImage;
 
 @Service
 @RequiredArgsConstructor
@@ -121,7 +122,8 @@ public class ReportService {
             if (p != null) {
                 report.setReportedEntityName(p.getName());
                 if (!p.getImages().isEmpty()) {
-                    report.setReportedEntityImage(p.getImages().get(0).getImagePath());
+                    report.setReportedEntityImage(
+                            p.getImages().stream().findFirst().map(ProductImage::getImagePath).orElse(null));
                 }
             }
         } else if (report.getType() == ReportType.SELLER) {
@@ -151,7 +153,7 @@ public class ReportService {
                 if (p != null) {
                     entityName = p.getName();
                     if (!p.getImages().isEmpty())
-                        entityImage = p.getImages().get(0).getImagePath();
+                        entityImage = p.getImages().stream().findFirst().map(ProductImage::getImagePath).orElse(null);
                 }
             } else {
                 var u = userRepository.findById(report.getReportedEntityId()).orElse(null);
