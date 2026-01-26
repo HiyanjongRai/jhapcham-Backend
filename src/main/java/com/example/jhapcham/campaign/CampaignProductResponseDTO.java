@@ -16,6 +16,7 @@ public class CampaignProductResponseDTO {
     private BigDecimal salePrice;
     private Integer stockLimit;
     private String sellerName;
+    private String storeName;
     private Long sellerId;
     private CampaignProductStatus status;
 }

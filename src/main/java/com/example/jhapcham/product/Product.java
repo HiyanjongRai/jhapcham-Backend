@@ -8,7 +8,9 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Entity
 @Table(name = "products")
@@ -87,9 +89,12 @@ public class Product {
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
-    private List<ProductImage> images = new ArrayList<>();
+    private Set<ProductImage> images = new HashSet<>();
 
     public void addImage(ProductImage image) {
+        if (images == null) {
+            images = new HashSet<>();
+        }
         images.add(image);
         image.setProduct(this);
     }

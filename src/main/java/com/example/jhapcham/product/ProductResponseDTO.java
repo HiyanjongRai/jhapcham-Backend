@@ -50,6 +50,8 @@ public class ProductResponseDTO {
     private Double averageRating;
     private Integer totalReviews;
     private String sellerFullName;
+    private String storeName;
+    private String sellerStoreName;
     private String logoImagePath;
     private String profileImagePath;
     private java.time.LocalDateTime saleEndTime;

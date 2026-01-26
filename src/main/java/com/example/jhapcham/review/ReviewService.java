@@ -2,6 +2,8 @@ package com.example.jhapcham.review;
 
 import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
+import com.example.jhapcham.activity.ActivityType;
+import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.common.FileStorageService;
 import com.example.jhapcham.order.OrderItemRepository;
 import com.example.jhapcham.product.Product;
@@ -26,6 +28,7 @@ public class ReviewService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
+    private final UserActivityService userActivityService;
 
     private static final String REVIEW_IMAGE_DIR = "review-images";
 
@@ -75,6 +78,9 @@ public class ReviewService {
         review.setImagePath(imagePath);
 
         review = reviewRepository.save(review);
+
+        // Unified activity logging
+        userActivityService.recordActivity(userId, productId, ActivityType.REVIEW, rating + " stars - " + comment);
 
         return mapToDTO(review);
     }

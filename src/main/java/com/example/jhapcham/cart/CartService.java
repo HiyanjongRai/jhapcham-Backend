@@ -3,6 +3,8 @@ package com.example.jhapcham.cart;
 import com.example.jhapcham.Error.AuthorizationException;
 import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
+import com.example.jhapcham.activity.ActivityType;
+import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.user.model.User;
@@ -23,6 +25,7 @@ public class CartService {
         private final CartItemRepository cartItemRepository;
         private final ProductRepository productRepository;
         private final UserRepository userRepository;
+        private final UserActivityService userActivityService;
 
         @Transactional
         public CartResponseDTO addToCart(
@@ -54,6 +57,11 @@ public class CartService {
                 item.setSelectedStorage(dto.getSelectedStorage());
 
                 cartItemRepository.save(item);
+
+                // Unified activity logging
+                userActivityService.recordActivity(userId, productId, ActivityType.ADD_TO_CART,
+                                "Qty: " + dto.getQuantity());
+
                 return getCart(userId);
 
         }

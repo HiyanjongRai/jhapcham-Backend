@@ -1,5 +1,7 @@
 package com.example.jhapcham.product;
 
+import com.example.jhapcham.activity.ActivityType;
+import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import jakarta.transaction.Transactional;
@@ -16,6 +18,7 @@ public class ProductViewService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final ProductViewRepository productViewRepository;
+    private final UserActivityService userActivityService;
 
     // record view for logged in and guest
     @Transactional
@@ -35,6 +38,11 @@ public class ProductViewService {
                 .build();
 
         productViewRepository.save(Objects.requireNonNull(view, "Product view cannot be null"));
+
+        // Unified activity logging
+        if (userId != null) {
+            userActivityService.recordActivity(userId, productId, ActivityType.VIEW, null);
+        }
     }
 
     // recent views of a user (for future recommendations)

@@ -477,6 +477,8 @@ public class ProductService {
                 .averageRating(reviewRepository.findAverageRatingByProductId(p.getId()))
                 .totalReviews(reviewRepository.countByProductId(p.getId()))
                 .sellerFullName(p.getSellerProfile().getUser().getFullName())
+                .storeName(p.getSellerProfile().getStoreName())
+                .sellerStoreName(p.getSellerProfile().getStoreName())
                 .logoImagePath(p.getSellerProfile().getLogoImagePath())
                 .profileImagePath(p.getSellerProfile().getUser().getProfileImagePath())
                 .saleEndTime(p.getSaleEndTime())

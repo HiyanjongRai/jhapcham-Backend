@@ -1,5 +1,7 @@
 package com.example.jhapcham.wishlist;
 
+import com.example.jhapcham.activity.ActivityType;
+import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.product.ProductResponseDTO;
@@ -22,6 +24,7 @@ public class WishlistService {
         private final UserRepository userRepository;
         private final ProductRepository productRepository;
         private final ProductService productService;
+        private final UserActivityService userActivityService;
 
         @Transactional
         public void addToWishlist(Long userId, Long productId) {
@@ -43,6 +46,9 @@ public class WishlistService {
                                 .build();
 
                 wishlistRepository.save(Objects.requireNonNull(wishlist, "Wishlist object cannot be null"));
+
+                // Unified activity logging
+                userActivityService.recordActivity(userId, productId, ActivityType.WISHLIST, null);
         }
 
         @Transactional

@@ -265,6 +265,7 @@ public class CampaignService {
                 .salePrice(cp.getSalePrice())
                 .stockLimit(cp.getStockLimit())
                 .sellerName(sellerName)
+                .storeName(sellerName)
                 .sellerId(sellerId)
                 .status(cp.getStatus())
                 .build();

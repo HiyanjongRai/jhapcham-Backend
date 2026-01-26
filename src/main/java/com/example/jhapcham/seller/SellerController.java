@@ -20,7 +20,7 @@ public class SellerController {
 
     // Update seller profile + logo
     @PutMapping("/{sellerUserId}")
-    public ResponseEntity<?> updateSeller(
+    public ResponseEntity<SellerProfileResponseDTO> updateSeller(
             @PathVariable Long sellerUserId,
             @ModelAttribute SellerUpdateRequestDTO dto) {
         return ResponseEntity.ok(sellerService.updateSeller(sellerUserId, dto));

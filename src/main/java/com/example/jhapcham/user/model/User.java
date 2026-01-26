@@ -20,73 +20,72 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(
-        name = "users",
-        uniqueConstraints = {
+@Table(name = "users", uniqueConstraints = {
                 @UniqueConstraint(columnNames = "username"),
                 @UniqueConstraint(columnNames = "email")
-        }
-)
+})
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-@ToString(exclude = {"password", "sellerProfile"})
+@JsonIgnoreProperties({ "hibernateLazyInitializer", "handler" })
+@ToString(exclude = { "password", "sellerProfile" })
 public class User {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+        @Id
+        @GeneratedValue(strategy = GenerationType.IDENTITY)
+        private Long id;
 
-    @NotBlank
-    @Size(max = 100)
-    @Column(nullable = false, unique = true, length = 100)
-    private String username;
+        @NotBlank
+        @Size(max = 100)
+        @Column(nullable = false, unique = true, length = 100)
+        private String username;
 
-    @Size(max = 150)
-    @Column(length = 150)
-    private String fullName;
+        @Size(max = 150)
+        @Column(length = 150)
+        private String fullName;
 
-    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
-    @NotBlank
-    @Size(max = 255)
-    @Column(nullable = false, length = 255)
-    private String password;
+        @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+        @NotBlank
+        @Size(max = 255)
+        @Column(nullable = false, length = 255)
+        private String password;
 
-    @NotBlank
-    @Email
-    @Size(max = 150)
-    @Column(nullable = false, unique = true, length = 150)
-    private String email;
+        @NotBlank
+        @Email
+        @Size(max = 150)
+        @Column(nullable = false, unique = true, length = 150)
+        private String email;
 
-    @Size(max = 30)
-    @Column(length = 30)
-    private String contactNumber;
+        @Size(max = 30)
+        @Column(length = 30)
+        private String contactNumber;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private Role role;
+        @Column(length = 500)
+        private String address;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private Status status;
+        @Enumerated(EnumType.STRING)
+        @Column(nullable = false, length = 20)
+        private Role role;
 
-    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
-    @JsonIgnore
-    private SellerProfile sellerProfile;
+        @Enumerated(EnumType.STRING)
+        @Column(nullable = false, length = 20)
+        private Status status;
 
-    @Column(name = "profile_image_path", length = 255)
-    private String profileImagePath;
+        @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+        @JsonIgnore
+        private SellerProfile sellerProfile;
 
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
+        @Column(name = "profile_image_path", length = 255)
+        private String profileImagePath;
 
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+        @CreationTimestamp
+        @Column(name = "created_at", updatable = false)
+        private LocalDateTime createdAt;
 
+        @UpdateTimestamp
+        @Column(name = "updated_at")
+        private LocalDateTime updatedAt;
 
 }

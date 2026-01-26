@@ -47,7 +47,7 @@ public class SellerService {
         // ----------------------------------------------------------
         // UPDATE SELLER PROFILE + LOGO
         // ----------------------------------------------------------
-        public SellerProfile updateSeller(Long sellerUserId, SellerUpdateRequestDTO dto) {
+        public SellerProfileResponseDTO updateSeller(Long sellerUserId, SellerUpdateRequestDTO dto) {
 
                 SellerProfile profile = sellerProfileRepository.findByUserId(sellerUserId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Seller not found"));
@@ -85,7 +85,11 @@ public class SellerService {
                         profile.setLogoImagePath(path);
                 }
 
-                return sellerProfileRepository.save(profile);
+                SellerProfile saved = sellerProfileRepository.save(profile);
+                List<Product> products = productRepository.findBySellerProfile(saved);
+                long followerCount = followRepository.countBySeller(saved);
+
+                return SellerProfileResponseDTO.from(saved, products, followerCount);
         }
 
         public SellerIncomeDTO getSellerIncome(Long sellerUserId) {

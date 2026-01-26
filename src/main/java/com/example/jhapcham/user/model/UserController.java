@@ -54,6 +54,7 @@ public class UserController {
                 .username(user.getUsername())
                 .fullName(user.getFullName())
                 .email(user.getEmail())
+                .address(user.getAddress())
                 .contactNumber(user.getContactNumber())
                 .profileImagePath(user.getProfileImagePath())
                 .role(user.getRole())

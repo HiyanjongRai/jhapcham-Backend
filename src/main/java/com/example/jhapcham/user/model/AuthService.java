@@ -136,6 +136,10 @@ public class AuthService {
             user.setContactNumber(dto.getContactNumber());
         }
 
+        if (dto.getAddress() != null) {
+            user.setAddress(dto.getAddress());
+        }
+
         if (dto.getNewPassword() != null && !dto.getNewPassword().isBlank()) {
             if (dto.getCurrentPassword() == null
                     || !passwordEncoder.matches(dto.getCurrentPassword(), user.getPassword())) {

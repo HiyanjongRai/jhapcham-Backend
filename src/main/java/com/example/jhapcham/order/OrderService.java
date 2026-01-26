@@ -4,6 +4,8 @@ import com.example.jhapcham.cart.CartItem;
 import com.example.jhapcham.cart.CartItemRepository;
 import com.example.jhapcham.Error.AuthorizationException;
 import com.example.jhapcham.Error.BusinessValidationException;
+import com.example.jhapcham.activity.ActivityType;
+import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.product.ProductRepository;
@@ -33,6 +35,7 @@ public class OrderService {
     private final UserRepository userRepository;
     private final CartItemRepository cartItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
+    private final UserActivityService userActivityService;
 
     // Injected specialized services
     private final OrderStockService orderStockService;
@@ -156,6 +159,12 @@ public class OrderService {
 
                 orderItemRepository.save(item);
                 order.addItem(item);
+
+                // Unified activity logging
+                if (user != null) {
+                    userActivityService.recordActivity(user.getId(), product.getId(), ActivityType.ORDER,
+                            "Bought " + r.getQuantity() + " item(s)");
+                }
             }
 
             orderRepository.save(order);
@@ -384,24 +393,57 @@ public class OrderService {
                 .build()).collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public List<OrderListItemDTO> getOrdersForSeller(Long sellerUserId) {
+        log.info("Fetching orders for sellerUserId: {}", sellerUserId);
         List<Order> orders = orderRepository.findOrdersBySeller(sellerUserId);
-        return orders.stream().map(o -> OrderListItemDTO.builder()
-                .orderId(o.getId())
-                .status(o.getStatus())
-                .grandTotal(o.getGrandTotal())
-                .totalItems(o.getItems().size())
-                .sellerGrossAmount(o.getSellerGrossAmount())
-                .sellerShippingCharge(o.getSellerShippingCharge())
-                .sellerNetAmount(o.getSellerNetAmount())
-                .deliveredBranch(o.getDeliveredBranch())
-                .assignedBranch(o.getAssignedBranch())
-                .createdAt(o.getCreatedAt())
-                .customerName(o.getCustomerName())
-                .productNames(o.getItems().stream()
-                        .map(OrderItem::getProductNameSnapshot)
-                        .collect(Collectors.joining(", ")))
-                .build()).collect(Collectors.toList());
+        log.info("Found {} orders for seller", orders.size());
+
+        return orders.stream().map(o -> {
+            List<OrderItem> sellerItems = o.getItems().stream()
+                    .filter(i -> i.getProduct() != null &&
+                            i.getProduct().getSellerProfile() != null &&
+                            i.getProduct().getSellerProfile().getUser() != null &&
+                            i.getProduct().getSellerProfile().getUser().getId().equals(sellerUserId))
+                    .collect(Collectors.toList());
+
+            log.info("Order {}: found {} items for this seller", o.getId(), sellerItems.size());
+
+            OrderItem firstItem = sellerItems.isEmpty() ? (!o.getItems().isEmpty() ? o.getItems().get(0) : null)
+                    : sellerItems.get(0);
+
+            String image = null;
+            if (firstItem != null) {
+                image = firstItem.getImagePathSnapshot();
+                log.info("  Item {}: Snapshot image: {}", firstItem.getId(), image);
+                if (image == null && firstItem.getProduct() != null && !firstItem.getProduct().getImages().isEmpty()) {
+                    image = firstItem.getProduct().getImages().get(0).getImagePath();
+                    log.info("  Item {}: Fallback product image: {}", firstItem.getId(), image);
+                }
+            }
+
+            return OrderListItemDTO.builder()
+                    .orderId(o.getId())
+                    .status(o.getStatus())
+                    .grandTotal(o.getGrandTotal())
+                    .totalItems(o.getItems().size())
+                    .sellerGrossAmount(o.getSellerGrossAmount())
+                    .sellerShippingCharge(o.getSellerShippingCharge())
+                    .sellerNetAmount(o.getSellerNetAmount())
+                    .deliveredBranch(o.getDeliveredBranch())
+                    .assignedBranch(o.getAssignedBranch())
+                    .createdAt(o.getCreatedAt())
+                    .customerName(o.getCustomerName())
+                    .customerPhone(o.getCustomerPhone())
+                    .orderNote(o.getOrderNote())
+                    .deliveryTimePreference(o.getDeliveryTimePreference())
+                    .productNames(sellerItems.stream()
+                            .map(OrderItem::getProductNameSnapshot)
+                            .collect(Collectors.joining(", ")))
+                    .productImage(image)
+                    .customerProfileImagePath(o.getUser() != null ? o.getUser().getProfileImagePath() : null)
+                    .build();
+        }).collect(Collectors.toList());
     }
 
     // =========================
@@ -488,7 +530,10 @@ public class OrderService {
                 .productId(i.getProductIdSnapshot())
                 .name(i.getProductNameSnapshot())
                 .brand(i.getBrandSnapshot())
-                .imagePath(i.getImagePathSnapshot())
+                .imagePath(i.getImagePathSnapshot() != null ? i.getImagePathSnapshot()
+                        : (i.getProduct() != null && !i.getProduct().getImages().isEmpty()
+                                ? i.getProduct().getImages().get(0).getImagePath()
+                                : null))
                 .quantity(i.getQuantity())
                 .unitPrice(i.getUnitPrice())
                 .lineTotal(i.getLineTotal())

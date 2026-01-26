@@ -17,6 +17,9 @@ public class OrderListItemDTO {
     private LocalDateTime createdAt;
     private String storeName; // for seller view
     private String customerName;
+    private String customerPhone;
+    private String orderNote;
+    private String deliveryTimePreference;
 
     private BigDecimal sellerGrossAmount;
     private BigDecimal sellerShippingCharge;
@@ -24,5 +27,7 @@ public class OrderListItemDTO {
     private DeliveryBranch deliveredBranch;
     private DeliveryBranch assignedBranch;
     private String productNames;
+    private String productImage;
+    private String customerProfileImagePath;
 
 }
