@@ -13,6 +13,7 @@ public class OrderListItemDTO {
     private Long orderId;
     private OrderStatus status;
     private BigDecimal grandTotal;
+    private BigDecimal discountTotal;
     private Integer totalItems;
     private LocalDateTime createdAt;
     private String storeName; // for seller view

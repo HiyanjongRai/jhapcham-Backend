@@ -89,11 +89,11 @@ public class Product {
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
-    private Set<ProductImage> images = new HashSet<>();
+    private List<ProductImage> images = new ArrayList<>();
 
     public void addImage(ProductImage image) {
         if (images == null) {
-            images = new HashSet<>();
+            images = new ArrayList<>();
         }
         images.add(image);
         image.setProduct(this);

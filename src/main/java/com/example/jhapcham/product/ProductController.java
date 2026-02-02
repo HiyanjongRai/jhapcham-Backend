@@ -1,4 +1,5 @@
 package com.example.jhapcham.product;
+
 import com.example.jhapcham.Error.ErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -9,8 +10,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-
-
 @RestController
 @RequestMapping("/api/products")
 @RequiredArgsConstructor
@@ -18,6 +17,7 @@ public class ProductController {
 
     private final ProductService productService;
     private final ProductViewService productViewService;
+
     // ===================== CUSTOMER LIST =====================
     @GetMapping
     public ResponseEntity<?> listAllActiveProducts() {
@@ -64,8 +64,7 @@ public class ProductController {
     @GetMapping("/{productId}")
     public ResponseEntity<?> getProductDetail(
             @PathVariable Long productId,
-            @RequestParam(required = false) Long userId
-    ) {
+            @RequestParam(required = false) Long userId) {
         try {
             productViewService.recordView(productId, userId);
 
@@ -85,8 +84,7 @@ public class ProductController {
     @PostMapping("/seller/{sellerUserId}")
     public ResponseEntity<?> createProduct(
             @PathVariable Long sellerUserId,
-            @ModelAttribute ProductCreateRequestDTO dto
-    ) {
+            @ModelAttribute ProductCreateRequestDTO dto) {
         try {
             ProductResponseDTO response = productService.createProductForSeller(sellerUserId, dto);
             return ResponseEntity.ok(response);
@@ -106,8 +104,7 @@ public class ProductController {
     @PutMapping("/{productId}")
     public ResponseEntity<?> updateProduct(
             @PathVariable Long productId,
-            @ModelAttribute ProductUpdateRequestDTO dto
-    ) {
+            @ModelAttribute ProductUpdateRequestDTO dto) {
         try {
             ProductResponseDTO response = productService.updateProduct(productId, dto);
             return ResponseEntity.ok(response);
@@ -136,8 +133,7 @@ public class ProductController {
                             v.getProduct().getName(),
                             v.getUser() != null ? v.getUser().getId() : null,
                             v.getUser() != null ? v.getUser().getUsername() : null,
-                            v.getViewedAt()
-                    ))
+                            v.getViewedAt()))
                     .toList();
 
             return ResponseEntity.ok(dtoList);
@@ -170,16 +166,13 @@ public class ProductController {
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
             @RequestParam(required = false) String brand,
-            @RequestParam(required = false) String category
-    ) {
+            @RequestParam(required = false) String category) {
         return productService.filterProducts(minPrice, maxPrice, brand, category);
     }
 
-
     @GetMapping("/search")
     public List<ProductResponseDTO> searchProducts(
-            @RequestParam String keyword
-    ) {
+            @RequestParam String keyword) {
         return productService.searchProducts(keyword);
     }
 
@@ -193,8 +186,7 @@ public class ProductController {
                     .map(p -> new ProductViewCountWithNameDTO(
                             p.getProductId(),
                             p.getProductName(),
-                            p.getViewCount()
-                    ))
+                            p.getViewCount()))
                     .toList();
 
             return ResponseEntity.ok(dtoList);
@@ -211,24 +203,24 @@ public class ProductController {
             String productName,
             Long userId,
             String username,
-            LocalDateTime viewedAt
-    ) {}
+            LocalDateTime viewedAt) {
+    }
 
     public static record ProductViewCountDTO(
             Long productId,
-            long totalViews
-    ) {}
+            long totalViews) {
+    }
 
     public static record ProductViewCountWithNameDTO(
             Long productId,
             String productName,
-            long totalViews
-    ) {}
+            long totalViews) {
+    }
+
     @DeleteMapping("/{productId}/seller/{sellerUserId}/hard")
     public ResponseEntity<?> hardDeleteProduct(
             @PathVariable Long productId,
-            @PathVariable Long sellerUserId
-    ) {
+            @PathVariable Long sellerUserId) {
         try {
             productService.hardDeleteProductWithOrderCheck(productId, sellerUserId);
             return ResponseEntity.ok("Product deleted from database");

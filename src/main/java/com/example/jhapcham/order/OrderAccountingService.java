@@ -60,48 +60,41 @@ public class OrderAccountingService {
             return;
         }
 
-        SellerProfile seller = order.getItems().stream()
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("Order has no items"))
-                .getProduct()
-                .getSellerProfile();
+        SellerProfile seller = order.getItems().get(0).getProduct().getSellerProfile();
 
-        BigDecimal gross = order.getItemsTotal();
+        // Gross items total
+        BigDecimal itemsGross = order.getItemsTotal();
+        // Discount given by seller via promo code
+        BigDecimal discount = order.getDiscountTotal() != null ? order.getDiscountTotal() : BigDecimal.ZERO;
+
+        // The gross amount the seller is entitled to from items is itemsGross -
+        // discount
+        BigDecimal sellerGrossAmount = itemsGross.subtract(discount);
+
         BigDecimal shippingFeePaidByCustomer = order.getShippingFee() != null ? order.getShippingFee()
                 : BigDecimal.ZERO;
-
-        // NEW LOGIC:
-        // If shippingFeePaidByCustomer > 0, it means customer paid shipping.
-        // The seller gets the full gross (items total).
-        // If shippingFeePaidByCustomer == 0, it means it was FREE SHIPPING for
-        // customer.
-        // In that case, the seller covers the cost.
 
         BigDecimal sellerShippingCharge;
         if (shippingFeePaidByCustomer.compareTo(BigDecimal.ZERO) > 0) {
             sellerShippingCharge = BigDecimal.ZERO;
         } else {
-            // Estimate shipping cost the seller has to pay (we use the same fee logic for
-            // estimation here)
-            // For now, let's assume if it was free for customer, seller pays their standard
-            // shipping fee
             sellerShippingCharge = estimateSellerShippingCost(order, seller);
         }
 
-        BigDecimal net = gross.subtract(sellerShippingCharge);
+        BigDecimal net = sellerGrossAmount.subtract(sellerShippingCharge);
 
-        order.setSellerGrossAmount(gross);
+        order.setSellerGrossAmount(sellerGrossAmount);
         order.setSellerShippingCharge(sellerShippingCharge);
         order.setSellerNetAmount(net);
         order.setSellerAccounted(true);
 
-        seller.setTotalIncome(seller.getTotalIncome().add(gross));
+        seller.setTotalIncome(seller.getTotalIncome().add(sellerGrossAmount));
         seller.setTotalShippingCost(seller.getTotalShippingCost().add(sellerShippingCharge));
         seller.setNetIncome(seller.getNetIncome().add(net));
 
         sellerProfileRepository.save(seller);
         log.info("Applied accounting for order {}: Gross={}, ShippingCharge={}, Net={}",
-                order.getId(), gross, sellerShippingCharge, net);
+                order.getId(), sellerGrossAmount, sellerShippingCharge, net);
     }
 
     private BigDecimal estimateSellerShippingCost(Order order, SellerProfile seller) {

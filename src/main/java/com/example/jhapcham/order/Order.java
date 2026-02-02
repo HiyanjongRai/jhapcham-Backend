@@ -80,11 +80,11 @@ public class Order {
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
-    private Set<OrderItem> items = new HashSet<>();
+    private List<OrderItem> items = new ArrayList<>();
 
     public void addItem(OrderItem item) {
         if (items == null) {
-            items = new HashSet<>();
+            items = new ArrayList<>();
         }
         items.add(item);
         item.setOrder(this);

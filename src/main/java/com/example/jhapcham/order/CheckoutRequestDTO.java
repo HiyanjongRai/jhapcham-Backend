@@ -25,4 +25,6 @@ public class CheckoutRequestDTO {
 
     private List<CheckoutItemDTO> items;
 
+    private String couponCode; // NEW
+
 }

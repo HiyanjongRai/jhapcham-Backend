@@ -8,7 +8,6 @@ import com.example.jhapcham.activity.ActivityType;
 import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.product.Product;
-import com.example.jhapcham.product.ProductImage;
 import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.seller.SellerProfile;
 import com.example.jhapcham.seller.SellerProfileRepository;
@@ -43,6 +42,7 @@ public class OrderService {
     private final OrderAccountingService orderAccountingService;
     private final OrderStatusService orderStatusService;
     private final com.example.jhapcham.notification.NotificationService notificationService;
+    private final com.example.jhapcham.promocode.PromoCodeService promoCodeService;
 
     // =========================
     // PREVIEW ORDER
@@ -61,7 +61,8 @@ public class OrderService {
         List<OrderItemResponseDTO> allItemResponses = new ArrayList<>();
 
         for (List<CheckoutItemDTO> sellerItems : itemsBySeller.values()) {
-            CheckoutComputationResult data = computeForItems(sellerItems, dto.getShippingLocation());
+            CheckoutComputationResult data = computeForItems(sellerItems, dto.getShippingLocation(),
+                    dto.getCouponCode());
 
             totalItemsCost = totalItemsCost.add(data.itemsTotal);
             totalShipping = totalShipping.add(data.shippingFee);
@@ -98,12 +99,17 @@ public class OrderService {
         Map<Long, List<CheckoutItemDTO>> itemsBySeller = groupItemsBySeller(dto.getItems());
 
         List<OrderSummaryDTO> summaries = new ArrayList<>();
+        boolean anyPromoApplied = false;
 
         for (Map.Entry<Long, List<CheckoutItemDTO>> entry : itemsBySeller.entrySet()) {
             List<CheckoutItemDTO> sellerItems = entry.getValue();
 
             // Calculate for this specific seller's order
-            CheckoutComputationResult data = computeForItems(sellerItems, dto.getShippingLocation());
+            CheckoutComputationResult data = computeForItems(sellerItems, dto.getShippingLocation(),
+                    dto.getCouponCode());
+            if (data.discountTotal.compareTo(BigDecimal.ZERO) > 0) {
+                anyPromoApplied = true;
+            }
 
             Order order = Order.builder()
                     .user(user)
@@ -173,6 +179,11 @@ public class OrderService {
             log.info("Order {} placed successfully for customer {}", order.getId(), dto.getFullName());
         }
 
+        // Increment promo usage if it was applied effectively to at least one sub-order
+        if (anyPromoApplied && dto.getCouponCode() != null && !dto.getCouponCode().isEmpty()) {
+            promoCodeService.incrementUsage(dto.getCouponCode());
+        }
+
         return summaries;
     }
 
@@ -207,6 +218,7 @@ public class OrderService {
         checkout.setOrderNote(dto.getOrderNote()); // NEW
         checkout.setShippingLocation(dto.getShippingLocation());
         checkout.setPaymentMethod(dto.getPaymentMethod());
+        checkout.setCouponCode(dto.getCouponCode()); // Pass the coupon code
         checkout.setItems(checkoutItems);
 
         List<OrderSummaryDTO> summaries = placeOrder(checkout);
@@ -240,11 +252,15 @@ public class OrderService {
                     "Your order #" + order.getId() + " is now being processed by the merchant.",
                     com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
                     order.getId());
-        } catch (Exception e) {
+        } catch (
+
+        Exception e) {
             log.error("Failed to notify customer of order processing", e);
         }
 
-        return toSummaryDTO(order, mapItems(order));
+        return
+
+        toSummaryDTO(order, mapItems(order));
     }
 
     @Transactional
@@ -389,6 +405,7 @@ public class OrderService {
                 .orderId(o.getId())
                 .status(o.getStatus())
                 .grandTotal(o.getGrandTotal())
+                .discountTotal(o.getDiscountTotal())
                 .totalItems(o.getItems().size())
                 .createdAt(o.getCreatedAt())
                 .build()).collect(Collectors.toList());
@@ -410,8 +427,7 @@ public class OrderService {
 
             log.info("Order {}: found {} items for this seller", o.getId(), sellerItems.size());
 
-            OrderItem firstItem = sellerItems.isEmpty()
-                    ? o.getItems().stream().findFirst().orElse(null)
+            OrderItem firstItem = sellerItems.isEmpty() ? (!o.getItems().isEmpty() ? o.getItems().get(0) : null)
                     : sellerItems.get(0);
 
             String image = null;
@@ -419,10 +435,7 @@ public class OrderService {
                 image = firstItem.getImagePathSnapshot();
                 log.info("  Item {}: Snapshot image: {}", firstItem.getId(), image);
                 if (image == null && firstItem.getProduct() != null && !firstItem.getProduct().getImages().isEmpty()) {
-                    image = firstItem.getProduct().getImages().stream()
-                            .findFirst()
-                            .map(ProductImage::getImagePath)
-                            .orElse(null);
+                    image = firstItem.getProduct().getImages().get(0).getImagePath();
                     log.info("  Item {}: Fallback product image: {}", firstItem.getId(), image);
                 }
             }
@@ -431,6 +444,7 @@ public class OrderService {
                     .orderId(o.getId())
                     .status(o.getStatus())
                     .grandTotal(o.getGrandTotal())
+                    .discountTotal(o.getDiscountTotal())
                     .totalItems(o.getItems().size())
                     .sellerGrossAmount(o.getSellerGrossAmount())
                     .sellerShippingCharge(o.getSellerShippingCharge())
@@ -471,7 +485,8 @@ public class OrderService {
         return grouped;
     }
 
-    private CheckoutComputationResult computeForItems(List<CheckoutItemDTO> items, String shippingLocation) {
+    private CheckoutComputationResult computeForItems(List<CheckoutItemDTO> items, String shippingLocation,
+            String couponCode) {
         Map<Long, Integer> quantityMap = items.stream()
                 .collect(Collectors.toMap(CheckoutItemDTO::getProductId, CheckoutItemDTO::getQuantity));
         List<Product> products = productRepository.findAllById(quantityMap.keySet());
@@ -496,8 +511,7 @@ public class OrderService {
                     .productId(p.getId())
                     .name(p.getName())
                     .brand(p.getBrand())
-                    .imagePath(p.getImages().isEmpty() ? null
-                            : p.getImages().stream().findFirst().map(ProductImage::getImagePath).orElse(null))
+                    .imagePath(p.getImages().isEmpty() ? null : p.getImages().get(0).getImagePath())
                     .quantity(qty)
                     .unitPrice(unitPrice)
                     .lineTotal(lineTotal)
@@ -511,12 +525,21 @@ public class OrderService {
 
         // Use specialized accounting service for shipping
         BigDecimal shippingFee = orderAccountingService.calculateShippingFee(products, itemsTotal, shippingLocation);
-        BigDecimal grandTotal = itemsTotal.add(shippingFee);
+
+        // Calculate Promo Discount
+        BigDecimal discountTotal = BigDecimal.ZERO;
+        if (couponCode != null && !couponCode.isEmpty()) {
+            discountTotal = promoCodeService.calculateDiscount(couponCode, items);
+        }
+
+        BigDecimal grandTotal = itemsTotal.add(shippingFee).subtract(discountTotal);
+        if (grandTotal.compareTo(BigDecimal.ZERO) < 0)
+            grandTotal = BigDecimal.ZERO;
 
         CheckoutComputationResult r = new CheckoutComputationResult();
         r.itemsTotal = itemsTotal;
         r.shippingFee = shippingFee;
-        r.discountTotal = BigDecimal.ZERO;
+        r.discountTotal = discountTotal;
         r.grandTotal = grandTotal;
         r.itemResponses = responses;
         r.productById = productMap;
@@ -538,8 +561,7 @@ public class OrderService {
                 .brand(i.getBrandSnapshot())
                 .imagePath(i.getImagePathSnapshot() != null ? i.getImagePathSnapshot()
                         : (i.getProduct() != null && !i.getProduct().getImages().isEmpty()
-                                ? i.getProduct().getImages().stream().findFirst().map(ProductImage::getImagePath)
-                                        .orElse(null)
+                                ? i.getProduct().getImages().get(0).getImagePath()
                                 : null))
                 .quantity(i.getQuantity())
                 .unitPrice(i.getUnitPrice())

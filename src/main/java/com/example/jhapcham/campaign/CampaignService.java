@@ -1,7 +1,6 @@
 package com.example.jhapcham.campaign;
 
 import com.example.jhapcham.product.Product;
-import com.example.jhapcham.product.ProductImage;
 import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.seller.SellerProfile;
 import com.example.jhapcham.seller.SellerProfileRepository;
@@ -247,7 +246,7 @@ public class CampaignService {
     private CampaignProductResponseDTO mapToDTO(CampaignProduct cp) {
         String img = null;
         if (cp.getProduct() != null && cp.getProduct().getImages() != null && !cp.getProduct().getImages().isEmpty()) {
-            img = cp.getProduct().getImages().stream().findFirst().map(ProductImage::getImagePath).orElse(null);
+            img = cp.getProduct().getImages().get(0).getImagePath();
         }
 
         String sellerName = "Unknown Seller";

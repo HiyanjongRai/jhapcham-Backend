@@ -6,7 +6,6 @@ import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.activity.ActivityType;
 import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.product.Product;
-import com.example.jhapcham.product.ProductImage;
 import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
@@ -115,7 +114,7 @@ public class CartService {
                         subtotal = subtotal.add(lineTotal);
 
                         String image = p.getImages() != null && !p.getImages().isEmpty()
-                                        ? p.getImages().stream().findFirst().map(ProductImage::getImagePath).orElse(null)
+                                        ? p.getImages().get(0).getImagePath()
                                         : null;
 
                         list.add(

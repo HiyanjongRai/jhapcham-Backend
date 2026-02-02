@@ -21,4 +21,6 @@ public class CartCheckoutRequestDTO {
     // COD, KHALTI, ESEWA, STRIPE
     private String paymentMethod;
 
+    private String couponCode; // Add this
+
 }

@@ -56,7 +56,9 @@ public class SecurityConfig {
                 // PUBLIC AUTH & LOGIN
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/customer/**").permitAll()
-                .requestMatchers("/api/sellers/**").permitAll()
+                .requestMatchers("/api/seller/**").permitAll() // Singular
+                .requestMatchers("/api/sellers/**").permitAll() // Plural (keep just in case)
+                .requestMatchers("/api/promos/**").permitAll() // New Promo Controller
                 .requestMatchers("/api/admin/**").permitAll()
 
                 // PUBLIC PRODUCT APIs
