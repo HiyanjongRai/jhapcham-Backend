@@ -123,6 +123,84 @@ public class RecommendationService {
         return recommendedProducts;
     }
 
+
+    /**
+     * Get similar products for a specific item (Item-to-Item) without a user context
+     */
+    public List<ProductResponseDTO> getSimilarProducts(Long productId, int limit) {
+        // 1. Get all interactions
+        List<Map<String, Object>> interactions = userActivityService.getInteractionsForIBCF();
+        List<ProductResponseDTO> allProducts = productService.listAllActiveProducts();
+
+        if (interactions.isEmpty()) {
+            return getPopularProductsFallback(allProducts, Set.of(productId), limit);
+        }
+
+        // 2. Build Item-User Matrix
+        Map<Long, Map<Long, Double>> itemUserMatrix = new HashMap<>();
+        Set<Long> allProductIdsInInteractions = new HashSet<>();
+
+        for (Map<String, Object> interaction : interactions) {
+            Long uId = (Long) interaction.get("userId");
+            Long pId = (Long) interaction.get("productId");
+            Double score = (Double) interaction.get("score");
+            itemUserMatrix.computeIfAbsent(pId, k -> new HashMap<>()).put(uId, score);
+            allProductIdsInInteractions.add(pId);
+        }
+
+        if (!itemUserMatrix.containsKey(productId)) {
+            return getPopularProductsFallback(allProducts, Set.of(productId), limit);
+        }
+
+        // 3. Pre-calculate norms
+        Map<Long, Double> itemNorms = new HashMap<>();
+        for (Long pId : allProductIdsInInteractions) {
+            double norm = 0.0;
+            for (Double score : itemUserMatrix.get(pId).values()) {
+                norm += Math.pow(score, 2);
+            }
+            itemNorms.put(pId, Math.sqrt(norm));
+        }
+
+        // 4. Calculate similarities
+        Map<Long, Double> similarities = new HashMap<>();
+        for (Long candidateProductId : allProductIdsInInteractions) {
+            if (candidateProductId.equals(productId))
+                continue;
+
+            double similarity = calculateCosineSimilarityOptimized(productId, candidateProductId, itemUserMatrix, itemNorms);
+            if (similarity > 0.05) { // Lower threshold for item-to-item
+                similarities.put(candidateProductId, similarity);
+            }
+        }
+
+        // 5. Sort and return
+        List<Long> similarIds = similarities.entrySet().stream()
+                .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
+                .map(Map.Entry::getKey)
+                .limit(limit)
+                .collect(Collectors.toList());
+
+        Map<Long, ProductResponseDTO> productMap = allProducts.stream()
+                .collect(Collectors.toMap(ProductResponseDTO::getId, p -> p));
+
+        List<ProductResponseDTO> result = similarIds.stream()
+                .map(productMap::get)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        // Fallback if not enough similar items
+        if (result.size() < limit) {
+            int remaining = limit - result.size();
+            Set<Long> skipSet = new HashSet<>(similarIds);
+            skipSet.add(productId);
+            result.addAll(getPopularProductsFallback(allProducts, skipSet, remaining));
+        }
+
+        return result;
+    }
+
+
     private List<ProductResponseDTO> getPopularProductsFallback(List<ProductResponseDTO> allProducts, Set<Long> skipIds,
             int limit) {
         return allProducts.stream()

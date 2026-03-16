@@ -32,6 +32,14 @@ public class UserActivityController {
         return ResponseEntity.ok(recommendationService.getRecommendations(userId, limit));
     }
 
+    @GetMapping("/similar/{productId}")
+    public ResponseEntity<List<com.example.jhapcham.product.ProductResponseDTO>> getSimilarItems(
+            @PathVariable Long productId,
+            @RequestParam(defaultValue = "4") int limit) {
+        return ResponseEntity.ok(recommendationService.getSimilarProducts(productId, limit));
+    }
+
+
     @PostMapping("/sync")
     public ResponseEntity<String> syncActivities() {
         userActivityService.syncActivitiesFromExistingData();
