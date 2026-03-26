@@ -146,6 +146,23 @@ public class ProductController {
         }
     }
 
+    // ===================== UPDATE PRODUCT STATUS (VISIBILITY) =====================
+    @PutMapping("/{productId}/status")
+    public ResponseEntity<?> updateProductStatus(
+            @PathVariable Long productId,
+            @RequestParam ProductStatus status) {
+        try {
+            productService.updateProductStatus(productId, status);
+            return ResponseEntity.ok("Product status updated successfully");
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new ErrorResponse("Failed to update product status"));
+        }
+    }
+
     // ===================== SINGLE PRODUCT VIEW COUNT =====================
     @GetMapping("/{productId}/views/count")
     public ResponseEntity<?> getTotalViewsForProduct(@PathVariable Long productId) {

@@ -26,7 +26,8 @@ public class OrderAccountingService {
                 continue;
             }
 
-            if (p.getSellerFreeShippingMinOrder() != null
+            if (p.getSellerFreeShippingMinOrder() != null 
+                    && p.getSellerFreeShippingMinOrder() > 0.01
                     && itemsTotal.compareTo(BigDecimal.valueOf(p.getSellerFreeShippingMinOrder())) >= 0) {
                 continue;
             }

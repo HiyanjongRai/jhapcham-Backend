@@ -54,4 +54,11 @@ public class SellerController {
                     .body(new ErrorResponse("Failed to load dashboard statistics"));
         }
     }
+
+    @GetMapping("/{sellerUserId}/customers/{customerId}")
+    public ResponseEntity<?> getCustomerDetails(
+            @PathVariable Long sellerUserId,
+            @PathVariable Long customerId) {
+        return ResponseEntity.ok(sellerService.getCustomerDetailsForSeller(sellerUserId, customerId));
+    }
 }

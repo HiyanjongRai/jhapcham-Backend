@@ -17,5 +17,6 @@ public class MessageDTO {
     private String productName;
     private String productImage;
     private LocalDateTime createdAt;
+    private String senderRole;
     private boolean isRead;
 }

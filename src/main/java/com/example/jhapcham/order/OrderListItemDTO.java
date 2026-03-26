@@ -11,11 +11,14 @@ import java.time.LocalDateTime;
 public class OrderListItemDTO {
 
     private Long orderId;
+    private Long customerId; // NEW
     private OrderStatus status;
     private BigDecimal grandTotal;
     private BigDecimal discountTotal;
     private Integer totalItems;
     private LocalDateTime createdAt;
+    private PaymentMethod paymentMethod;
+    private String paymentReference;
     private String storeName; // for seller view
     private String customerName;
     private String customerPhone;

@@ -125,6 +125,17 @@ public class OrderController {
         }
     }
 
+    @PutMapping("/guest/cancel/{orderId}")
+    public ResponseEntity<?> guestCancel(@PathVariable Long orderId) {
+        try {
+            return ResponseEntity.ok(orderService.guestCancelOrder(orderId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Guest cancel failed: " + e.getMessage()));
+        }
+    }
+
     @PutMapping("/seller/{sellerId}/process/{orderId}")
     public ResponseEntity<?> processOrder(
             @PathVariable Long sellerId,

@@ -242,7 +242,7 @@ public class ProductService {
                     dtoOutside != null ? dtoOutside : profile.getOutsideValleyDeliveryFee());
 
             product.setSellerFreeShippingMinOrder(
-                    profile.getFreeShippingMinOrder());
+                    Boolean.TRUE.equals(profile.getFreeShippingEnabled()) ? profile.getFreeShippingMinOrder() : null);
         }
     }
 

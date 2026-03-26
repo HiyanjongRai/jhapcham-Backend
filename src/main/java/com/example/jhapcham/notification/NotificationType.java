@@ -5,5 +5,6 @@ public enum NotificationType {
     ORDER_UPDATE,
     SYSTEM_ALERT,
     SELLER_ALERT,
-    CAMPAIGN_ALERT
+    CAMPAIGN_ALERT,
+    MESSAGE_RECEIVED
 }

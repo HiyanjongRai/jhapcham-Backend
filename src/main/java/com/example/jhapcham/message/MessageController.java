@@ -21,6 +21,9 @@ public class MessageController {
     public ResponseEntity<?> sendMessage(@RequestBody SendMessageRequest request,
             Authentication authentication) {
         try {
+            if (authentication == null || authentication.getName().equals("anonymousUser")) {
+                return ResponseEntity.status(401).body("Error: Session expired. Please login again.");
+            }
             String principal = authentication.getName();
             User user = userRepository.findByUsername(principal)
                     .or(() -> userRepository.findByEmail(principal))
@@ -35,7 +38,10 @@ public class MessageController {
     }
 
     @GetMapping("/inbox")
-    public ResponseEntity<List<MessageDTO>> getInbox(Authentication authentication) {
+    public ResponseEntity<?> getInbox(Authentication authentication) {
+        if (authentication == null || authentication.getName().equals("anonymousUser")) {
+            return ResponseEntity.status(401).body("Error: Session expired. Please login again.");
+        }
         String principal = authentication.getName();
         User user = userRepository.findByUsername(principal)
                 .or(() -> userRepository.findByEmail(principal))
@@ -44,7 +50,10 @@ public class MessageController {
     }
 
     @GetMapping("/sent")
-    public ResponseEntity<List<MessageDTO>> getSent(Authentication authentication) {
+    public ResponseEntity<?> getSent(Authentication authentication) {
+        if (authentication == null || authentication.getName().equals("anonymousUser")) {
+            return ResponseEntity.status(401).body("Error: Session expired. Please login again.");
+        }
         String principal = authentication.getName();
         User user = userRepository.findByUsername(principal)
                 .or(() -> userRepository.findByEmail(principal))
@@ -53,8 +62,11 @@ public class MessageController {
     }
 
     @GetMapping("/conversation/{otherUserId}")
-    public ResponseEntity<List<MessageDTO>> getConversation(@PathVariable Long otherUserId,
+    public ResponseEntity<?> getConversation(@PathVariable Long otherUserId,
             Authentication authentication) {
+        if (authentication == null || authentication.getName().equals("anonymousUser")) {
+            return ResponseEntity.status(401).body("Error: Session expired. Please login again.");
+        }
         String principal = authentication.getName();
         User user = userRepository.findByUsername(principal)
                 .or(() -> userRepository.findByEmail(principal))
@@ -63,7 +75,10 @@ public class MessageController {
     }
 
     @GetMapping("/unread-count")
-    public ResponseEntity<Long> getUnreadCount(Authentication authentication) {
+    public ResponseEntity<?> getUnreadCount(Authentication authentication) {
+        if (authentication == null || authentication.getName().equals("anonymousUser")) {
+            return ResponseEntity.status(401).body("Error: Session expired. Please login again.");
+        }
         String principal = authentication.getName();
         User user = userRepository.findByUsername(principal)
                 .or(() -> userRepository.findByEmail(principal))
@@ -72,7 +87,10 @@ public class MessageController {
     }
 
     @PostMapping("/mark-read/{senderId}")
-    public ResponseEntity<Void> markAsRead(@PathVariable Long senderId, Authentication authentication) {
+    public ResponseEntity<?> markAsRead(@PathVariable Long senderId, Authentication authentication) {
+        if (authentication == null || authentication.getName().equals("anonymousUser")) {
+            return ResponseEntity.status(401).body("Error: Session expired. Please login again.");
+        }
         String principal = authentication.getName();
         User user = userRepository.findByUsername(principal)
                 .or(() -> userRepository.findByEmail(principal))

@@ -140,7 +140,7 @@ public class OrderService {
             for (OrderItemResponseDTO r : data.itemResponses) {
                 Product product = data.productById.get(r.getProductId());
 
-                // Use specialized stock service
+                // Deduct stock immediately (Reservation)
                 orderStockService.deductStock(product, r.getQuantity());
 
                 OrderItem item = OrderItem.builder()
@@ -173,6 +173,9 @@ public class OrderService {
                             "Bought " + r.getQuantity() + " item(s)");
                 }
             }
+
+            // Mark stock as deducted so restoration is only done if this flag is true
+            orderStockService.markStockDeducted(order);
 
             orderRepository.save(order);
             summaries.add(toSummaryDTO(order, mapItems(order)));
@@ -374,7 +377,7 @@ public class OrderService {
         }
 
         if (!orderStatusService.canCancel(order.getStatus())) {
-            throw new BusinessValidationException("Order cannot be canceled now");
+            throw new BusinessValidationException("Order cannot be canceled now (Status: " + order.getStatus() + ")");
         }
 
         order.setStatus(OrderStatus.CANCELED);
@@ -386,9 +389,29 @@ public class OrderService {
         return toSummaryDTO(order, mapItems(order));
     }
 
+    @Transactional
+    public OrderSummaryDTO guestCancelOrder(Long orderId) {
+        Order order = getOrderOrFail(orderId);
+        if (order.getUser() != null) {
+            throw new AuthorizationException("This is not a guest order");
+        }
+
+        if (!orderStatusService.canCancel(order.getStatus())) {
+            throw new BusinessValidationException("Guest order cannot be canceled now");
+        }
+
+        order.setStatus(OrderStatus.CANCELED);
+        orderStockService.restoreStock(order);
+
+        orderRepository.save(order);
+        log.info("Guest cancelled order {}", orderId);
+        return toSummaryDTO(order, mapItems(order));
+    }
+
     // =========================
     // FETCH (STAYS MOSTLY THE SAME)
     // =========================
+    @Transactional(readOnly = true)
     public OrderSummaryDTO getOrder(Long orderId) {
         Order order = getOrderOrFail(orderId);
         return toSummaryDTO(order, mapItems(order));
@@ -405,6 +428,8 @@ public class OrderService {
                 .orderId(o.getId())
                 .status(o.getStatus())
                 .grandTotal(o.getGrandTotal())
+                .paymentMethod(o.getPaymentMethod())
+                .paymentReference(o.getPaymentReference())
                 .discountTotal(o.getDiscountTotal())
                 .totalItems(o.getItems().size())
                 .createdAt(o.getCreatedAt())
@@ -451,9 +476,12 @@ public class OrderService {
                     .sellerNetAmount(o.getSellerNetAmount())
                     .deliveredBranch(o.getDeliveredBranch())
                     .assignedBranch(o.getAssignedBranch())
+                    .paymentMethod(o.getPaymentMethod())
+                    .paymentReference(o.getPaymentReference())
                     .createdAt(o.getCreatedAt())
                     .customerName(o.getCustomerName())
                     .customerPhone(o.getCustomerPhone())
+                    .customerId(o.getUser() != null ? o.getUser().getId() : null) // NEW
                     .orderNote(o.getOrderNote())
                     .deliveryTimePreference(o.getDeliveryTimePreference())
                     .productNames(sellerItems.stream()
@@ -575,21 +603,24 @@ public class OrderService {
                 .features(i.getFeaturesSnapshot())
                 .storageSpec(i.getStorageSpecSnapshot())
                 .colorOptions(i.getColorOptionsSnapshot())
+                .sellerStoreName(i.getProduct() != null && i.getProduct().getSellerProfile() != null 
+                        ? i.getProduct().getSellerProfile().getStoreName() : null)
                 .build();
     }
 
     private OrderSummaryDTO toSummaryDTO(Order o, List<OrderItemResponseDTO> items) {
-        return OrderSummaryDTO.builder()
+        OrderSummaryDTO.OrderSummaryDTOBuilder builder = OrderSummaryDTO.builder()
                 .orderId(o.getId())
+                .customerId(o.getUser() != null ? o.getUser().getId() : null)
                 .status(o.getStatus())
                 .customerName(o.getCustomerName())
                 .customerPhone(o.getCustomerPhone())
                 .customerEmail(o.getCustomerEmail())
                 .shippingAddress(o.getShippingAddress())
                 .shippingLocation(o.getShippingLocation())
-                .customerAlternativePhone(o.getCustomerAlternativePhone()) // NEW
-                .deliveryTimePreference(o.getDeliveryTimePreference()) // NEW
-                .orderNote(o.getOrderNote()) // NEW
+                .customerAlternativePhone(o.getCustomerAlternativePhone())
+                .deliveryTimePreference(o.getDeliveryTimePreference())
+                .orderNote(o.getOrderNote())
                 .paymentMethod(o.getPaymentMethod())
                 .paymentReference(o.getPaymentReference())
                 .itemsTotal(o.getItemsTotal())
@@ -599,7 +630,30 @@ public class OrderService {
                 .createdAt(o.getCreatedAt())
                 .items(items)
                 .customerProfileImagePath(o.getUser() != null ? o.getUser().getProfileImagePath() : null)
-                .build();
+                .sellerGrossAmount(o.getSellerGrossAmount())
+                .sellerShippingCharge(o.getSellerShippingCharge())
+                .sellerNetAmount(o.getSellerNetAmount())
+                .deliveredBranch(o.getDeliveredBranch());
+
+        // Populate Seller Info from items (assuming all items in one Order belong to the same seller)
+        if (items != null && !items.isEmpty()) {
+            OrderItemResponseDTO firstItemDto = items.get(0);
+            builder.sellerStoreName(firstItemDto.getSellerStoreName());
+            
+            // Still try to get more details from original entity if possible
+            if (o.getItems() != null && !o.getItems().isEmpty()) {
+                OrderItem firstItem = o.getItems().get(0);
+                 if (firstItem.getProduct() != null && firstItem.getProduct().getSellerProfile() != null) {
+                    SellerProfile sellerProfile = firstItem.getProduct().getSellerProfile();
+                    builder.sellerId(sellerProfile.getUser().getId())
+                           .sellerFullName(sellerProfile.getUser().getFullName())
+                           .sellerEmail(sellerProfile.getUser().getEmail())
+                           .sellerLogoPath(sellerProfile.getLogoImagePath());
+                }
+            }
+        }
+
+        return builder.build();
     }
 
     private BigDecimal resolveEffectiveUnitPrice(Product p) {

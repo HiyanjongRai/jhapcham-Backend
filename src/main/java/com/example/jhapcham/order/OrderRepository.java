@@ -52,5 +52,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         List<Order> findOrdersBySellerSince(@Param("sellerUserId") Long sellerUserId,
                         @Param("startDate") LocalDateTime startDate);
 
+        List<Order> findByCreatedAtAfter(LocalDateTime startDate);
+
+        List<Order> findByStatusAndCreatedAtAfter(OrderStatus status, LocalDateTime startDate);
+
         boolean existsByItemsProductAndStatusNot(Product product, OrderStatus status);
 }

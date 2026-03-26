@@ -35,4 +35,20 @@ public class NotificationController {
         notificationService.markAsRead(id);
         return ResponseEntity.ok().build();
     }
+
+    @PutMapping("/clear")
+    public ResponseEntity<Void> clearAll(@RequestParam String username) {
+        User user = userRepository.findByEmail(username)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        notificationService.markAllAsRead(user);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/clear-all")
+    public ResponseEntity<Void> deleteAll(@RequestParam String username) {
+        User user = userRepository.findByEmail(username)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        notificationService.deleteAllForUser(user);
+        return ResponseEntity.ok().build();
+    }
 }

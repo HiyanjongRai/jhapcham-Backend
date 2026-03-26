@@ -29,4 +29,5 @@ public class OrderItemResponseDTO {
     private String features;
     private String storageSpec;
     private String colorOptions;
+    private String sellerStoreName;
 }

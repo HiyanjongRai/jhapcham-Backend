@@ -37,6 +37,7 @@ public class OrderStatusService {
     public boolean canCancel(OrderStatus currentStatus) {
         return currentStatus == OrderStatus.NEW ||
                 currentStatus == OrderStatus.PROCESSING ||
-                currentStatus == OrderStatus.OUT_FOR_DELIVERY; // Customers/Sellers might cancel until last mile
+                currentStatus == OrderStatus.SHIPPED_TO_BRANCH ||
+                currentStatus == OrderStatus.OUT_FOR_DELIVERY;
     }
 }

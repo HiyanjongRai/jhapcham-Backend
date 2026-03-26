@@ -12,6 +12,7 @@ import java.util.List;
 public class OrderSummaryDTO {
 
     private Long orderId;
+    private Long customerId; // NEW
     private OrderStatus status;
 
     private String customerName;
@@ -41,4 +42,10 @@ public class OrderSummaryDTO {
     BigDecimal sellerNetAmount;
     DeliveryBranch deliveredBranch;
 
+    // Seller Info
+    private String sellerStoreName;
+    private String sellerFullName;
+    private Long sellerId;
+    private String sellerEmail;
+    private String sellerLogoPath;
 }

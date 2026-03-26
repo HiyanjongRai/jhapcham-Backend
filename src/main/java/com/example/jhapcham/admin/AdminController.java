@@ -19,6 +19,12 @@ public class AdminController {
 
     private final AdminService adminService;
 
+    // Analytics / Overview
+    @GetMapping("/analytics")
+    public ResponseEntity<PlatformAnalyticsDTO> getPlatformAnalytics() {
+        return ResponseEntity.ok(adminService.getPlatformAnalytics());
+    }
+
     // Users
     @GetMapping("/users")
     public ResponseEntity<List<User>> getAllUsers() {
@@ -35,6 +41,11 @@ public class AdminController {
     public ResponseEntity<Void> unblockUser(@PathVariable Long userId) {
         adminService.unblockUser(userId);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/users/{userId}")
+    public ResponseEntity<CustomerAdminDetailDTO> getCustomerDetails(@PathVariable Long userId) {
+        return ResponseEntity.ok(adminService.getCustomerDetails(userId));
     }
 
     @GetMapping("/sellers")
@@ -82,6 +93,11 @@ public class AdminController {
     @GetMapping("/sellers/applications/pending")
     public ResponseEntity<List<com.example.jhapcham.seller.SellerApplication>> getPendingApplications() {
         return ResponseEntity.ok(adminService.getPendingApplications());
+    }
+
+    @GetMapping("/sellers/{sellerId}/orders")
+    public ResponseEntity<List<com.example.jhapcham.order.OrderSummaryDTO>> getSellerOrders(@PathVariable Long sellerId) {
+        return ResponseEntity.ok(adminService.getOrdersBySeller(sellerId));
     }
 
     @PostMapping("/sellers/applications/{appId}/approve")

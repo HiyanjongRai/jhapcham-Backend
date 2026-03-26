@@ -22,6 +22,7 @@ public class MessageService {
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
     private final com.example.jhapcham.seller.SellerProfileRepository sellerProfileRepository;
+    private final com.example.jhapcham.notification.NotificationService notificationService;
 
     @Transactional
     public MessageDTO sendMessage(Long senderId, SendMessageRequest request) {
@@ -47,6 +48,21 @@ public class MessageService {
                 .build();
 
         Message savedMessage = Objects.requireNonNull(messageRepository.save(message), "Saved message cannot be null");
+
+        // Trigger Notification
+        String senderName = sender.getFullName() != null && !sender.getFullName().isBlank() 
+                            ? sender.getFullName() 
+                            : sender.getUsername();
+        if (senderName == null) senderName = "A user";
+
+        notificationService.createNotification(
+            receiver, 
+            "New Message", 
+            "You have a new message from " + senderName + ".", 
+            com.example.jhapcham.notification.NotificationType.MESSAGE_RECEIVED, 
+            sender.getId()
+        );
+
         return convertToDTO(savedMessage);
     }
 
@@ -85,11 +101,19 @@ public class MessageService {
 
         // Sender Info
         dto.setSenderId(sender.getId());
+        
+        // Ensure role is correctly fetched
+        User fullSender = userRepository.findById(sender.getId()).orElse(sender);
+        dto.setSenderRole(fullSender.getRole().name());
+
         var senderSeller = sellerProfileRepository.findByUser(sender);
         if (senderSeller.isPresent()) {
             dto.setSenderName(senderSeller.get().getStoreName());
             String logo = senderSeller.get().getLogoImagePath();
             dto.setSenderProfileImage(logo != null ? logo : sender.getProfileImagePath());
+        } else if (fullSender.getRole() == com.example.jhapcham.user.model.Role.ADMIN) {
+            dto.setSenderName("Jhapcham Official Admin");
+            dto.setSenderProfileImage(sender.getProfileImagePath());
         } else {
             dto.setSenderName(sender.getFullName() != null ? sender.getFullName() : sender.getUsername());
             dto.setSenderProfileImage(sender.getProfileImagePath());
@@ -97,6 +121,7 @@ public class MessageService {
 
         // Receiver Info
         dto.setReceiverId(receiver.getId());
+        User fullReceiver = userRepository.findById(receiver.getId()).orElse(receiver);
         var receiverSeller = sellerProfileRepository.findByUser(receiver);
         if (receiverSeller.isPresent()) {
             dto.setReceiverName(receiverSeller.get().getStoreName());

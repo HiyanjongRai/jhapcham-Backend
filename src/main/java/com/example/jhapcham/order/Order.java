@@ -59,6 +59,9 @@ public class Order {
 
     private String paymentReference;
 
+    // eSewa transaction identifier (e.g. orderId_timestamp) for verification
+    private String esewaTransactionUuid;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OrderStatus status;
@@ -109,5 +112,11 @@ public class Order {
     @Column(nullable = false)
     @Builder.Default
     private boolean sellerAccounted = false;
+
+    // Tracks whether stock was deducted for this order.
+    // Prevents double-restoration if cancel is called multiple times.
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean stockDeducted = false;
 
 }

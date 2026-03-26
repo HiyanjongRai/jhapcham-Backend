@@ -33,12 +33,12 @@ public class Product {
     @Size(max = 1000)
     private String name;
 
-    @Column(length = 1000)
-    @Size(max = 1000)
+    @Column(length = 3000)
+    @Size(max = 3000)
     private String shortDescription;
 
-    @Column(length = 1000)
-    @Size(max = 1000)
+    @Column(columnDefinition = "TEXT")
+    @Size(max = 20000)
     private String description;
 
     @Column(length = 1000)
@@ -49,20 +49,20 @@ public class Product {
     @Size(max = 1000)
     private String brand;
 
-    @Column(length = 1000)
-    @Size(max = 1000)
+    @Column(columnDefinition = "TEXT")
+    @Size(max = 20000)
     private String specification;
 
-    @Column(length = 1000)
-    @Size(max = 1000)
+    @Column(length = 5000)
+    @Size(max = 5000)
     private String storageSpec;
 
-    @Column(length = 1000)
-    @Size(max = 1000)
+    @Column(columnDefinition = "TEXT")
+    @Size(max = 20000)
     private String features;
 
-    @Column(length = 1000)
-    @Size(max = 1000)
+    @Column(length = 3000)
+    @Size(max = 3000)
     private String colorOptions;
 
     @Column(nullable = false)

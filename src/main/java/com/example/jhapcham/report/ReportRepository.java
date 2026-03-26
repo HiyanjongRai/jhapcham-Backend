@@ -15,4 +15,6 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
             "WHERE (r.type = 'SELLER' AND r.reportedEntityId = :userId) " +
             "OR (r.type = 'PRODUCT' AND r.reportedEntityId IN (SELECT p.id FROM com.example.jhapcham.product.Product p WHERE p.sellerProfile.user.id = :userId))")
     List<Report> findReportsForSeller(Long userId);
+
+    List<Report> findByReporter(com.example.jhapcham.user.model.User user);
 }

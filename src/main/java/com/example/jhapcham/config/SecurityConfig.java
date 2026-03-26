@@ -71,6 +71,12 @@ public class SecurityConfig {
                 // CART
                 .requestMatchers("/api/cart/**").permitAll()
 
+                // PAYMENT (Khalti, etc.)
+                .requestMatchers("/api/payment/**").permitAll()
+
+                // ADDRESSES
+                .requestMatchers("/api/addresses/**").permitAll()
+
                 // ORDERS
                 .requestMatchers("/orders/**").permitAll()
 
@@ -91,8 +97,9 @@ public class SecurityConfig {
 
                 .requestMatchers("/api/seller-reviews/**").permitAll() // allow access to seller review endpoints
 
-                .requestMatchers("/api/messages/**").authenticated()
-                .requestMatchers("/api/auth/**").permitAll() // Al
+                .requestMatchers("/api/messages/**", "/api/messages").permitAll()
+                .requestMatchers("/api/reports/**", "/api/reports").permitAll()
+                .requestMatchers("/api/auth/**").permitAll() 
 
                 // EVERYTHING ELSE ALLOWED
                 .anyRequest().permitAll());

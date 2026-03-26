@@ -52,6 +52,10 @@ public class CartService {
                                                                 .quantity(0)
                                                                 .build());
 
+                if (product.getStockQuantity() < (item.getQuantity() + dto.getQuantity())) {
+                    throw new BusinessValidationException("Only " + product.getStockQuantity() + " items available in stock");
+                }
+
                 item.setQuantity(item.getQuantity() + dto.getQuantity());
                 item.setSelectedColor(dto.getSelectedColor());
                 item.setSelectedStorage(dto.getSelectedStorage());
@@ -84,6 +88,9 @@ public class CartService {
                 if (qty <= 0) {
                         cartItemRepository.delete(item);
                 } else {
+                        if (item.getProduct().getStockQuantity() < qty) {
+                                throw new BusinessValidationException("Only " + item.getProduct().getStockQuantity() + " items available in stock");
+                        }
                         item.setQuantity(qty);
                         cartItemRepository.save(item);
                 }
@@ -128,6 +135,7 @@ public class CartService {
                                                         .price(unitPrice)
                                                         .selectedColor(item.getSelectedColor())
                                                         .selectedStorage(item.getSelectedStorage())
+                                                        .stockQuantity(p.getStockQuantity())
                                                         .build());
                 }
 

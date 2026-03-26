@@ -8,6 +8,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Objects;
+import org.springframework.jdbc.core.JdbcTemplate;
+import jakarta.annotation.PostConstruct;
 
 @Service
 @RequiredArgsConstructor
@@ -15,6 +17,17 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final JdbcTemplate jdbcTemplate;
+
+    @PostConstruct
+    public void init() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE notifications DROP CONSTRAINT notifications_type_check");
+            System.out.println("[DB Migrator] Dropped notifications_type_check safely.");
+        } catch (Exception e) {
+            System.out.println("[DB Migrator] Constraint not found or already dropped.");
+        }
+    }
 
     @Transactional
     public void createNotification(User user, String title, String message, NotificationType type,
@@ -42,6 +55,21 @@ public class NotificationService {
                     n.setIsRead(true);
                     notificationRepository.save(n);
                 });
+    }
+
+    @Transactional
+    public void markAllAsRead(User user) {
+        List<Notification> unread = notificationRepository.findByUserAndIsReadFalseOrderByCreatedAtDesc(user);
+        for (Notification n : unread) {
+            n.setIsRead(true);
+        }
+        notificationRepository.saveAll(unread);
+    }
+
+    @Transactional
+    public void deleteAllForUser(User user) {
+        List<Notification> all = notificationRepository.findByUserOrderByCreatedAtDesc(user);
+        notificationRepository.deleteAll(all);
     }
 
     @Transactional
