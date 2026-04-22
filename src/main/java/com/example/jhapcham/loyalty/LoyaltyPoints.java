@@ -1,0 +1,55 @@
+package com.example.jhapcham.loyalty;
+
+import com.example.jhapcham.user.model.User;
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "loyalty_points")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class LoyaltyPoints {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @OneToOne(optional = false)
+    @JoinColumn(name = "user_id", unique = true)
+    private User user;
+
+    @Builder.Default
+    private Long totalPoints = 0L;
+
+    @Builder.Default
+    private Long redeemedPoints = 0L;
+
+    @Builder.Default
+    private Long availablePoints = 0L;
+
+    @CreationTimestamp
+    @Column(nullable = false)
+    private LocalDateTime createdAt;
+
+    private LocalDateTime lastRedeemedAt;
+
+    public void addPoints(Long points) {
+        this.totalPoints += points;
+        this.availablePoints += points;
+    }
+
+    public void redeemPoints(Long points) {
+        if (points > this.availablePoints) {
+            throw new RuntimeException("Insufficient points for redemption");
+        }
+        this.availablePoints -= points;
+        this.redeemedPoints += points;
+        this.lastRedeemedAt = LocalDateTime.now();
+    }
+}

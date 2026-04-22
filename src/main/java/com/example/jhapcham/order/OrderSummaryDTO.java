@@ -40,7 +40,9 @@ public class OrderSummaryDTO {
     BigDecimal sellerGrossAmount;
     BigDecimal sellerShippingCharge;
     BigDecimal sellerNetAmount;
+    BigDecimal marketplaceCommission;
     DeliveryBranch deliveredBranch;
+
 
     // Seller Info
     private String sellerStoreName;

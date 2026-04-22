@@ -54,6 +54,7 @@ public class OrderItem {
 
     private String selectedColorSnapshot;
     private String selectedStorageSnapshot;
+    private String selectedSizeSnapshot;
 
     private LocalDate manufactureDateSnapshot;
     private LocalDate expiryDateSnapshot;
@@ -72,5 +73,9 @@ public class OrderItem {
 
     @Column(columnDefinition = "TEXT")
     private String colorOptionsSnapshot;
+
+    private Double commissionPercentageSnapshot;
+
+    private BigDecimal commissionAmountSnapshot;
 
 }

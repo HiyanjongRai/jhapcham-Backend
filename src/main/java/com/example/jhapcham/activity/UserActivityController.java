@@ -39,6 +39,37 @@ public class UserActivityController {
         return ResponseEntity.ok(recommendationService.getSimilarProducts(productId, limit));
     }
 
+    @GetMapping("/test")
+    public ResponseEntity<Map<String, Object>> testIBCF(
+            @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) Long productId) {
+
+        Map<String, Object> testResults = new java.util.LinkedHashMap<>();
+
+        // 1. All IBCF Data Summary
+        List<Map<String, Object>> allIbcfData = userActivityService.getInteractionsForIBCF();
+        testResults.put("totalInteractionsStored", allIbcfData.size());
+        if (!allIbcfData.isEmpty()) {
+            testResults.put("sampleInteraction", allIbcfData.get(0));
+            // Add top 5 raw activities
+            testResults.put("rawIbcfDataPreview", allIbcfData.stream().limit(5).toList());
+        }
+
+        // 2. User specific tests
+        if (userId != null) {
+            testResults.put("targetUserId", userId);
+            testResults.put("userActivities", userActivityService.getUserActivitiesWithProductNames(userId));
+            testResults.put("recommendationsForUser", recommendationService.getRecommendations(userId, 5));
+        }
+
+        // 3. Product specific tests
+        if (productId != null) {
+            testResults.put("targetProductId", productId);
+            testResults.put("similarProductsToTarget", recommendationService.getSimilarProducts(productId, 5));
+        }
+
+        return ResponseEntity.ok(testResults);
+    }
 
     @PostMapping("/sync")
     public ResponseEntity<String> syncActivities() {

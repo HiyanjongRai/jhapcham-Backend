@@ -88,4 +88,10 @@ public class User {
         @Column(name = "updated_at")
         private LocalDateTime updatedAt;
 
+        @Column(name = "reset_otp", length = 6)
+        private String resetOtp;
+
+        @Column(name = "reset_otp_expiry")
+        private LocalDateTime resetOtpExpiry;
+
 }

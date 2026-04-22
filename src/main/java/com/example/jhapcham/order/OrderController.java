@@ -103,6 +103,20 @@ public class OrderController {
         }
     }
 
+    @PutMapping("/seller/{sellerId}/express-dispatch/{orderId}")
+    public ResponseEntity<?> expressDispatch(
+            @PathVariable Long sellerId,
+            @PathVariable Long orderId,
+            @RequestBody AssignBranchDTO dto) {
+        try {
+            return ResponseEntity.ok(orderService.sellerExpressDispatch(orderId, sellerId, dto));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Express dispatch failed: " + e.getMessage()));
+        }
+    }
+
     @PutMapping("/branch/{orderId}/status")
     public ResponseEntity<?> branchUpdateStatus(
             @PathVariable Long orderId,
@@ -159,6 +173,34 @@ public class OrderController {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(new ErrorResponse("Cancel failed: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/branch/{orderId}/verify-otp")
+    public ResponseEntity<?> verifyDeliveryOtp(
+            @PathVariable Long orderId,
+            @RequestParam DeliveryBranch branch,
+            @RequestParam String otp) {
+        try {
+            return ResponseEntity.ok(orderService.verifyDeliveryOtp(orderId, branch.name(), otp));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("OTP verification failed: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/branch/{orderId}/resend-otp")
+    public ResponseEntity<?> resendDeliveryOtp(
+            @PathVariable Long orderId,
+            @RequestParam DeliveryBranch branch) {
+        try {
+            orderService.resendDeliveryOtp(orderId, branch.name());
+            return ResponseEntity.ok("OTP resent successfully");
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("OTP resend failed: " + e.getMessage()));
         }
     }
 }

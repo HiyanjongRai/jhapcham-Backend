@@ -44,5 +44,6 @@ public class UserAddress {
     private String fullAddress;
 
     @Column(name = "is_default")
+    @Builder.Default
     private Boolean isDefault = false;
 }

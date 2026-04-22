@@ -31,11 +31,7 @@ public class UserActivityService {
         recordIfNotExists(userId, productId, type, details);
     }
 
-    /**
-     * Sycn activities from other tables (Views, Cart, Orders, Reviews)
-     * This is useful to populate the UserActivity table with existing interaction
-     * data.
-     */
+    //Sycn activities from other tables (Views, Cart, Orders, Reviews)This is useful to populate the UserActivity table with existing interaction data.
     @Transactional
     public void syncActivitiesFromExistingData() {
         // 1. Sync Views
@@ -109,7 +105,6 @@ public class UserActivityService {
             return List.of();
         }
 
-        // Fetch all unique product IDs to avoid N+1 queries
         List<Long> productIds = activities.stream()
                 .map(UserActivity::getProductId)
                 .distinct()
@@ -131,14 +126,11 @@ public class UserActivityService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Data format for IBCF: List of interactions with weights
-     */
+    // Data format for IBCF: List of interactions with weights
     public List<Map<String, Object>> getInteractionsForIBCF() {
         List<UserActivity> allActivities = userActivityRepository.findAll();
 
         // Group by user and product, then assign a max weight or sum weights
-        // For simplicity, we'll assign weights based on the activity type
         return allActivities.stream()
                 .collect(Collectors.groupingBy(
                         a -> a.getUserId() + "_" + a.getProductId()))

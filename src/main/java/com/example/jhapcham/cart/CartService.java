@@ -44,11 +44,14 @@ public class CartService {
                                 .findById(Objects.requireNonNull(productId, "Product ID cannot be null"))
                                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
-                CartItem item = cartItemRepository.findByUserAndProduct(user, product)
+                CartItem item = cartItemRepository.findExistingItem(user, product, dto.getSelectedColor(), dto.getSelectedStorage(), dto.getSelectedSize())
                                 .orElse(
                                                 CartItem.builder()
                                                                 .user(user)
                                                                 .product(product)
+                                                                .selectedColor(dto.getSelectedColor())
+                                                                .selectedStorage(dto.getSelectedStorage())
+                                                                .selectedSize(dto.getSelectedSize())
                                                                 .quantity(0)
                                                                 .build());
 
@@ -57,8 +60,6 @@ public class CartService {
                 }
 
                 item.setQuantity(item.getQuantity() + dto.getQuantity());
-                item.setSelectedColor(dto.getSelectedColor());
-                item.setSelectedStorage(dto.getSelectedStorage());
 
                 cartItemRepository.save(item);
 
@@ -135,6 +136,7 @@ public class CartService {
                                                         .price(unitPrice)
                                                         .selectedColor(item.getSelectedColor())
                                                         .selectedStorage(item.getSelectedStorage())
+                                                        .selectedSize(item.getSelectedSize())
                                                         .stockQuantity(p.getStockQuantity())
                                                         .build());
                 }

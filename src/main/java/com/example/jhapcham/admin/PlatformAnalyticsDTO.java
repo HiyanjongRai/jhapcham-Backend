@@ -11,6 +11,8 @@ public class PlatformAnalyticsDTO {
     private long totalProducts;
     private long totalOrders;
     private double totalRevenue;
+    private double platformIncome;
+
     private long pendingApplications;
     private long openReports;
     private long totalReviews;

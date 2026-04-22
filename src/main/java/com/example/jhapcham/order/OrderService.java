@@ -42,7 +42,10 @@ public class OrderService {
     private final OrderAccountingService orderAccountingService;
     private final OrderStatusService orderStatusService;
     private final com.example.jhapcham.notification.NotificationService notificationService;
+    private final com.example.jhapcham.notification.EmailService emailService;
     private final com.example.jhapcham.promocode.PromoCodeService promoCodeService;
+    private final com.example.jhapcham.loyalty.LoyaltyService loyaltyService;
+    private final com.example.jhapcham.notification.SmsService smsService;
 
     // =========================
     // PREVIEW ORDER
@@ -136,12 +139,14 @@ public class OrderService {
                     .build();
 
             orderRepository.save(order);
+            // NOW initialize accounting since items are not yet there, BUT WAIT...
+            // the order items are added below. We must call this AFTER the loop.
 
             for (OrderItemResponseDTO r : data.itemResponses) {
                 Product product = data.productById.get(r.getProductId());
 
                 // Deduct stock immediately (Reservation)
-                orderStockService.deductStock(product, r.getQuantity());
+                orderStockService.deductStock(product, r.getQuantity(), r.getSelectedColor(), r.getSelectedSize(), r.getSelectedStorage());
 
                 OrderItem item = OrderItem.builder()
                         .order(order)
@@ -155,6 +160,7 @@ public class OrderService {
                         .lineTotal(r.getLineTotal())
                         .selectedColorSnapshot(r.getSelectedColor())
                         .selectedStorageSnapshot(r.getSelectedStorage())
+                        .selectedSizeSnapshot(r.getSelectedSize())
                         .manufactureDateSnapshot(product.getManufactureDate())
                         .expiryDateSnapshot(product.getExpiryDate())
                         .productDescriptionSnapshot(product.getDescription())
@@ -176,10 +182,23 @@ public class OrderService {
 
             // Mark stock as deducted so restoration is only done if this flag is true
             orderStockService.markStockDeducted(order);
+            
+            // Now that all items are added, initialize accounting
+            orderAccountingService.initializeAccounting(order);
 
             orderRepository.save(order);
             summaries.add(toSummaryDTO(order, mapItems(order)));
             log.info("Order {} placed successfully for customer {}", order.getId(), dto.getFullName());
+
+            // Send order confirmation SMS
+            if (user != null && user.getContactNumber() != null) {
+                try {
+                    smsService.sendOrderConfirmationSms(user, user.getContactNumber(),
+                            String.valueOf(order.getId()), "");
+                } catch (Exception e) {
+                    log.error("Failed to send order confirmation SMS for order {}", order.getId(), e);
+                }
+            }
         }
 
         // Increment promo usage if it was applied effectively to at least one sub-order
@@ -309,13 +328,19 @@ public class OrderService {
             throw new BusinessValidationException("Branch mismatch for this order");
         }
 
+        if (next == OrderStatus.DELIVERED) {
+            throw new BusinessValidationException("Direct status update to DELIVERED is not allowed. Use OTP verification instead.");
+        }
+
         orderStatusService.validateTransition(order.getStatus(), next);
         order.setStatus(next);
 
-        if (next == OrderStatus.DELIVERED) {
-            order.setDeliveredBranch(branch);
-            // Use specialized accounting service
-            orderAccountingService.applySellerAccounting(order);
+        if (next == OrderStatus.OUT_FOR_DELIVERY) {
+            String otp = String.format("%06d", new Random().nextInt(999999));
+            order.setDeliveryOtp(otp);
+            order.setDeliveryOtpExpiry(LocalDateTime.now().plusHours(24));
+            emailService.sendDeliveryOtpEmail(order.getCustomerEmail(), order.getCustomerName(), otp);
+            log.info("OTP generated and sent for order {}", orderId);
         }
 
         orderRepository.save(order);
@@ -337,6 +362,120 @@ public class OrderService {
     }
 
     @Transactional
+    public OrderSummaryDTO verifyDeliveryOtp(Long orderId, String branchRaw, String otp) {
+        Order order = getOrderOrFail(orderId);
+        DeliveryBranch branch = DeliveryBranch.fromString(branchRaw);
+
+        if (order.getAssignedBranch() == null || order.getAssignedBranch() != branch) {
+            throw new BusinessValidationException("Branch mismatch for this order");
+        }
+
+        if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
+            throw new BusinessValidationException("Order is not out for delivery");
+        }
+
+        if (order.getDeliveryOtp() == null || !order.getDeliveryOtp().equals(otp)) {
+            throw new BusinessValidationException("Invalid OTP provided");
+        }
+
+        if (LocalDateTime.now().isAfter(order.getDeliveryOtpExpiry())) {
+            throw new BusinessValidationException("OTP has expired");
+        }
+
+        // OTP verified successfully
+        orderStatusService.validateTransition(order.getStatus(), OrderStatus.DELIVERED);
+        order.setStatus(OrderStatus.DELIVERED);
+        order.setDeliveredAt(LocalDateTime.now());
+        order.setDeliveredBranch(branch);
+        orderAccountingService.finalizeSellerAccounting(order);
+
+        orderRepository.save(order);
+        log.info("Order {} delivered successfully with OTP verification", orderId);
+
+        // Award loyalty points to the customer
+        if (order.getUser() != null) {
+            try {
+                Long orderTotal = order.getGrandTotal() != null ? order.getGrandTotal().longValue() : 0L;
+                loyaltyService.addPointsForOrder(order.getUser().getId(), orderTotal);
+                log.info("Loyalty points awarded to user {} for order {}", order.getUser().getId(), orderId);
+            } catch (Exception e) {
+                log.error("Failed to award loyalty points for order {}", orderId, e);
+            }
+        }
+
+        try {
+            notificationService.createNotification(
+                    order.getUser(),
+                    "Order Delivered",
+                    "Your order #" + order.getId() + " has been successfully delivered.",
+                    com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
+                    order.getId());
+        } catch (Exception e) {
+            log.error("Failed to notify customer of delivery", e);
+        }
+
+        return toSummaryDTO(order, mapItems(order));
+    }
+
+    @Transactional
+    public void resendDeliveryOtp(Long orderId, String branchRaw) {
+        Order order = getOrderOrFail(orderId);
+        DeliveryBranch branch = DeliveryBranch.fromString(branchRaw);
+
+        if (order.getAssignedBranch() == null || order.getAssignedBranch() != branch) {
+            throw new BusinessValidationException("Branch mismatch for this order");
+        }
+
+        if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
+            throw new BusinessValidationException("Order is not out for delivery");
+        }
+
+        if (order.getDeliveryOtpResendCount() >= 3) {
+            throw new BusinessValidationException("Maximum OTP resend attempts exceeded");
+        }
+
+        String otp = String.format("%06d", new Random().nextInt(999999));
+        order.setDeliveryOtp(otp);
+        order.setDeliveryOtpExpiry(LocalDateTime.now().plusHours(24));
+        order.setDeliveryOtpResendCount(order.getDeliveryOtpResendCount() + 1);
+
+        emailService.sendDeliveryOtpEmail(order.getCustomerEmail(), order.getCustomerName(), otp);
+        orderRepository.save(order);
+        log.info("Resent delivery OTP for order {}", orderId);
+    }
+
+    @Transactional
+    public OrderSummaryDTO sellerExpressDispatch(Long orderId, Long sellerId, AssignBranchDTO dto) {
+        Order order = getOrderOrFail(orderId);
+        if (!sellerOwns(order, sellerId)) {
+            throw new AuthorizationException("You do not have permission to dispatch this order");
+        }
+
+        DeliveryBranch branch = DeliveryBranch.fromString(dto.getBranch());
+        
+        // Step 1: Assign Branch
+        orderStatusService.validateTransition(order.getStatus(), OrderStatus.SHIPPED_TO_BRANCH);
+        order.setStatus(OrderStatus.SHIPPED_TO_BRANCH);
+        order.setAssignedBranch(branch);
+
+        // Step 2: Immediate Out for Delivery
+        orderStatusService.validateTransition(order.getStatus(), OrderStatus.OUT_FOR_DELIVERY);
+        order.setStatus(OrderStatus.OUT_FOR_DELIVERY);
+
+        // Step 3: Generate OTP
+        String otp = String.format("%06d", new Random().nextInt(999999));
+        order.setDeliveryOtp(otp);
+        order.setDeliveryOtpExpiry(LocalDateTime.now().plusHours(24));
+        
+        emailService.sendDeliveryOtpEmail(order.getCustomerEmail(), order.getCustomerName(), otp);
+        
+        orderRepository.save(order);
+        log.info("Seller {} performed EXPRESS DISPATCH for order {} through branch {}", sellerId, orderId, branch);
+
+        return toSummaryDTO(order, mapItems(order));
+    }
+
+    @Transactional
     public OrderSummaryDTO sellerCancelOrder(Long orderId, Long sellerId) {
         Order order = getOrderOrFail(orderId);
         if (!sellerOwns(order, sellerId)) {
@@ -348,6 +487,7 @@ public class OrderService {
         }
 
         order.setStatus(OrderStatus.CANCELED);
+        orderAccountingService.cancelAccounting(order);
         // Use specialized stock service
         orderStockService.restoreStock(order);
 
@@ -381,6 +521,7 @@ public class OrderService {
         }
 
         order.setStatus(OrderStatus.CANCELED);
+        orderAccountingService.cancelAccounting(order);
         // Use specialized stock service
         orderStockService.restoreStock(order);
 
@@ -401,6 +542,7 @@ public class OrderService {
         }
 
         order.setStatus(OrderStatus.CANCELED);
+        orderAccountingService.cancelAccounting(order);
         orderStockService.restoreStock(order);
 
         orderRepository.save(order);
@@ -524,16 +666,16 @@ public class OrderService {
 
         BigDecimal itemsTotal = BigDecimal.ZERO;
         List<OrderItemResponseDTO> responses = new ArrayList<>();
-        Map<Long, Product> productMap = new HashMap<>();
+        Map<Long, Product> productMap = products.stream().collect(Collectors.toMap(Product::getId, p -> p));
 
-        for (Product p : products) {
-            int qty = quantityMap.get(p.getId());
+        for (CheckoutItemDTO itemDto : items) {
+            Product p = productMap.get(itemDto.getProductId());
+            if (p == null) continue;
+
+            int qty = itemDto.getQuantity();
             BigDecimal unitPrice = resolveEffectiveUnitPrice(p);
             BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
             itemsTotal = itemsTotal.add(lineTotal);
-
-            CheckoutItemDTO itemDto = items.stream().filter(i -> i.getProductId().equals(p.getId())).findFirst()
-                    .orElse(null);
 
             responses.add(OrderItemResponseDTO.builder()
                     .productId(p.getId())
@@ -543,12 +685,12 @@ public class OrderService {
                     .quantity(qty)
                     .unitPrice(unitPrice)
                     .lineTotal(lineTotal)
-                    .selectedColor(itemDto != null ? itemDto.getSelectedColor() : null)
-                    .selectedStorage(itemDto != null ? itemDto.getSelectedStorage() : null)
+                    .selectedColor(itemDto.getSelectedColor())
+                    .selectedStorage(itemDto.getSelectedStorage())
+                    .selectedSize(itemDto.getSelectedSize())
                     .manufactureDate(p.getManufactureDate())
                     .expiryDate(p.getExpiryDate())
                     .build());
-            productMap.put(p.getId(), p);
         }
 
         // Use specialized accounting service for shipping
@@ -584,6 +726,7 @@ public class OrderService {
 
     private OrderItemResponseDTO toItemResponse(OrderItem i) {
         return OrderItemResponseDTO.builder()
+                .id(i.getId())
                 .productId(i.getProductIdSnapshot())
                 .name(i.getProductNameSnapshot())
                 .brand(i.getBrandSnapshot())
@@ -605,6 +748,7 @@ public class OrderService {
                 .colorOptions(i.getColorOptionsSnapshot())
                 .sellerStoreName(i.getProduct() != null && i.getProduct().getSellerProfile() != null 
                         ? i.getProduct().getSellerProfile().getStoreName() : null)
+                .commissionRate(orderAccountingService.getCommissionRate(i.getProduct() != null ? i.getProduct().getCategory() : "Others"))
                 .build();
     }
 
@@ -633,6 +777,7 @@ public class OrderService {
                 .sellerGrossAmount(o.getSellerGrossAmount())
                 .sellerShippingCharge(o.getSellerShippingCharge())
                 .sellerNetAmount(o.getSellerNetAmount())
+                .marketplaceCommission(o.getMarketplaceCommission())
                 .deliveredBranch(o.getDeliveredBranch());
 
         // Populate Seller Info from items (assuming all items in one Order belong to the same seller)

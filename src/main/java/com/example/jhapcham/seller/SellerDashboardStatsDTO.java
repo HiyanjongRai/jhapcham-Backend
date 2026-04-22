@@ -16,6 +16,7 @@ public class SellerDashboardStatsDTO {
     // Income metrics
     private BigDecimal totalIncome;
     private BigDecimal totalShippingCost;
+    private BigDecimal totalCommission;
     private BigDecimal netIncome;
 
     // Order counts

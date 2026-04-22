@@ -10,18 +10,22 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
+ 
+        @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items i LEFT JOIN FETCH i.product p LEFT JOIN FETCH p.sellerProfile WHERE o.status != 'CANCELLED' OR 1=1 ORDER BY o.createdAt DESC")
+        List<Order> findAllWithDetails();
+
 
         List<Order> findByUserOrderByCreatedAtDesc(User user);
 
         List<Order> findByUserIdOrderByCreatedAtDesc(Long userId);
 
         @Query("""
-                        SELECT DISTINCT o FROM Order o
-                        LEFT JOIN FETCH o.user u
-                        LEFT JOIN FETCH o.items i
-                        LEFT JOIN FETCH i.product p
-                        WHERE p.sellerProfile.user.id = :sellerUserId
-                        ORDER BY o.createdAt DESC
+                        SELECT o FROM Order o 
+                        WHERE o.id IN (
+                            SELECT DISTINCT i.order.id 
+                            FROM OrderItem i 
+                            WHERE i.product.sellerProfile.user.id = :sellerUserId
+                        )
                         """)
         List<Order> findOrdersBySeller(@Param("sellerUserId") Long sellerUserId);
 

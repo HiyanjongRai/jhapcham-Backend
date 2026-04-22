@@ -1,0 +1,84 @@
+erDiagram
+    %% USER & ROLES
+    USER ||--o| SELLER_PROFILE : "has"
+    USER ||--o{ ORDER : "places"
+    USER ||--o{ CART_ITEM : "adds to cart"
+    USER ||--o{ USER_ACTIVITY : "generates (IBCF)"
+    USER ||--o{ REVIEW : "writes"
+
+    USER {
+        Long id PK
+        String username "UK"
+        String email "UK"
+        String password
+        String role "CUSTOMER, ADMIN, SELLER"
+        String status
+    }
+
+    SELLER_PROFILE ||--o{ PRODUCT : "manages"
+    SELLER_PROFILE {
+        Long id PK
+        Long user_id FK
+        String store_name
+        String verification_status
+    }
+
+    %% PRODUCT SYSTEM
+    PRODUCT ||--o{ ORDER_ITEM : "is ordered in"
+    PRODUCT ||--o{ CART_ITEM : "is added as"
+    PRODUCT ||--o{ USER_ACTIVITY : "is tracked in"
+    PRODUCT ||--o{ REVIEW : "receives"
+
+    PRODUCT {
+        Long id PK
+        Long seller_profile_id FK
+        String name
+        String description
+        BigDecimal price
+        Integer stock_quantity
+        String status
+    }
+
+    %% ORDER SYSTEM
+    ORDER ||--|{ ORDER_ITEM : "contains"
+    ORDER {
+        Long id PK
+        Long user_id FK
+        String customer_name
+        String shipping_location
+        String payment_method
+        String status
+        BigDecimal grand_total
+    }
+
+    ORDER_ITEM {
+        Long id PK
+        Long order_id FK
+        Long product_id FK
+        Integer quantity
+        BigDecimal price
+    }
+
+    CART_ITEM {
+        Long id PK
+        Long user_id FK
+        Long product_id FK
+        Integer quantity
+    }
+
+    %% IBCF & INTERACTIONS
+    USER_ACTIVITY {
+        Long id PK
+        Long user_id FK
+        Long product_id FK
+        String activity_type "VIEW, WISHLIST, ADD_CART, ORDER, REVIEW"
+        LocalDateTime timestamp
+    }
+
+    REVIEW {
+        Long id PK
+        Long user_id FK
+        Long product_id FK
+        Integer rating
+        String comment
+    }

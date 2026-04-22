@@ -6,5 +6,7 @@ public enum OrderStatus {
     SHIPPED_TO_BRANCH,
     OUT_FOR_DELIVERY,
     DELIVERED,
-    CANCELED
+    CANCELED,
+    REFUNDED,
+    PARTIALLY_REFUNDED
 }

@@ -1,7 +1,7 @@
 package com.example.jhapcham.admin;
 
 import com.example.jhapcham.product.ProductResponseDTO;
-import com.example.jhapcham.report.ReportDTO;
+import com.example.jhapcham.report.dto.ReportResponseDTO;
 import com.example.jhapcham.user.model.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +23,17 @@ public class AdminController {
     @GetMapping("/analytics")
     public ResponseEntity<PlatformAnalyticsDTO> getPlatformAnalytics() {
         return ResponseEntity.ok(adminService.getPlatformAnalytics());
+    }
+
+    @GetMapping("/commissions")
+    public ResponseEntity<List<CommissionReportDTO>> getCommissionReports() {
+        return ResponseEntity.ok(adminService.getCommissionReports());
+    }
+
+    @PostMapping("/commissions/{orderId}/remind")
+    public ResponseEntity<Void> sendCommissionReminder(@PathVariable Long orderId) {
+        adminService.sendCommissionReminder(orderId);
+        return ResponseEntity.ok().build();
     }
 
     // Users
@@ -75,7 +86,7 @@ public class AdminController {
 
     // Reports
     @GetMapping("/reports")
-    public ResponseEntity<List<ReportDTO>> getAllReports() {
+    public ResponseEntity<List<ReportResponseDTO>> getAllReports() {
         return ResponseEntity.ok(adminService.getAllReports());
     }
 

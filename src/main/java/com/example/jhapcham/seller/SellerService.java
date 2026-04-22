@@ -3,6 +3,7 @@ package com.example.jhapcham.seller;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.common.FileStorageService;
 import com.example.jhapcham.order.Order;
+import com.example.jhapcham.order.OrderAccountingService;
 import com.example.jhapcham.order.OrderRepository;
 import com.example.jhapcham.order.OrderStatus;
 import com.example.jhapcham.product.Product;
@@ -10,6 +11,7 @@ import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.product.ProductStatus;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +28,7 @@ public class SellerService {
         private final FileStorageService fileStorageService;
         private final UserRepository userRepository;
         private final OrderRepository orderRepository;
+        private final OrderAccountingService orderAccountingService;
         private final FollowRepository followRepository;
 
         private static final String SELLER_LOGO_DIR = "seller_logos";
@@ -144,20 +147,45 @@ public class SellerService {
                                 profile.getId(),
                                 profile.getTotalIncome(),
                                 profile.getTotalShippingCost(),
+                                profile.getTotalCommission(),
                                 profile.getNetIncome());
         }
 
         // ----------------------------------------------------------
         // COMPREHENSIVE DASHBOARD STATISTICS
         // ----------------------------------------------------------
+        @Transactional
         public SellerDashboardStatsDTO getDashboardStats(Long sellerUserId) {
-
                 User seller = userRepository.findById(sellerUserId)
                                 .orElseThrow(() -> new RuntimeException("Seller not found"));
 
-                SellerProfile profile = sellerProfileRepository.findByUser(seller)
-                                .orElseThrow(() -> new RuntimeException("Seller profile not found"));
+                java.util.Optional<SellerProfile> profileOpt = sellerProfileRepository.findByUser(seller);
+                
+                // If profile missing, return empty stats instead of 400
+                if (profileOpt.isEmpty()) {
+                    return SellerDashboardStatsDTO.builder()
+                        .storeName("Merchant (Pending Setup)")
+                        .totalIncome(BigDecimal.ZERO)
+                        .totalShippingCost(BigDecimal.ZERO)
+                        .totalCommission(BigDecimal.ZERO)
+                        .netIncome(BigDecimal.ZERO)
+                        .totalOrders(0L)
+                        .deliveredOrders(0L)
+                        .pendingOrders(0L)
+                        .processingOrders(0L)
+                        .shippedOrders(0L)
+                        .canceledOrders(0L)
+                        .totalProducts(0L)
+                        .activeProducts(0L)
+                        .inactiveProducts(0L)
+                        .last30DaysIncome(BigDecimal.ZERO)
+                        .last30DaysOrders(0L)
+                        .weeklySales(java.util.Collections.nCopies(7, BigDecimal.ZERO))
+                        .topSellingProducts(java.util.Collections.emptyList())
+                        .build();
+                }
 
+                SellerProfile profile = profileOpt.get();
                 // Get all orders for this seller
                 List<Order> allOrders = orderRepository.findOrdersBySeller(sellerUserId);
 
@@ -196,8 +224,10 @@ public class SellerService {
                 LocalDateTime sevenDaysAgo = LocalDateTime.now().minusDays(7);
                 List<Order> weeklyOrders = orderRepository.findOrdersBySellerSince(sellerUserId, sevenDaysAgo);
 
-                List<BigDecimal> weeklySales = new java.util.ArrayList<>(
-                                java.util.Collections.nCopies(7, BigDecimal.ZERO));
+                List<BigDecimal> weeklySales = new java.util.ArrayList<>(java.util.Arrays.asList(
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO
+                ));
                 LocalDateTime now = LocalDateTime.now();
 
                 for (Order order : weeklyOrders) {
@@ -220,9 +250,10 @@ public class SellerService {
 
                 return SellerDashboardStatsDTO.builder()
                                 // Income metrics (from SellerProfile accumulated values)
-                                .totalIncome(profile.getTotalIncome())
-                                .totalShippingCost(profile.getTotalShippingCost())
-                                .netIncome(profile.getNetIncome())
+                                .totalIncome(profile.getTotalIncome() != null ? profile.getTotalIncome() : BigDecimal.ZERO)
+                                .totalShippingCost(profile.getTotalShippingCost() != null ? profile.getTotalShippingCost() : BigDecimal.ZERO)
+                                .totalCommission(profile.getTotalCommission() != null ? profile.getTotalCommission() : BigDecimal.ZERO)
+                                .netIncome(profile.getNetIncome() != null ? profile.getNetIncome() : BigDecimal.ZERO)
 
                                 // Order counts
                                 .totalOrders((long) allOrders.size())
@@ -242,7 +273,7 @@ public class SellerService {
                                 .last30DaysOrders(last30DaysOrderCount)
                                 .storeName(profile.getStoreName())
                                 .logoImagePath(profile.getLogoImagePath())
-                                .profileImagePath(profile.getUser().getProfileImagePath())
+                                .profileImagePath(profile.getUser() != null ? profile.getUser().getProfileImagePath() : null)
                                 .weeklySales(weeklySales)
                                 .topSellingProducts(topSellingProducts)
                                 .build();
@@ -289,5 +320,102 @@ public class SellerService {
                                 .lastOrderDate(lastOrderDate)
                                 .orderHistory(summaries)
                                 .build();
+        }
+
+        @Transactional
+        public List<com.example.jhapcham.admin.CommissionReportDTO> getSellerCommissions(Long sellerUserId) {
+                return orderRepository.findOrdersBySeller(sellerUserId).stream()
+                                .filter(o -> o != null && o.getStatus() == com.example.jhapcham.order.OrderStatus.DELIVERED)
+                                .map(o -> {
+                                    // Force load lazy collection while in transaction
+                                    if (o.getItems() != null) o.getItems().size();
+                                    
+                                    try {
+                                        // Calculate commission specific to THIS seller (for multi-vendor support)
+                                        java.math.BigDecimal sellerSpecificCommission = o.getItems().stream()
+                                            .filter(i -> i.getProduct() != null && i.getProduct().getSellerProfile() != null && 
+                                                         i.getProduct().getSellerProfile().getUser().getId().equals(sellerUserId))
+                                            .map(i -> i.getCommissionAmountSnapshot() != null ? i.getCommissionAmountSnapshot() : java.math.BigDecimal.ZERO)
+                                            .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+
+                                        // Total fine should also be proportional or handled specifically 
+                                        // For now, simpler to treat the order as the unit of penalty or proportional to this seller's share
+                                        java.math.BigDecimal fine = java.math.BigDecimal.ZERO;
+                                        boolean overdue = false;
+                                        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+                                        
+                                        if (o.getCommissionStatus() == com.example.jhapcham.order.CommissionStatus.UNPAID && o.getCommissionDueDate() != null) {
+                                                if (now.isAfter(o.getCommissionDueDate())) {
+                                                        overdue = true;
+                                                        long daysLate = java.time.Duration.between(o.getCommissionDueDate(), now).toDays();
+                                                        long weeksLate = (daysLate / 7); 
+                                                        double multiplier = 0.10 + (weeksLate * 0.05);
+                                                        fine = sellerSpecificCommission.multiply(java.math.BigDecimal.valueOf(multiplier));
+                                                }
+                                        } else if (o.getCommissionStatus() == com.example.jhapcham.order.CommissionStatus.PAID) {
+                                                // If paid, use the proportion of fine amount
+                                                BigDecimal totalOrigComm = o.getMarketplaceCommission() != null && o.getMarketplaceCommission().compareTo(BigDecimal.ZERO) > 0 ? o.getMarketplaceCommission() : sellerSpecificCommission;
+                                                if (totalOrigComm.compareTo(BigDecimal.ZERO) > 0) {
+                                                    BigDecimal share = sellerSpecificCommission.divide(totalOrigComm, 4, java.math.RoundingMode.HALF_UP);
+                                                    fine = (o.getCommissionFineAmount() != null ? o.getCommissionFineAmount() : BigDecimal.ZERO).multiply(share);
+                                                }
+                                        }
+
+                                        return com.example.jhapcham.admin.CommissionReportDTO.builder()
+                                                        .orderId(o.getId())
+                                                        .productName(o.getItems() == null || o.getItems().isEmpty() ? "Order Sum" : (o.getItems().get(0).getProductNameSnapshot() != null ? o.getItems().get(0).getProductNameSnapshot() : "Product") + (o.getItems().size() > 1 ? "..." : ""))
+                                                        .category(o.getItems() != null && !o.getItems().isEmpty() && o.getItems().get(0).getProduct() != null ? o.getItems().get(0).getProduct().getCategory() : "Others")
+                                                        .sellerStoreName("Your Store")
+                                                        .saleAmount(o.getGrandTotal() != null ? o.getGrandTotal() : java.math.BigDecimal.ZERO)
+                                                        .commissionRate(o.getItems() != null && !o.getItems().isEmpty() && o.getItems().get(0).getCommissionPercentageSnapshot() != null ? o.getItems().get(0).getCommissionPercentageSnapshot() : 10.0)
+                                                        .commissionEarned(sellerSpecificCommission)
+                                                        .fineAmount(fine)
+                                                        .status(o.getCommissionStatus() != null ? o.getCommissionStatus() : com.example.jhapcham.order.CommissionStatus.PENDING)
+                                                        .dueDate(o.getCommissionDueDate())
+                                                        .createdAt(o.getCreatedAt() != null ? o.getCreatedAt() : java.time.LocalDateTime.now())
+                                                        .isOverdue(overdue)
+                                                        .reminderSent(o.isCommissionReminderSent())
+                                                        .build();
+                                    } catch (Exception e) {
+                                        return com.example.jhapcham.admin.CommissionReportDTO.builder()
+                                                .orderId(o.getId())
+                                                .productName("Error in Record")
+                                                .status(com.example.jhapcham.order.CommissionStatus.PENDING)
+                                                .commissionEarned(BigDecimal.ZERO)
+                                                .fineAmount(BigDecimal.ZERO)
+                                                .createdAt(o.getCreatedAt() != null ? o.getCreatedAt() : java.time.LocalDateTime.now())
+                                                .build();
+                                    }
+                                })
+                                .sorted(java.util.Comparator.comparing(com.example.jhapcham.admin.CommissionReportDTO::getCreatedAt, 
+                                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                                .toList();
+        }
+
+        @Transactional
+        public void payCommission(Long sellerUserId, Long orderId) {
+                Order order = orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
+                // Verify order belongs to the seller
+                boolean belongsToSeller = order.getItems().stream()
+                        .anyMatch(i -> i.getProduct() != null && i.getProduct().getSellerProfile() != null && 
+                                       i.getProduct().getSellerProfile().getUser().getId().equals(sellerUserId));
+                
+                if (!belongsToSeller) {
+                        throw new RuntimeException("Order does not belong to this seller");
+                }
+                
+                orderAccountingService.markCommissionAsPaid(order);
+        }
+
+        @Transactional
+        public void payAllCommissions(Long sellerUserId) {
+                List<Order> unpaidOrders = orderRepository.findOrdersBySeller(sellerUserId).stream()
+                        .filter(o -> (o.getCommissionStatus() == com.example.jhapcham.order.CommissionStatus.UNPAID || 
+                                     (o.getCommissionStatus() == com.example.jhapcham.order.CommissionStatus.PENDING && o.getStatus() == com.example.jhapcham.order.OrderStatus.DELIVERED)))
+                        .toList();
+                
+                for (Order order : unpaidOrders) {
+                        orderAccountingService.markCommissionAsPaid(order);
+                }
         }
 }

@@ -17,5 +17,6 @@ public class CartItemResponseDTO {
     private BigDecimal price;
     private String selectedColor;
     private String selectedStorage;
+    private String selectedSize;
     private Integer stockQuantity;
 }

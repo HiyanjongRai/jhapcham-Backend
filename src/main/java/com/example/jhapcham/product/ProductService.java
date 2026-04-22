@@ -55,6 +55,8 @@ public class ProductService {
 
     private final CartItemRepository cartItemRepository;
     private final ReviewRepository reviewRepository;
+    private final CategoryRepository categoryRepository;
+    private final ProductVariantRepository productVariantRepository;
 
     private static final String PRODUCT_IMAGE_SUBDIR = "product-images";
 
@@ -100,6 +102,10 @@ public class ProductService {
                 .status(ProductStatus.ACTIVE)
                 .build();
 
+        if (product.getCategory() != null && !product.getCategory().isBlank()) {
+            ensureCategoryExists(product.getCategory());
+        }
+
         Product saved = productRepository.save(product);
 
         // images
@@ -128,6 +134,9 @@ public class ProductService {
 
         // SHIPPING LOGIC
         applyShippingRules(product, dto, profile);
+
+        // VARIANT LOGIC
+        generateVariants(saved, dto);
 
         return toResponse(saved);
     }
@@ -171,6 +180,10 @@ public class ProductService {
         if (dto.expiryDate() != null)
             product.setExpiryDate(parseDate(dto.expiryDate()));
 
+        if (product.getCategory() != null && !product.getCategory().isBlank()) {
+            ensureCategoryExists(product.getCategory());
+        }
+
         // sale logic
         applySaleRules(product, dto);
 
@@ -202,7 +215,56 @@ public class ProductService {
         applyShippingRules(product, dto, profile);
 
         Product saved = productRepository.save(product);
+
+        // Optionally, recreate or sync variants on update if needed (omitted for brevity, assume manual management for now)
+
         return toResponse(saved);
+    }
+
+    private void generateVariants(Product product, ProductCreateRequestDTO dto) {
+        List<String> colors = parseListStr(dto.colorOptions());
+        List<String> capacities = parseListStr(dto.storageSpec());
+
+        if (colors.isEmpty() && capacities.isEmpty()) return;
+
+        if (colors.isEmpty()) colors.add(null);
+        if (capacities.isEmpty()) capacities.add(null);
+
+        int variantIndex = 1;
+        for (String c : colors) {
+            for (String cap : capacities) {
+                ProductVariant pv = ProductVariant.builder()
+                        .product(product)
+                        .sku("VAR-" + product.getId() + "-" + variantIndex++)
+                        .color(c)
+                        .capacity(cap)
+                        .stockQuantity(product.getStockQuantity() != null ? product.getStockQuantity() : 0) // Inherit base stock initially
+                        .active(true)
+                        .build();
+                productVariantRepository.save(pv);
+            }
+        }
+    }
+
+    private List<String> parseListStr(String val) {
+        List<String> list = new ArrayList<>();
+        if (val == null || val.isBlank()) return list;
+        try {
+            if (val.trim().startsWith("[")) {
+                // simple json array parse attempt
+                String stripped = val.replace("[", "").replace("]", "").replace("\"", "").replace("'", "");
+                for (String s : stripped.split(",")) {
+                    if (!s.isBlank()) list.add(s.trim());
+                }
+            } else {
+                for (String s : val.split(",")) {
+                    if (!s.isBlank()) list.add(s.trim());
+                }
+            }
+        } catch (Exception e) {
+            list.add(val.trim());
+        }
+        return list;
     }
 
     // ===================== SHIPPING RULE FUNCTION =====================
@@ -638,6 +700,19 @@ public class ProductService {
 
     public List<String> getAllCategories() {
         return productRepository.findDistinctCategories();
+    }
+
+    private void ensureCategoryExists(String name) {
+        if (name == null || name.isBlank())
+            return;
+        String trimmedName = name.trim();
+        if (categoryRepository.findByName(trimmedName).isEmpty()) {
+            Category cat = Category.builder()
+                    .name(trimmedName)
+                    .description("Auto-created by seller")
+                    .build();
+            categoryRepository.save(cat);
+        }
     }
 
 }

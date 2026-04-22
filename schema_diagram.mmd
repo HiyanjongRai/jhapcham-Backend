@@ -1,0 +1,112 @@
+erDiagram
+    %% FULL DATABASE SCHEMA
+
+    USERS {
+        Long id PK
+        String username "UK"
+        String email "UK"
+        String password
+        String contact_number
+        String address
+        String role "CUSTOMER, ADMIN, SELLER"
+        String status
+        String profile_image_path
+        LocalDateTime created_at
+        LocalDateTime updated_at
+    }
+
+    SELLER_PROFILES {
+        Long id PK
+        Long user_id FK "UK"
+        String store_name
+        String address
+        String description
+        String contact_number
+        Boolean is_verified
+        Decimal total_income
+        Decimal net_income
+    }
+
+    PRODUCTS {
+        Long id PK
+        Long seller_profile_id FK
+        String name
+        String short_description
+        Text description
+        String category
+        String brand
+        Decimal price
+        Integer stock_quantity
+        String status
+        Boolean on_sale
+    }
+
+    PRODUCT_IMAGES {
+        Long id PK
+        Long product_id FK
+        String image_path
+        Boolean is_primary
+    }
+
+    ORDERS {
+        Long id PK
+        Long user_id FK
+        String customer_name
+        String customer_email
+        String customer_phone
+        String shipping_address
+        String payment_method "COD, ESEWA, KHALTI"
+        String status
+        Decimal grand_total
+        LocalDateTime created_at
+    }
+
+    ORDER_ITEMS {
+        Long id PK
+        Long order_id FK
+        Long product_id FK
+        Integer quantity
+        Decimal price
+    }
+
+    CART_ITEMS {
+        Long id PK
+        Long user_id FK
+        Long product_id FK
+        Integer quantity
+    }
+
+    USER_ACTIVITIES {
+        Long id PK
+        Long user_id FK
+        Long product_id FK
+        String activity_type "VIEW, WISHLIST, ADD_TO_CART, REVIEW, ORDER"
+        Text details
+        LocalDateTime timestamp
+    }
+
+    REVIEWS {
+        Long id PK
+        Long user_id FK
+        Long product_id FK
+        Integer rating "1-5"
+        Text comment
+    }
+
+    %% Relationships Mapping
+    USERS ||--|| SELLER_PROFILES : "has profile"
+    SELLER_PROFILES ||--o{ PRODUCTS : "sells"
+    PRODUCTS ||--o{ PRODUCT_IMAGES : "has images"
+
+    USERS ||--o{ ORDERS : "places order"
+    ORDERS ||--|{ ORDER_ITEMS : "contains items"
+    ORDER_ITEMS }o--|| PRODUCTS : "references"
+
+    USERS ||--o{ CART_ITEMS : "adds to cart"
+    CART_ITEMS }o--|| PRODUCTS : "holds"
+
+    USERS ||--o{ REVIEWS : "writes"
+    REVIEWS }o--|| PRODUCTS : "targets"
+
+    USERS ||--o{ USER_ACTIVITIES : "generates logic"
+    USER_ACTIVITIES }o--|| PRODUCTS : "targets item"

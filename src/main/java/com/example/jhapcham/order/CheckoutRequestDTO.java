@@ -20,7 +20,7 @@ public class CheckoutRequestDTO {
     // "INSIDE" or "OUTSIDE"
     private String shippingLocation;
 
-    // "COD", "KHALTI", "ESEWA", "STRIPE"
+    // "COD", "ESEWA", "STRIPE"
     private String paymentMethod;
 
     private List<CheckoutItemDTO> items;

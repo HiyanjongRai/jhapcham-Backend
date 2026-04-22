@@ -71,7 +71,7 @@ public class SecurityConfig {
                 // CART
                 .requestMatchers("/api/cart/**").permitAll()
 
-                // PAYMENT (Khalti, etc.)
+                // PAYMENT
                 .requestMatchers("/api/payment/**").permitAll()
 
                 // ADDRESSES
@@ -94,6 +94,13 @@ public class SecurityConfig {
 
                 // ONLY THIS API REQUIRES LOGIN
                 .requestMatchers("/api/users/me/**").authenticated()
+                
+                // NEW FEATURE APIS REQUIRE LOGIN
+                .requestMatchers("/api/inventory-alerts/**").authenticated()
+                .requestMatchers("/api/sms/**").authenticated()
+                .requestMatchers("/api/refunds/**").authenticated()
+                .requestMatchers("/api/disputes/**").authenticated()
+                .requestMatchers("/api/loyalty/**").authenticated()
 
                 .requestMatchers("/api/seller-reviews/**").permitAll() // allow access to seller review endpoints
 

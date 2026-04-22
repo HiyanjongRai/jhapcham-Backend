@@ -2,7 +2,7 @@ package com.example.jhapcham.admin;
 
 import com.example.jhapcham.order.OrderSummaryDTO;
 import com.example.jhapcham.product.ProductResponseDTO;
-import com.example.jhapcham.report.ReportDTO;
+import com.example.jhapcham.report.dto.ReportResponseDTO;
 import com.example.jhapcham.user.model.Status;
 import lombok.Builder;
 import lombok.Data;
@@ -20,7 +20,7 @@ public class CustomerAdminDetailDTO {
     private Status status;
 
     private List<OrderSummaryDTO> orders;
-    private List<ReportDTO> reports;
+    private List<ReportResponseDTO> reports;
     private List<ProductResponseDTO> wishlist;
 
     private double totalSpent;

@@ -24,6 +24,19 @@ public class CampaignService {
     private final com.example.jhapcham.notification.NotificationService notificationService;
 
     public CampaignResponseDTO createCampaign(CampaignCreateRequestDTO dto) {
+        // Validate campaign dates
+        if (dto.getStartTime() == null || dto.getEndTime() == null) {
+            throw new RuntimeException("Campaign start time and end time are required");
+        }
+
+        if (dto.getEndTime().isBefore(dto.getStartTime())) {
+            throw new RuntimeException("Campaign end time must be after start time");
+        }
+
+        if (dto.getStartTime().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Campaign start time cannot be in the past");
+        }
+
         String imagePath = null;
         if (dto.getImage() != null && !dto.getImage().isEmpty()) {
             imagePath = fileStorageService.save(dto.getImage(), "campaign-images",

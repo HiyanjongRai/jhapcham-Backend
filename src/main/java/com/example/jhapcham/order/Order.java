@@ -62,6 +62,10 @@ public class Order {
     // eSewa transaction identifier (e.g. orderId_timestamp) for verification
     private String esewaTransactionUuid;
 
+
+
+
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OrderStatus status;
@@ -80,6 +84,8 @@ public class Order {
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
+
+    private LocalDateTime deliveredAt;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
@@ -106,6 +112,10 @@ public class Order {
     @Column(nullable = false)
     private BigDecimal sellerNetAmount;
 
+    @Column(columnDefinition = "numeric(38,2) DEFAULT 0")
+    @Builder.Default
+    private BigDecimal marketplaceCommission = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     private DeliveryBranch deliveredBranch;
 
@@ -113,10 +123,35 @@ public class Order {
     @Builder.Default
     private boolean sellerAccounted = false;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "varchar(255) default 'PENDING'")
+    @Builder.Default
+    private CommissionStatus commissionStatus = CommissionStatus.PENDING;
+
     // Tracks whether stock was deducted for this order.
     // Prevents double-restoration if cancel is called multiple times.
     @Column(nullable = false)
     @Builder.Default
     private boolean stockDeducted = false;
+
+    // Delivery Confirmation OTP
+    private String deliveryOtp;
+    private LocalDateTime deliveryOtpExpiry;
+
+    @Builder.Default
+    private Integer deliveryOtpResendCount = 0;
+
+    // Commission Penalty Tracking
+    private LocalDateTime commissionDueDate;
+    
+    @Column(nullable = false, precision = 38, scale = 2, columnDefinition = "numeric(38,2) DEFAULT 0")
+    @Builder.Default
+    private BigDecimal commissionFineAmount = BigDecimal.ZERO;
+
+    @Column(nullable = false, columnDefinition = "boolean DEFAULT false")
+    @Builder.Default
+    private boolean commissionReminderSent = false;
+
+    private LocalDateTime lastFineCalculationDate;
 
 }

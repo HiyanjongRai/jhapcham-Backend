@@ -25,4 +25,10 @@ public class AdminOrderController {
         adminService.updateOrderStatus(orderId, status);
         return ResponseEntity.ok().build();
     }
+
+    @PutMapping("/{orderId}/deliver-manually")
+    public ResponseEntity<Void> deliverManually(@PathVariable Long orderId) {
+        adminService.manuallyDeliverOrder(orderId);
+        return ResponseEntity.ok().build();
+    }
 }

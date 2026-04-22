@@ -15,9 +15,7 @@ public class RecommendationService {
     private final UserActivityService userActivityService;
     private final ProductService productService;
 
-    /**
-     * Get recommendations for a user based on Item-Based Collaborative Filtering
-     */
+
     public List<ProductResponseDTO> getRecommendations(Long userId, int limit) {
         // 1. Get all interactions
         List<Map<String, Object>> interactions = userActivityService.getInteractionsForIBCF();
@@ -53,7 +51,7 @@ public class RecommendationService {
 
         // Track items to skip (already ordered or interacted heavily)
         Set<Long> productsToSkip = targetUserHistory.entrySet().stream()
-                .filter(entry -> entry.getValue() >= 3.0) // Ordered, in cart, or reviewed
+                .filter(entry -> entry.getValue() >= 3.0)
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toSet());
 
@@ -84,7 +82,7 @@ public class RecommendationService {
                 double similarity = calculateCosineSimilarityOptimized(historyProductId, candidateProductId,
                         itemUserMatrix, itemNorms);
 
-                if (similarity > 0.1) { // Threshold for meaningful similarity
+                if (similarity > 0.1) {
                     weightedSum += similarity * historyScore;
                     similaritySum += similarity;
                 }
@@ -124,9 +122,7 @@ public class RecommendationService {
     }
 
 
-    /**
-     * Get similar products for a specific item (Item-to-Item) without a user context
-     */
+    //Get similar products for a specific item (Item-to-Item) without a user context
     public List<ProductResponseDTO> getSimilarProducts(Long productId, int limit) {
         // 1. Get all interactions
         List<Map<String, Object>> interactions = userActivityService.getInteractionsForIBCF();
@@ -169,7 +165,7 @@ public class RecommendationService {
                 continue;
 
             double similarity = calculateCosineSimilarityOptimized(productId, candidateProductId, itemUserMatrix, itemNorms);
-            if (similarity > 0.05) { // Lower threshold for item-to-item
+            if (similarity > 0.05) {
                 similarities.put(candidateProductId, similarity);
             }
         }
@@ -205,7 +201,7 @@ public class RecommendationService {
             int limit) {
         return allProducts.stream()
                 .filter(p -> !skipIds.contains(p.getId()))
-                .filter(p -> p.getName() != null && !p.getName().toLowerCase().contains("qqqq")) // Filter junk data
+                .filter(p -> p.getName() != null && !p.getName().toLowerCase().contains("qqqq"))
                 .sorted((p1, p2) -> Long.compare(
                         p2.getTotalViews() != null ? p2.getTotalViews() : 0L,
                         p1.getTotalViews() != null ? p1.getTotalViews() : 0L))
@@ -213,9 +209,7 @@ public class RecommendationService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Optimized Cosine Similarity using pre-calculated norms and item-user mapping
-     */
+    //Optimized Cosine Similarity using pre-calculated norms and item-user mapping
     private double calculateCosineSimilarityOptimized(Long item1, Long item2,
             Map<Long, Map<Long, Double>> itemUserMatrix, Map<Long, Double> itemNorms) {
         if (item1.equals(item2))

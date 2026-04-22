@@ -20,4 +20,9 @@ public class SellerAdminDetailDTO {
     private int totalProducts;
     private double totalIncome;
     private int totalDelivered;
+    private String idDocumentPath;
+    private String businessLicensePath;
+    private String taxCertificatePath;
+    private double totalCommission;
+
 }

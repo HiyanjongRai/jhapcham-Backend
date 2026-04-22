@@ -92,4 +92,8 @@ public class SellerProfile {
     @Column(nullable = false, precision = 38, scale = 2)
     private BigDecimal netIncome = BigDecimal.ZERO;
 
+    @Builder.Default
+    @Column(columnDefinition = "numeric(38,2) DEFAULT 0")
+    private BigDecimal totalCommission = BigDecimal.ZERO;
+
 }

@@ -31,5 +31,6 @@ public class CartItem {
 
     private String selectedColor;
     private String selectedStorage;
+    private String selectedSize;
 
 }

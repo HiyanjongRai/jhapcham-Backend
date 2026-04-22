@@ -25,6 +25,8 @@ public class AuthService {
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
+    private final com.example.jhapcham.notification.EmailService emailService;
+    private final com.example.jhapcham.loyalty.LoyaltyService loyaltyService;
     private final String PROFILE_SUBDIR = "customer-profile";
 
     @Transactional
@@ -46,7 +48,18 @@ public class AuthService {
                 .status(Status.ACTIVE)
                 .build();
 
-        return users.save(user);
+        User saved = users.save(user);
+
+        // Initialize a loyalty account for new customers
+        try {
+            loyaltyService.initializeLoyaltyPoints(saved);
+        } catch (Exception e) {
+            // Non-critical — log and continue
+            org.slf4j.LoggerFactory.getLogger(AuthService.class)
+                    .error("Failed to initialize loyalty points for user {}: {}", saved.getId(), e.getMessage());
+        }
+
+        return saved;
     }
 
     @Transactional
@@ -161,6 +174,44 @@ public class AuthService {
         }
 
         return users.save(user);
+    }
+
+    @Transactional
+    public void generatePasswordResetOtp(String email) {
+        User user = users.findByEmail(email)
+                .orElseThrow(() -> new BusinessValidationException("User with this email not found"));
+                
+        String otp = String.format("%06d", new java.util.Random().nextInt(999999));
+        user.setResetOtp(otp);
+        user.setResetOtpExpiry(java.time.LocalDateTime.now().plusMinutes(15));
+        users.save(user);
+        
+        emailService.sendPasswordResetEmail(user.getEmail(), user.getUsername(), otp);
+    }
+    
+    @Transactional
+    public void verifyPasswordResetOtp(String email, String otp) {
+        User user = users.findByEmail(email)
+                .orElseThrow(() -> new BusinessValidationException("User with this email not found"));
+                
+        if (user.getResetOtp() == null || !user.getResetOtp().equals(otp)) {
+            throw new BusinessValidationException("Invalid OTP");
+        }
+        
+        if (java.time.LocalDateTime.now().isAfter(user.getResetOtpExpiry())) {
+            throw new BusinessValidationException("OTP has expired");
+        }
+    }
+    
+    @Transactional
+    public void resetPassword(String email, String otp, String newPassword) {
+        verifyPasswordResetOtp(email, otp); // re-verify before saving
+        User user = users.findByEmail(email).get();
+        
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setResetOtp(null);
+        user.setResetOtpExpiry(null);
+        users.save(user);
     }
 
     // helper to keep SellerProfile.status same as User.status

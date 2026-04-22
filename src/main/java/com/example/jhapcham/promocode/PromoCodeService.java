@@ -115,13 +115,22 @@ public class PromoCodeService {
 
     @Transactional
     public void incrementUsage(String code) {
-        PromoCode promo = promoCodeRepository.findByCode(code.toUpperCase())
+        String upperCode = code.toUpperCase();
+
+        // Use pessimistic lock to prevent concurrent modifications
+        PromoCode promo = promoCodeRepository.findByCodeForUpdate(upperCode)
                 .orElse(null);
+
         if (promo != null) {
-            promo.setUsedCount(promo.getUsedCount() + 1);
-            if (promo.getUsedCount() >= promo.getUsageLimit()) {
-                promo.setIsActive(false); // Auto deactivate
+            // Atomically increment usage count
+            int newUsedCount = promo.getUsedCount() + 1;
+            promo.setUsedCount(newUsedCount);
+
+            // Auto-deactivate if usage limit reached
+            if (newUsedCount >= promo.getUsageLimit()) {
+                promo.setIsActive(false);
             }
+
             promoCodeRepository.save(promo);
         }
     }

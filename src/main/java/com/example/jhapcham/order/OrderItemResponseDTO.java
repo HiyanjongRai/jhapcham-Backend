@@ -10,6 +10,7 @@ import java.time.LocalDate;
 @Builder
 public class OrderItemResponseDTO {
 
+    private Long id;
     private Long productId;
     private String name;
     private String brand;
@@ -17,9 +18,12 @@ public class OrderItemResponseDTO {
     private Integer quantity;
     private BigDecimal unitPrice;
     private BigDecimal lineTotal;
+    private Double commissionRate; // Percentage applied
+
 
     private String selectedColor;
     private String selectedStorage;
+    private String selectedSize;
 
     private LocalDate manufactureDate;
     private LocalDate expiryDate;

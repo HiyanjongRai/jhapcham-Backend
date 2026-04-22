@@ -91,6 +91,52 @@ public class AuthController {
         }
     }
 
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> body) {
+        try {
+            String email = body.get("email");
+            if (email == null || email.isBlank()) {
+                return ResponseEntity.badRequest().body(new ErrorResponse("Email is required"));
+            }
+            authService.generatePasswordResetOtp(email);
+            return ResponseEntity.ok(Map.of("message", "OTP sent to your email"));
+        } catch (RuntimeException e) {
+             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/verify-reset-otp")
+    public ResponseEntity<?> verifyResetOtp(@RequestBody Map<String, String> body) {
+        try {
+            String email = body.get("email");
+            String otp = body.get("otp");
+            if (email == null || email.isBlank() || otp == null || otp.isBlank()) {
+                return ResponseEntity.badRequest().body(new ErrorResponse("Email and OTP are required"));
+            }
+            authService.verifyPasswordResetOtp(email, otp);
+            return ResponseEntity.ok(Map.of("message", "OTP verified. You may proceed to reset password."));
+        } catch (RuntimeException e) {
+             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> body) {
+        try {
+            String email = body.get("email");
+            String otp = body.get("otp");
+            String newPassword = body.get("newPassword");
+            
+            if (email == null || email.isBlank() || otp == null || otp.isBlank() || newPassword == null || newPassword.isBlank()) {
+                return ResponseEntity.badRequest().body(new ErrorResponse("Email, OTP, and newPassword are required"));
+            }
+            authService.resetPassword(email, otp, newPassword);
+            return ResponseEntity.ok(Map.of("message", "Password reset successfully. You can now login."));
+        } catch (RuntimeException e) {
+             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        }
+    }
+
     // --------------- ADMIN ONLY: SELLER APPLICATIONS ---------------
 
     @PreAuthorize("hasRole('ADMIN')")
