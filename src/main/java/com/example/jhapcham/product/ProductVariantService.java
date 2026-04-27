@@ -1,5 +1,6 @@
 package com.example.jhapcham.product;
 
+import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -7,7 +8,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -16,97 +20,284 @@ public class ProductVariantService {
 
     private final ProductVariantRepository variantRepository;
     private final ProductRepository productRepository;
+    private final AttributeValueRepository attributeValueRepository;
+    private final AttributeService attributeService;
+
+    /**
+     * Synchronizes variants from a JSON string.
+     * Logic:
+     * 1. Match JSON entries with existing variants (by attribute set).
+     * 2. Update existing ones, set active=true.
+     * 3. Create new ones for new combinations.
+     * 4. Set active=false for existing variants NOT in the JSON.
+     */
+    @Transactional
+    public void syncVariantsFromJson(Product product, String json) {
+        if (json == null) return;
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            List<Map<String, Object>> variantList = mapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
+
+            List<Long> processedIds = new java.util.ArrayList<>();
+
+            for (Map<String, Object> vMap : variantList) {
+                @SuppressWarnings("unchecked")
+                Map<String, String> attrs = (Map<String, String>) vMap.get("attributes");
+                if (attrs == null || attrs.isEmpty()) continue;
+
+                List<Long> attrValueIds = new java.util.ArrayList<>();
+                for (Map.Entry<String, String> entry : attrs.entrySet()) {
+                    AttributeValue av = attributeService.findOrCreateValue(entry.getKey(), entry.getValue());
+                    attrValueIds.add(av.getId());
+                }
+
+                BigDecimal price = vMap.get("price") != null && !vMap.get("price").toString().isEmpty()
+                        ? new BigDecimal(vMap.get("price").toString()) : null;
+                Integer stock = vMap.get("stockQuantity") != null && !vMap.get("stockQuantity").toString().isEmpty()
+                        ? Integer.parseInt(vMap.get("stockQuantity").toString()) : 0;
+                String sku = (String) vMap.get("sku");
+
+                // 🛡️ Strict Validation for active variants
+                if (price != null && price.compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new BusinessValidationException("Variant price must be greater than zero");
+                }
+                if (stock != null && stock < 0) {
+                    throw new BusinessValidationException("Variant stock cannot be negative");
+                }
+
+                List<ProductVariant> existing = variantRepository.findByProductAndAttributeValues(product, attrValueIds, (long) attrValueIds.size());
+                ProductVariant variant;
+
+                if (!existing.isEmpty()) {
+                    variant = existing.get(0);
+                    variant.setPrice(price);
+                    variant.setStockQuantity(stock);
+                    variant.setActive(true);
+                    if (sku != null && !sku.isBlank()) variant.setSku(sku);
+                } else {
+                    variant = ProductVariant.builder()
+                            .product(product)
+                            .sku(sku != null && !sku.isBlank() ? sku : generateSku(product, attrValueIds.stream().map(attributeService::getAttributeValue).toList()))
+                            .price(price)
+                            .stockQuantity(stock)
+                            .active(true)
+                            .build();
+                    variantRepository.save(variant);
+                    for (Long avId : attrValueIds) {
+                        variant.getAttributeValues().add(VariantAttributeValue.builder()
+                                .variant(variant)
+                                .attributeValue(attributeService.getAttributeValue(avId))
+                                .build());
+                    }
+                }
+                variantRepository.save(variant);
+                processedIds.add(variant.getId());
+            }
+
+            // Inactivate others (variants not present in the filtered submission)
+            variantRepository.findByProduct(product).forEach(v -> {
+                if (!processedIds.contains(v.getId())) {
+                    v.setActive(false);
+                    v.setStockQuantity(0); // Safety: zero out stock for inactive
+                    variantRepository.save(v);
+                }
+            });
+
+            // ⚡ Aggregate Stock Calculation
+            List<ProductVariant> activeVariants = variantRepository.findByProductAndActive(product, true);
+            int totalStock = activeVariants.stream()
+                    .mapToInt(v -> v.getStockQuantity() != null ? v.getStockQuantity() : 0)
+                    .sum();
+            product.setStockQuantity(totalStock);
+            productRepository.save(product);
+
+        } catch (BusinessValidationException bve) {
+            throw bve;
+        } catch (Exception e) {
+            log.error("Failed to sync variants", e);
+            throw new BusinessValidationException("Variant sync failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Simple bulk create (legacy support or internal use).
+     */
+    @Transactional
+    public void createVariantsFromJson(Product product, String json) {
+        syncVariantsFromJson(product, json);
+    }
+
+    // ── Create ────────────────────────────────────────────────────
 
     @Transactional
-    public ProductVariantDTO createVariant(Long productId, ProductVariantDTO dto) {
+    public ProductVariantDTO createVariant(Long productId, ProductVariantDTO.CreateRequest req) {
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
-        // Check if SKU already exists
-        variantRepository.findBySku(dto.getSku())
-                .ifPresent(v -> {
-                    throw new RuntimeException("SKU already exists: " + dto.getSku());
-                });
+        if (req.attributeValueIds == null || req.attributeValueIds.isEmpty()) {
+            throw new BusinessValidationException("At least one attribute value is required for a variant");
+        }
+
+        // Verify none of those attribute value IDs already form an existing variant
+        List<ProductVariant> existing = variantRepository.findByProductAndAttributeValues(
+                product, req.attributeValueIds, (long) req.attributeValueIds.size());
+        if (!existing.isEmpty()) {
+            throw new BusinessValidationException("A variant with this exact attribute combination already exists");
+        }
+
+        // Fetch AttributeValue entities
+        List<AttributeValue> attrValues = req.attributeValueIds.stream()
+                .map(attributeService::getAttributeValue)
+                .collect(Collectors.toList());
+
+        // Auto-generate SKU if not provided
+        String sku = (req.sku != null && !req.sku.isBlank())
+                ? req.sku
+                : generateSku(product, attrValues);
+
+        // Check SKU uniqueness
+        variantRepository.findBySku(sku).ifPresent(v -> {
+            throw new BusinessValidationException("SKU already exists: " + sku);
+        });
 
         ProductVariant variant = ProductVariant.builder()
                 .product(product)
-                .sku(dto.getSku())
-                .size(dto.getSize())
-                .color(dto.getColor())
-                .capacity(dto.getCapacity())
-                .description(dto.getDescription())
-                .stockQuantity(dto.getStockQuantity())
-                .priceModifier(dto.getPriceModifier())
+                .sku(sku)
+                .price(req.price)
+                .stockQuantity(req.stockQuantity != null ? req.stockQuantity : 0)
                 .active(true)
                 .build();
 
-        ProductVariant saved = variantRepository.save(variant);
-        log.info("Product variant created: {}", saved.getSku());
-        return toDTO(saved);
+        variantRepository.save(variant);
+
+        // Create the attribute mapping rows
+        for (AttributeValue av : attrValues) {
+            VariantAttributeValue vav = VariantAttributeValue.builder()
+                    .variant(variant)
+                    .attributeValue(av)
+                    .build();
+            variant.getAttributeValues().add(vav);
+        }
+
+        variantRepository.save(variant);
+        log.info("Created variant SKU={} for productId={}", sku, productId);
+        return toDTO(variant, product.getPrice());
+    }
+
+    // ── Update ────────────────────────────────────────────────────
+
+    @Transactional
+    public ProductVariantDTO updateVariant(Long variantId, BigDecimal price, Integer stockQuantity, Boolean active) {
+        ProductVariant variant = variantRepository.findById(variantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Variant not found: " + variantId));
+
+        if (price != null) variant.setPrice(price);
+        if (stockQuantity != null) variant.setStockQuantity(stockQuantity);
+        if (active != null) variant.setActive(active);
+
+        variantRepository.save(variant);
+        log.info("Updated variant {}", variantId);
+        return toDTO(variant, variant.getProduct().getPrice());
     }
 
     @Transactional
-    public ProductVariantDTO updateVariant(Long variantId, ProductVariantDTO dto) {
+    public void updateStock(Long variantId, Integer newStock) {
         ProductVariant variant = variantRepository.findById(variantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Variant not found"));
-
-        if (dto.getSize() != null) variant.setSize(dto.getSize());
-        if (dto.getColor() != null) variant.setColor(dto.getColor());
-        if (dto.getCapacity() != null) variant.setCapacity(dto.getCapacity());
-        if (dto.getDescription() != null) variant.setDescription(dto.getDescription());
-        if (dto.getStockQuantity() != null) variant.setStockQuantity(dto.getStockQuantity());
-        if (dto.getPriceModifier() != null) variant.setPriceModifier(dto.getPriceModifier());
-        if (dto.getActive() != null) variant.setActive(dto.getActive());
-
-        ProductVariant updated = variantRepository.save(variant);
-        log.info("Product variant updated: {}", variant.getSku());
-        return toDTO(updated);
+        variant.setStockQuantity(newStock);
+        variantRepository.save(variant);
     }
+
+    // ── Query ─────────────────────────────────────────────────────
 
     public List<ProductVariantDTO> getProductVariants(Long productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        BigDecimal basePrice = product.getPrice();
 
         return variantRepository.findByProductAndActive(product, true)
                 .stream()
-                .map(this::toDTO)
-                .toList();
+                .map(v -> toDTO(v, basePrice))
+                .collect(Collectors.toList());
     }
 
     public ProductVariantDTO getVariant(Long variantId) {
-        ProductVariant variant = variantRepository.findById(variantId)
+        ProductVariant v = variantRepository.findById(variantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Variant not found"));
-        return toDTO(variant);
+        return toDTO(v, v.getProduct().getPrice());
     }
 
-    @Transactional
-    public void updateVariantStock(Long variantId, Integer newStock) {
-        ProductVariant variant = variantRepository.findById(variantId)
-                .orElseThrow(() -> new ResourceNotFoundException("Variant not found"));
+    /**
+     * Core resolution: given a product and a set of attribute value IDs,
+     * find the exactly matching active variant.
+     */
+    public ProductVariant resolveVariant(Long productId, List<Long> attrValueIds) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
-        variant.setStockQuantity(newStock);
-        variantRepository.save(variant);
-        log.info("Variant stock updated: {} = {}", variant.getSku(), newStock);
+        List<ProductVariant> matches = variantRepository.findByProductAndAttributeValues(
+                product, attrValueIds, (long) attrValueIds.size());
+
+        if (matches.isEmpty()) {
+            throw new BusinessValidationException("No variant found for selected attributes");
+        }
+        return matches.get(0);
     }
 
-    public ProductVariantDTO getVariantBySku(String sku) {
-        ProductVariant variant = variantRepository.findBySku(sku)
-                .orElseThrow(() -> new ResourceNotFoundException("Variant with SKU not found: " + sku));
-        return toDTO(variant);
+    // ── Helpers ───────────────────────────────────────────────────
+
+    private String generateSku(Product product, List<AttributeValue> attrValues) {
+        String attrPart = attrValues.stream()
+                .map(av -> av.getValue().replaceAll("\\s+", "-").toUpperCase())
+                .collect(Collectors.joining("-"));
+        return "P" + product.getId() + "-" + attrPart;
     }
 
-    private ProductVariantDTO toDTO(ProductVariant variant) {
+    public ProductVariantDTO toDTO(ProductVariant variant, BigDecimal basePrice) {
+        Map<String, String> attrMap = new LinkedHashMap<>();
+        List<Long> attrValueIds = variant.getAttributeValues().stream()
+                .map(vav -> {
+                    attrMap.put(
+                        vav.getAttributeValue().getAttribute().getName(),
+                        vav.getAttributeValue().getValue()
+                    );
+                    return vav.getAttributeValue().getId();
+                })
+                .collect(Collectors.toList());
+
         return ProductVariantDTO.builder()
                 .id(variant.getId())
                 .sku(variant.getSku())
-                .size(variant.getSize())
-                .color(variant.getColor())
-                .capacity(variant.getCapacity())
-                .description(variant.getDescription())
+                .price(variant.getEffectivePrice(basePrice))
                 .stockQuantity(variant.getStockQuantity())
-                .priceModifier(variant.getPriceModifier())
                 .active(variant.getActive())
-                .variantName(variant.getVariantName())
+                .variantLabel(variant.getVariantLabel())
+                .attributes(attrMap)
+                .attributeValueIds(attrValueIds)
                 .build();
+    }
+
+    /**
+     * 🧹 Maintenance: Removes invalid or orphaned variant data.
+     * Logic:
+     * 1. Delete variants where price and stock are null (corrupt/placeholder).
+     * 2. Delete orphaned VariantAttributeValue rows.
+     * 3. Delete AttributeValues not used by any variant.
+     */
+    @Transactional
+    public void cleanupDatabase() {
+        log.info("Starting database cleanup for variants and attributes...");
+        
+        // 1. Delete invalid variants
+        int deletedVariants = variantRepository.deleteInvalidVariants();
+        log.info("Deleted {} invalid variants (null price & stock)", deletedVariants);
+        
+        // 2. Delete orphaned join table entries
+        int deletedMappings = variantRepository.deleteOrphanedAttributeMappings();
+        log.info("Deleted {} orphaned attribute mappings", deletedMappings);
+        
+        // 3. Delete unused attribute values
+        int deletedValues = attributeValueRepository.deleteUnusedValues();
+        log.info("Deleted {} unused attribute values", deletedValues);
     }
 }

@@ -1,6 +1,7 @@
 package com.example.jhapcham.cart;
 
 import com.example.jhapcham.product.Product;
+import com.example.jhapcham.product.ProductVariant;
 import com.example.jhapcham.user.model.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -26,11 +27,14 @@ public class CartItem {
     @JoinColumn(name = "product_id")
     private Product product;
 
+    /**
+     * The specific variant the customer selected.
+     * This replaces the old selectedColor/selectedStorage/selectedSize strings.
+     */
+    @ManyToOne
+    @JoinColumn(name = "variant_id")
+    private ProductVariant variant;
+
     @Column(nullable = false)
     private Integer quantity;
-
-    private String selectedColor;
-    private String selectedStorage;
-    private String selectedSize;
-
 }

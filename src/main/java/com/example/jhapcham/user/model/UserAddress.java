@@ -29,6 +29,18 @@ public class UserAddress {
     private String receiverPhone;
 
     @Column(length = 100)
+    private String province;
+
+    @Column(length = 100)
+    private String district;
+
+    @Column(length = 100)
+    private String municipality;
+
+    @Column(name = "ward_no", length = 20)
+    private String wardNo;
+
+    @Column(length = 100)
     private String city;
 
     @Column(length = 100)
@@ -37,8 +49,8 @@ public class UserAddress {
     @Column(length = 255)
     private String street;
 
-    @Column(name = "land_mark", length = 255)
-    private String landMark;
+    @Column(length = 255)
+    private String landmark;
 
     @Column(name = "full_address", length = 500)
     private String fullAddress;

@@ -91,6 +91,10 @@ public class Product {
     @Builder.Default
     private List<ProductImage> images = new ArrayList<>();
 
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<ProductVariant> variants = new ArrayList<>();
+
     public void addImage(ProductImage image) {
         if (images == null) {
             images = new ArrayList<>();

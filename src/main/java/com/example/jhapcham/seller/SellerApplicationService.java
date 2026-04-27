@@ -41,32 +41,38 @@ public class SellerApplicationService {
             throw new RoleBasedAccessException("Only sellers can submit applications");
         }
 
-        if (applicationRepo.existsByUser(seller)) {
-            throw new BusinessValidationException("Application already submitted");
+        SellerApplication app = applicationRepo.findByUserId(userId).orElse(null);
+
+        if (app != null && app.getStatus() != ApplicationStatus.REJECTED) {
+            throw new BusinessValidationException("Application already submitted and is " + app.getStatus());
         }
 
         String idPath = idDoc != null
                 ? storage.save(idDoc, "seller_docs", "id_" + userId)
-                : null;
+                : (app != null ? app.getIdDocumentPath() : null);
 
         String licPath = licenseDoc != null
                 ? storage.save(licenseDoc, "seller_docs", "license_" + userId)
-                : null;
+                : (app != null ? app.getBusinessLicensePath() : null);
 
         String taxPath = taxDoc != null
                 ? storage.save(taxDoc, "seller_docs", "tax_" + userId)
-                : null;
+                : (app != null ? app.getTaxCertificatePath() : null);
 
-        SellerApplication app = SellerApplication.builder()
-                .user(seller)
-                .storeName(storeName)
-                .address(address)
-                .idDocumentPath(idPath)
-                .businessLicensePath(licPath)
-                .taxCertificatePath(taxPath)
-                .status(ApplicationStatus.PENDING)
-                .submittedAt(LocalDateTime.now())
-                .build();
+        if (app == null) {
+            app = SellerApplication.builder()
+                    .user(seller)
+                    .build();
+        }
+
+        app.setStoreName(storeName);
+        app.setAddress(address);
+        app.setIdDocumentPath(idPath);
+        app.setBusinessLicensePath(licPath);
+        app.setTaxCertificatePath(taxPath);
+        app.setStatus(ApplicationStatus.PENDING);
+        app.setSubmittedAt(LocalDateTime.now());
+        app.setReviewNote(null); // Clear previous rejection reason
 
         return applicationRepo.save(app);
     }

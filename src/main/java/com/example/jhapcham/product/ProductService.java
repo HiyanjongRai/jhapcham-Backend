@@ -57,6 +57,7 @@ public class ProductService {
     private final ReviewRepository reviewRepository;
     private final CategoryRepository categoryRepository;
     private final ProductVariantRepository productVariantRepository;
+    private final ProductVariantService variantService;
 
     private static final String PRODUCT_IMAGE_SUBDIR = "product-images";
 
@@ -94,7 +95,7 @@ public class ProductService {
                 .features(dto.features())
                 .colorOptions(dto.colorOptions())
                 .price(dto.price())
-                .stockQuantity(dto.stockQuantity())
+                .stockQuantity(0) // Start with 0, will be summed from variants
                 .warrantyMonths(dto.warrantyMonths())
                 .manufactureDate(mfg)
                 .expiryDate(exp)
@@ -135,8 +136,10 @@ public class ProductService {
         // SHIPPING LOGIC
         applyShippingRules(product, dto, profile);
 
-        // VARIANT LOGIC
-        generateVariants(saved, dto);
+        // VARIANT LOGIC (Generic)
+        if (dto.variantsJson() != null) {
+            variantService.createVariantsFromJson(saved, dto.variantsJson());
+        }
 
         return toResponse(saved);
     }
@@ -171,8 +174,7 @@ public class ProductService {
             product.setColorOptions(dto.colorOptions());
         if (dto.price() != null)
             product.setPrice(dto.price());
-        if (dto.stockQuantity() != null)
-            product.setStockQuantity(dto.stockQuantity());
+        // Ignore dto.stockQuantity() - it's derived from variants
         if (dto.warrantyMonths() != null)
             product.setWarrantyMonths(dto.warrantyMonths());
         if (dto.manufactureDate() != null)
@@ -216,56 +218,15 @@ public class ProductService {
 
         Product saved = productRepository.save(product);
 
-        // Optionally, recreate or sync variants on update if needed (omitted for brevity, assume manual management for now)
+        // VARIANT SYNC (Generic)
+        if (dto.variantsJson() != null) {
+            variantService.syncVariantsFromJson(saved, dto.variantsJson());
+        }
 
         return toResponse(saved);
     }
 
-    private void generateVariants(Product product, ProductCreateRequestDTO dto) {
-        List<String> colors = parseListStr(dto.colorOptions());
-        List<String> capacities = parseListStr(dto.storageSpec());
 
-        if (colors.isEmpty() && capacities.isEmpty()) return;
-
-        if (colors.isEmpty()) colors.add(null);
-        if (capacities.isEmpty()) capacities.add(null);
-
-        int variantIndex = 1;
-        for (String c : colors) {
-            for (String cap : capacities) {
-                ProductVariant pv = ProductVariant.builder()
-                        .product(product)
-                        .sku("VAR-" + product.getId() + "-" + variantIndex++)
-                        .color(c)
-                        .capacity(cap)
-                        .stockQuantity(product.getStockQuantity() != null ? product.getStockQuantity() : 0) // Inherit base stock initially
-                        .active(true)
-                        .build();
-                productVariantRepository.save(pv);
-            }
-        }
-    }
-
-    private List<String> parseListStr(String val) {
-        List<String> list = new ArrayList<>();
-        if (val == null || val.isBlank()) return list;
-        try {
-            if (val.trim().startsWith("[")) {
-                // simple json array parse attempt
-                String stripped = val.replace("[", "").replace("]", "").replace("\"", "").replace("'", "");
-                for (String s : stripped.split(",")) {
-                    if (!s.isBlank()) list.add(s.trim());
-                }
-            } else {
-                for (String s : val.split(",")) {
-                    if (!s.isBlank()) list.add(s.trim());
-                }
-            }
-        } catch (Exception e) {
-            list.add(val.trim());
-        }
-        return list;
-    }
 
     // ===================== SHIPPING RULE FUNCTION =====================
     private void applyShippingRules(Product product, Object dtoObject, SellerProfile profile) {
@@ -405,6 +366,18 @@ public class ProductService {
         for (ProductImage im : p.getImages())
             img.add(im.getImagePath());
 
+        BigDecimal effectiveBasePrice = resolveEffectiveUnitPrice(p);
+        List<ProductVariant> activeVariants = productVariantRepository.findByProductAndActive(p, true);
+        
+        // Stock is always derived from active variants if they exist
+        Integer totalStock = activeVariants.isEmpty() ? p.getStockQuantity() : activeVariants.stream().mapToInt(v -> v.getStockQuantity() != null ? v.getStockQuantity() : 0).sum();
+        
+        // Safety sync: ensure the product entity's stockQuantity is up to date in the detail view
+        if (!activeVariants.isEmpty() && (p.getStockQuantity() == null || !p.getStockQuantity().equals(totalStock))) {
+            p.setStockQuantity(totalStock);
+            productRepository.save(p);
+        }
+
         return ProductDetailDTO.builder()
                 .productId(p.getId())
                 .sellerProfileId(profile.getId())
@@ -429,7 +402,7 @@ public class ProductService {
                 .outsideValleyShipping(p.getOutsideValleyShipping())
                 .sellerFreeShippingMinOrder(p.getSellerFreeShippingMinOrder())
                 .onSale(p.getOnSale())
-                .stockQuantity(p.getStockQuantity())
+                .stockQuantity(totalStock)
                 .warrantyMonths(p.getWarrantyMonths())
                 .manufactureDate(p.getManufactureDate())
                 .expiryDate(p.getExpiryDate())
@@ -449,7 +422,12 @@ public class ProductService {
                 .averageRating(reviewRepository.findAverageRatingByProductId(p.getId()))
                 .totalReviews(reviewRepository.countByProductId(p.getId()))
                 .saleEndTime(p.getSaleEndTime())
+                .variants(activeVariants.stream()
+                        .map(v -> variantService.toDTO(v, effectiveBasePrice))
+                        .toList())
+                .attributeOptions(buildAttributeOptions(p))
                 .build();
+
     }
 
     private String buildSaleLabel(Product p) {
@@ -509,6 +487,7 @@ public class ProductService {
         return ProductResponseDTO.builder()
                 .id(p.getId())
                 .sellerProfileId(p.getSellerProfile().getId())
+                .sellerUserId(p.getSellerProfile().getUser().getId())
                 .name(p.getName())
                 .shortDescription(p.getShortDescription())
                 .description(p.getDescription())
@@ -544,6 +523,7 @@ public class ProductService {
                 .logoImagePath(p.getSellerProfile().getLogoImagePath())
                 .profileImagePath(p.getSellerProfile().getUser().getProfileImagePath())
                 .saleEndTime(p.getSaleEndTime())
+                .hasVariants(!p.getVariants().isEmpty())
                 .build();
     }
 
@@ -551,6 +531,31 @@ public class ProductService {
         if (v == null || v.isBlank())
             return null;
         return LocalDate.parse(v);
+    }
+
+    /**
+     * Builds a deduplicated attribute options map from all active variants.
+     * e.g. { "Color": ["Red", "Blue"], "Storage": ["128GB", "256GB"] }
+     * Used by the frontend to dynamically render selectors.
+     */
+    private java.util.Map<String, java.util.List<ProductDetailDTO.AttributeOptionDTO>> buildAttributeOptions(Product p) {
+        java.util.Map<String, java.util.List<ProductDetailDTO.AttributeOptionDTO>> grouped = new java.util.LinkedHashMap<>();
+        
+        productVariantRepository.findByProductAndActive(p, true).forEach(v ->
+            v.getAttributeValues().forEach(vav -> {
+                String attrName = vav.getAttributeValue().getAttribute().getName();
+                ProductDetailDTO.AttributeOptionDTO option = ProductDetailDTO.AttributeOptionDTO.builder()
+                        .id(vav.getAttributeValue().getId())
+                        .value(vav.getAttributeValue().getValue())
+                        .build();
+                
+                List<ProductDetailDTO.AttributeOptionDTO> options = grouped.computeIfAbsent(attrName, k -> new java.util.ArrayList<>());
+                if (options.stream().noneMatch(o -> o.getId().equals(option.getId()))) {
+                    options.add(option);
+                }
+            })
+        );
+        return grouped;
     }
 
     public List<ProductViewCountProjection> getViewCountsForAllProducts() {
@@ -715,4 +720,10 @@ public class ProductService {
         }
     }
 
+    private BigDecimal resolveEffectiveUnitPrice(Product p) {
+        if (Boolean.TRUE.equals(p.getOnSale()) && p.getSalePrice() != null) {
+            return p.getSalePrice();
+        }
+        return p.getPrice();
+    }
 }

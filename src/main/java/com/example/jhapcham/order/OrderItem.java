@@ -2,6 +2,7 @@ package com.example.jhapcham.order;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.example.jhapcham.product.Product;
+import com.example.jhapcham.product.ProductVariant;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,18 +22,25 @@ public class OrderItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // link to parent order
     @ManyToOne(optional = false)
     @JoinColumn(name = "order_id")
     @JsonIgnore
     private Order order;
 
-    // link back to product
     @ManyToOne
     @JoinColumn(name = "product_id")
     private Product product;
 
-    // snapshot fields
+    /**
+     * The exact variant ordered.
+     * NULL for legacy orders placed before variant system migration.
+     */
+    @ManyToOne
+    @JoinColumn(name = "variant_id")
+    private ProductVariant variant;
+
+    // ── Snapshot fields (never change even if product is deleted/modified) ──
+
     @Column(nullable = false)
     private Long productIdSnapshot;
 
@@ -40,7 +48,6 @@ public class OrderItem {
     private String productNameSnapshot;
 
     private String brandSnapshot;
-
     private String imagePathSnapshot;
 
     @Column(nullable = false)
@@ -49,12 +56,22 @@ public class OrderItem {
     @Column(nullable = false)
     private BigDecimal unitPrice;
 
+    @Column(nullable = true)
+    private BigDecimal vatAmount;
+
     @Column(nullable = false)
     private BigDecimal lineTotal;
 
-    private String selectedColorSnapshot;
-    private String selectedStorageSnapshot;
-    private String selectedSizeSnapshot;
+    /** SKU of the ordered variant — snapshot */
+    private String variantSkuSnapshot;
+
+    /**
+     * JSON snapshot of the variant's dynamic attributes at order time.
+     * e.g. '{"Color":"Red","Storage":"128GB"}'
+     * Keeps order history intact even if variant attributes change later.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String variantAttributesSnapshot;
 
     private LocalDate manufactureDateSnapshot;
     private LocalDate expiryDateSnapshot;
@@ -68,14 +85,6 @@ public class OrderItem {
     @Column(columnDefinition = "TEXT")
     private String featuresSnapshot;
 
-    @Column(columnDefinition = "TEXT")
-    private String storageSpecSnapshot;
-
-    @Column(columnDefinition = "TEXT")
-    private String colorOptionsSnapshot;
-
     private Double commissionPercentageSnapshot;
-
     private BigDecimal commissionAmountSnapshot;
-
 }

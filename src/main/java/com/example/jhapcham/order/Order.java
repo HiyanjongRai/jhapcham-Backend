@@ -76,6 +76,9 @@ public class Order {
     @Column(nullable = false)
     private BigDecimal shippingFee;
 
+    @Column(nullable = true)
+    private BigDecimal vatAmount;
+
     @Column(nullable = false)
     private BigDecimal discountTotal;
 

@@ -4,19 +4,22 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 @Data
 @Builder
 public class CartItemResponseDTO {
     private Long cartItemId;
     private Long productId;
+    private Long variantId;
+    private String sku;
     private String name;
     private String brand;
     private String image;
     private Integer quantity;
     private BigDecimal price;
-    private String selectedColor;
-    private String selectedStorage;
-    private String selectedSize;
     private Integer stockQuantity;
+    private String variantLabel;
+    /** Dynamic attributes: e.g. { "Color": "Red", "Storage": "128GB" } */
+    private Map<String, String> variantAttributes;
 }

@@ -94,6 +94,10 @@ public class SellerProfile {
 
     @Builder.Default
     @Column(columnDefinition = "numeric(38,2) DEFAULT 0")
+    private BigDecimal totalVatCollected = BigDecimal.ZERO;
+
+    @Builder.Default
+    @Column(columnDefinition = "numeric(38,2) DEFAULT 0")
     private BigDecimal totalCommission = BigDecimal.ZERO;
 
 }

@@ -4,10 +4,7 @@ import lombok.Data;
 
 @Data
 public class CheckoutItemDTO {
-
     private Long productId;
+    private Long variantId;   // Required: specific variant selected by customer
     private Integer quantity;
-    private String selectedColor;
-    private String selectedStorage;
-    private String selectedSize;
 }

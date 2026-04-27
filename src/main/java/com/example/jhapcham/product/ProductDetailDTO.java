@@ -5,6 +5,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -64,4 +65,16 @@ public class ProductDetailDTO {
     private Double averageRating;
     private Integer totalReviews;
     private java.time.LocalDateTime saleEndTime;
+
+    /** All active variants with their dynamic attributes — replaces colorOptions/storageSpec approach */
+    private List<ProductVariantDTO> variants;
+    /** All unique attribute groups across all variants — used to build UI selectors */
+    private Map<String, List<AttributeOptionDTO>> attributeOptions;
+
+    @Data
+    @Builder
+    public static class AttributeOptionDTO {
+        private Long id;
+        private String value;
+    }
 }

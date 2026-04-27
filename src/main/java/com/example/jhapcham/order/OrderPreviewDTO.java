@@ -14,6 +14,7 @@ public class OrderPreviewDTO {
 
     private BigDecimal itemsTotal;
     private BigDecimal shippingFee;
+    private BigDecimal vatAmount;
     private BigDecimal discountTotal;
     private BigDecimal grandTotal;
 

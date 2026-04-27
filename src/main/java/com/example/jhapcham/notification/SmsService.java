@@ -8,6 +8,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
@@ -40,7 +41,7 @@ public class SmsService {
      * Send SMS to user
      * Supports: Twilio, AWS SNS, or generic HTTP-based SMS gateway
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void sendSms(User user, String phoneNumber, SmsType smsType, String message, String referenceId) {
         try {
             // Respect per-user SMS preferences before doing anything
@@ -101,11 +102,11 @@ public class SmsService {
     /**
      * Send order confirmation SMS with OTP
      */
-    @Transactional
     public void sendOrderConfirmationSms(User user, String phoneNumber, String orderId, String otp) {
+        String name = (user.getFullName() != null && !user.getFullName().trim().isEmpty()) ? user.getFullName().split(" ")[0] : "Customer";
         String message = String.format(
             "Hi %s! Your Jhapcham order #%s is confirmed. OTP: %s. Track at jhapcham.com",
-            user.getFullName().split(" ")[0],
+            name,
             orderId,
             otp
         );

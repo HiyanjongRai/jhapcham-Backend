@@ -13,6 +13,7 @@ public class ProductResponseDTO {
 
     private Long id;
     private Long sellerProfileId;
+    private Long sellerUserId;
 
     private String name;
     private String shortDescription;
@@ -55,4 +56,5 @@ public class ProductResponseDTO {
     private String logoImagePath;
     private String profileImagePath;
     private java.time.LocalDateTime saleEndTime;
+    private boolean hasVariants;
 }

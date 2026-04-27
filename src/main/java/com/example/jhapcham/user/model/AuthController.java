@@ -13,7 +13,13 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Collections;
 import java.util.stream.Collectors;
+
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -88,6 +94,54 @@ public class AuthController {
             return ResponseEntity.status(403).body(new ErrorResponse(e.getMessage()));
         } catch (RuntimeException e) {
             return ResponseEntity.status(401).body(new ErrorResponse(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<?> googleAuth(@RequestBody Map<String, String> body) {
+        try {
+            String idTokenString = body.get("credential");
+            if (idTokenString == null) {
+                return ResponseEntity.badRequest().body(new ErrorResponse("Google credential is required"));
+            }
+
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
+                    new NetHttpTransport(), new GsonFactory())
+                    .setAudience(Collections.singletonList("983073986551-a49ce7tnjh29fccqnqp1v92ma4i3b3ba.apps.googleusercontent.com"))
+                    .build();
+
+            GoogleIdToken idToken = verifier.verify(idTokenString);
+            
+            if (idToken != null) {
+                GoogleIdToken.Payload payload = idToken.getPayload();
+                String userId = payload.getSubject();
+                String email = payload.getEmail();
+                String name = (String) payload.get("name");
+
+                Role requestedRole = null;
+                if (body.get("role") != null) {
+                    try {
+                        requestedRole = Role.valueOf(body.get("role").toUpperCase());
+                    } catch (Exception e) { /* fallback to default */ }
+                }
+
+                User user = authService.loginWithGoogle(email, name, userId, requestedRole);
+                String token = tokenService.generateToken(user.getUsername(), user.getRole().name());
+
+                AuthResponseDTO response = new AuthResponseDTO(
+                        user.getId(),
+                        user.getUsername(),
+                        user.getEmail(),
+                        user.getRole(),
+                        user.getStatus(),
+                        "Google Auth successful",
+                        token);
+                return ResponseEntity.ok(response);
+            } else {
+                return ResponseEntity.status(401).body(new ErrorResponse("Invalid Google token"));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body(new ErrorResponse("Google Authentication failed: " + e.getMessage()));
         }
     }
 

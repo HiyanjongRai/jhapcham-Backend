@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "product_variants")
@@ -18,46 +20,52 @@ public class ProductVariant {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(optional = false)
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id")
     private Product product;
 
-    @Column(nullable = false, length = 100)
+    @Column(nullable = false, unique = true, length = 150)
     private String sku;
 
-    @Column(length = 50)
-    private String size;
-
-    @Column(length = 50)
-    private String color;
-
-    @Column(length = 100)
-    private String capacity;
-
-    @Column(columnDefinition = "TEXT")
-    private String description;
+    /**
+     * Absolute price for this specific variant.
+     * This REPLACES the old "priceModifier" approach.
+     * If null, the product's base price is used.
+     */
+    @Column(nullable = true)
+    private BigDecimal price;
 
     @Column(nullable = false)
     private Integer stockQuantity;
-
-    private BigDecimal priceModifier;
 
     @Column(nullable = false)
     @Builder.Default
     private Boolean active = true;
 
-    public BigDecimal getFinalPrice(BigDecimal basePrice) {
-        if (priceModifier != null) {
-            return basePrice.add(priceModifier);
-        }
-        return basePrice;
+    @OneToMany(mappedBy = "variant", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @Builder.Default
+    private List<VariantAttributeValue> attributeValues = new ArrayList<>();
+
+    /**
+     * Returns the effective price (variant-specific or falls back to product base price).
+     */
+    public BigDecimal getEffectivePrice(BigDecimal basePrice) {
+        return (price != null) ? price : basePrice;
     }
 
-    public String getVariantName() {
+    /**
+     * Returns a human-readable name built from dynamic attributes.
+     * e.g. "Color: Red, Storage: 128GB"
+     */
+    public String getVariantLabel() {
+        if (attributeValues == null || attributeValues.isEmpty()) return sku;
         StringBuilder sb = new StringBuilder();
-        if (size != null) sb.append("Size: ").append(size).append(" ");
-        if (color != null) sb.append("Color: ").append(color).append(" ");
-        if (capacity != null) sb.append("Capacity: ").append(capacity);
-        return sb.toString().trim();
+        for (VariantAttributeValue vav : attributeValues) {
+            if (!sb.isEmpty()) sb.append(", ");
+            sb.append(vav.getAttributeValue().getAttribute().getName())
+              .append(": ")
+              .append(vav.getAttributeValue().getValue());
+        }
+        return sb.toString();
     }
 }

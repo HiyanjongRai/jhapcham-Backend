@@ -10,6 +10,7 @@ import com.example.jhapcham.seller.SellerProfileRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -28,7 +29,7 @@ public class InventoryAlertService {
     private static final Integer LOW_STOCK_THRESHOLD = 10;
     private static final Integer RESTOCK_THRESHOLD = 5;
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void checkAndCreateAlerts(Product product) {
         SellerProfile seller = product.getSellerProfile();
 

@@ -22,5 +22,6 @@ public record ProductCreateRequestDTO(
                 Boolean freeShipping,
                 Double insideValleyShipping,
                 Double outsideValleyShipping,
-                Double sellerFreeShippingMinOrder) {
+                Double sellerFreeShippingMinOrder,
+                String variantsJson) {
 }

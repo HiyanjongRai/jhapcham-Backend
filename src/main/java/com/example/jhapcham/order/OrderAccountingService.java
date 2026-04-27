@@ -94,8 +94,10 @@ public class OrderAccountingService {
             sellerShippingCharge = estimateSellerShippingCost(order, seller);
         }
 
-        // Net = Gross - ShippingCharge - MarketplaceCommission
-        BigDecimal net = sellerGrossAmount.subtract(sellerShippingCharge).subtract(totalCommission);
+        // Net = Gross - VAT - ShippingCharge - MarketplaceCommission
+        // We use order.getVatAmount() which was calculated in OrderService
+        BigDecimal vatAmount = order.getVatAmount() != null ? order.getVatAmount() : BigDecimal.ZERO;
+        BigDecimal net = sellerGrossAmount.subtract(vatAmount).subtract(sellerShippingCharge).subtract(totalCommission);
 
         order.setSellerGrossAmount(sellerGrossAmount);
         order.setSellerShippingCharge(sellerShippingCharge);
@@ -132,6 +134,7 @@ public class OrderAccountingService {
         seller.setTotalIncome(seller.getTotalIncome().add(order.getSellerGrossAmount()));
         seller.setTotalShippingCost(seller.getTotalShippingCost().add(order.getSellerShippingCharge()));
         seller.setTotalCommission(seller.getTotalCommission().add(order.getMarketplaceCommission()));
+        seller.setTotalVatCollected(seller.getTotalVatCollected().add(order.getVatAmount() != null ? order.getVatAmount() : BigDecimal.ZERO));
         seller.setNetIncome(seller.getNetIncome().add(order.getSellerNetAmount()));
 
         sellerProfileRepository.save(seller);

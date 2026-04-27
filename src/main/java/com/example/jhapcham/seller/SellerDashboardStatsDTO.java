@@ -17,6 +17,7 @@ public class SellerDashboardStatsDTO {
     private BigDecimal totalIncome;
     private BigDecimal totalShippingCost;
     private BigDecimal totalCommission;
+    private BigDecimal totalVatCollected;
     private BigDecimal netIncome;
 
     // Order counts
@@ -44,4 +45,6 @@ public class SellerDashboardStatsDTO {
     // Dynamic Dashboard Data
     private List<BigDecimal> weeklySales;
     private List<ProductSummaryDTO> topSellingProducts;
+
+    private Long followerCount;
 }

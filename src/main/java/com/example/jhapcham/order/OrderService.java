@@ -9,6 +9,8 @@ import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.product.ProductRepository;
+import com.example.jhapcham.product.ProductVariant;
+import com.example.jhapcham.product.ProductVariantRepository;
 import com.example.jhapcham.seller.SellerProfile;
 import com.example.jhapcham.seller.SellerProfileRepository;
 import com.example.jhapcham.user.model.User;
@@ -34,6 +36,7 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final CartItemRepository cartItemRepository;
+    private final ProductVariantRepository productVariantRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final UserActivityService userActivityService;
 
@@ -78,6 +81,7 @@ public class OrderService {
                 .items(allItemResponses)
                 .itemsTotal(totalItemsCost)
                 .shippingFee(totalShipping)
+                .vatAmount(totalItemsCost.multiply(new BigDecimal("0.13")).setScale(2, RoundingMode.HALF_UP))
                 .discountTotal(totalDiscount)
                 .grandTotal(totalGrand)
                 .estimatedDelivery(estimateDelivery(dto.getShippingLocation()))
@@ -128,6 +132,7 @@ public class OrderService {
                     .status(OrderStatus.NEW)
                     .itemsTotal(data.itemsTotal)
                     .shippingFee(data.shippingFee)
+                    .vatAmount(data.vatAmount)
                     .discountTotal(data.discountTotal)
                     .grandTotal(data.grandTotal)
                     .createdAt(LocalDateTime.now())
@@ -145,35 +150,47 @@ public class OrderService {
             for (OrderItemResponseDTO r : data.itemResponses) {
                 Product product = data.productById.get(r.getProductId());
 
-                // Deduct stock immediately (Reservation)
-                orderStockService.deductStock(product, r.getQuantity(), r.getSelectedColor(), r.getSelectedSize(), r.getSelectedStorage());
+                // Resolve variant (must be present in new system)
+                ProductVariant variant = r.getVariantId() != null
+                        ? productVariantRepository.findById(r.getVariantId()).orElse(null)
+                        : null;
+
+                // Deduct stock from variant (variant-first, strict)
+                if (variant != null) {
+                    orderStockService.deductStock(variant, r.getQuantity());
+                } else {
+                    log.warn("No variant for order item productId={}. Skipping variant stock deduction.", r.getProductId());
+                }
+
+                BigDecimal itemVat = r.getLineTotal().multiply(new BigDecimal("0.13")).setScale(2, RoundingMode.HALF_UP);
+
+                // Build JSON snapshot of variant attributes for order history
+                String attrSnapshot = buildAttrSnapshot(r.getVariantAttributes());
 
                 OrderItem item = OrderItem.builder()
                         .order(order)
                         .product(product)
+                        .variant(variant)
                         .productIdSnapshot(product.getId())
                         .productNameSnapshot(product.getName())
                         .brandSnapshot(product.getBrand())
                         .imagePathSnapshot(r.getImagePath())
                         .quantity(r.getQuantity())
                         .unitPrice(r.getUnitPrice())
+                        .vatAmount(itemVat)
                         .lineTotal(r.getLineTotal())
-                        .selectedColorSnapshot(r.getSelectedColor())
-                        .selectedStorageSnapshot(r.getSelectedStorage())
-                        .selectedSizeSnapshot(r.getSelectedSize())
+                        .variantSkuSnapshot(variant != null ? variant.getSku() : null)
+                        .variantAttributesSnapshot(attrSnapshot)
                         .manufactureDateSnapshot(product.getManufactureDate())
                         .expiryDateSnapshot(product.getExpiryDate())
                         .productDescriptionSnapshot(product.getDescription())
                         .specificationSnapshot(product.getSpecification())
                         .featuresSnapshot(product.getFeatures())
-                        .storageSpecSnapshot(product.getStorageSpec())
-                        .colorOptionsSnapshot(product.getColorOptions())
                         .build();
 
                 orderItemRepository.save(item);
                 order.addItem(item);
 
-                // Unified activity logging
                 if (user != null) {
                     userActivityService.recordActivity(user.getId(), product.getId(), ActivityType.ORDER,
                             "Bought " + r.getQuantity() + " item(s)");
@@ -189,6 +206,23 @@ public class OrderService {
             orderRepository.save(order);
             summaries.add(toSummaryDTO(order, mapItems(order)));
             log.info("Order {} placed successfully for customer {}", order.getId(), dto.getFullName());
+
+            // 1. Notify Customer of Order Confirmation
+            emailService.sendOrderConfirmationToCustomer(order.getCustomerEmail(), order.getCustomerName(), order.getId(), order.getGrandTotal());
+
+            // 2. Notify Seller of New Order
+            if (!order.getItems().isEmpty()) {
+                OrderItem firstItem = order.getItems().get(0);
+                if (firstItem.getProduct() != null && firstItem.getProduct().getSellerProfile() != null) {
+                    SellerProfile seller = firstItem.getProduct().getSellerProfile();
+                    emailService.sendNewOrderAlertToSeller(
+                        seller.getUser().getEmail(), 
+                        seller.getUser().getFullName(), 
+                        order.getId(), 
+                        order.getGrandTotal()
+                    );
+                }
+            }
 
             // Send order confirmation SMS
             if (user != null && user.getContactNumber() != null) {
@@ -223,9 +257,8 @@ public class OrderService {
         for (CartItem c : cartItems) {
             CheckoutItemDTO it = new CheckoutItemDTO();
             it.setProductId(c.getProduct().getId());
+            it.setVariantId(c.getVariant() != null ? c.getVariant().getId() : null);
             it.setQuantity(c.getQuantity());
-            it.setSelectedColor(c.getSelectedColor());
-            it.setSelectedStorage(c.getSelectedStorage());
             checkoutItems.add(it);
         }
 
@@ -266,6 +299,9 @@ public class OrderService {
         orderRepository.save(order);
         log.info("Seller {} moved order {} to PROCESSING", sellerId, orderId);
 
+        // Send Status Update Email to Customer
+        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "PROCESSING");
+
         // Notify Customer
         try {
             notificationService.createNotification(
@@ -299,6 +335,9 @@ public class OrderService {
 
         orderRepository.save(order);
         log.info("Seller {} assigned branch {} to order {}", sellerId, dto.getBranch(), orderId);
+
+        // Send Status Update Email to Customer
+        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "SHIPPED_TO_BRANCH");
 
         // Notify Customer
         try {
@@ -346,6 +385,9 @@ public class OrderService {
         orderRepository.save(order);
         log.info("Branch {} updated order {} status to {}", branchRaw, orderId, nextStatusRaw);
 
+        // Send Status Update Email to Customer
+        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), nextStatusRaw);
+
         // Notify Customer
         try {
             notificationService.createNotification(
@@ -391,6 +433,9 @@ public class OrderService {
 
         orderRepository.save(order);
         log.info("Order {} delivered successfully with OTP verification", orderId);
+
+        // Send Final Status Update Email
+        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "DELIVERED");
 
         // Award loyalty points to the customer
         if (order.getUser() != null) {
@@ -472,6 +517,9 @@ public class OrderService {
         orderRepository.save(order);
         log.info("Seller {} performed EXPRESS DISPATCH for order {} through branch {}", sellerId, orderId, branch);
 
+        // Notify Customer
+        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "OUT_FOR_DELIVERY");
+
         return toSummaryDTO(order, mapItems(order));
     }
 
@@ -493,6 +541,9 @@ public class OrderService {
 
         orderRepository.save(order);
         log.info("Seller {} cancelled order {}", sellerId, orderId);
+
+        // Notify Customer via Email
+        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "CANCELED_BY_MERCHANT");
 
         // Notify Customer
         try {
@@ -570,6 +621,7 @@ public class OrderService {
                 .orderId(o.getId())
                 .status(o.getStatus())
                 .grandTotal(o.getGrandTotal())
+                .itemsTotal(o.getItemsTotal())
                 .paymentMethod(o.getPaymentMethod())
                 .paymentReference(o.getPaymentReference())
                 .discountTotal(o.getDiscountTotal())
@@ -611,10 +663,13 @@ public class OrderService {
                     .orderId(o.getId())
                     .status(o.getStatus())
                     .grandTotal(o.getGrandTotal())
+                    .itemsTotal(o.getItemsTotal())
                     .discountTotal(o.getDiscountTotal())
                     .totalItems(o.getItems().size())
                     .sellerGrossAmount(o.getSellerGrossAmount())
                     .sellerShippingCharge(o.getSellerShippingCharge())
+                    .vatAmount(o.getVatAmount())
+                    .marketplaceCommission(o.getMarketplaceCommission())
                     .sellerNetAmount(o.getSellerNetAmount())
                     .deliveredBranch(o.getDeliveredBranch())
                     .assignedBranch(o.getAssignedBranch())
@@ -658,7 +713,7 @@ public class OrderService {
     private CheckoutComputationResult computeForItems(List<CheckoutItemDTO> items, String shippingLocation,
             String couponCode) {
         Map<Long, Integer> quantityMap = items.stream()
-                .collect(Collectors.toMap(CheckoutItemDTO::getProductId, CheckoutItemDTO::getQuantity));
+                .collect(Collectors.toMap(CheckoutItemDTO::getProductId, CheckoutItemDTO::getQuantity, Integer::sum));
         List<Product> products = productRepository.findAllById(quantityMap.keySet());
 
         if (products.size() != quantityMap.size())
@@ -672,22 +727,42 @@ public class OrderService {
             Product p = productMap.get(itemDto.getProductId());
             if (p == null) continue;
 
+            // Resolve variant for price and attributes
+            ProductVariant variant = itemDto.getVariantId() != null
+                    ? productVariantRepository.findById(itemDto.getVariantId()).orElse(null)
+                    : null;
+
             int qty = itemDto.getQuantity();
-            BigDecimal unitPrice = resolveEffectiveUnitPrice(p);
+            BigDecimal basePrice = resolveEffectiveUnitPrice(p);
+            BigDecimal unitPrice = (variant != null)
+                    ? variant.getEffectivePrice(basePrice)
+                    : basePrice;
+
             BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
             itemsTotal = itemsTotal.add(lineTotal);
 
+            // Build dynamic attributes map from variant
+            java.util.Map<String, String> attrMap = new java.util.LinkedHashMap<>();
+            String variantLabel = null;
+            if (variant != null) {
+                variantLabel = variant.getVariantLabel();
+                variant.getAttributeValues().forEach(vav ->
+                    attrMap.put(vav.getAttributeValue().getAttribute().getName(),
+                                vav.getAttributeValue().getValue()));
+            }
+
             responses.add(OrderItemResponseDTO.builder()
                     .productId(p.getId())
+                    .variantId(variant != null ? variant.getId() : null)
+                    .sku(variant != null ? variant.getSku() : null)
                     .name(p.getName())
                     .brand(p.getBrand())
                     .imagePath(p.getImages().isEmpty() ? null : p.getImages().get(0).getImagePath())
                     .quantity(qty)
                     .unitPrice(unitPrice)
                     .lineTotal(lineTotal)
-                    .selectedColor(itemDto.getSelectedColor())
-                    .selectedStorage(itemDto.getSelectedStorage())
-                    .selectedSize(itemDto.getSelectedSize())
+                    .variantAttributes(attrMap)
+                    .variantLabel(variantLabel)
                     .manufactureDate(p.getManufactureDate())
                     .expiryDate(p.getExpiryDate())
                     .build());
@@ -702,13 +777,17 @@ public class OrderService {
             discountTotal = promoCodeService.calculateDiscount(couponCode, items);
         }
 
-        BigDecimal grandTotal = itemsTotal.add(shippingFee).subtract(discountTotal);
+        // Calculate VAT (13%) on itemsTotal
+        BigDecimal vatAmount = itemsTotal.multiply(new BigDecimal("0.13")).setScale(2, RoundingMode.HALF_UP);
+        
+        BigDecimal grandTotal = itemsTotal.add(shippingFee).add(vatAmount).subtract(discountTotal);
         if (grandTotal.compareTo(BigDecimal.ZERO) < 0)
             grandTotal = BigDecimal.ZERO;
 
         CheckoutComputationResult r = new CheckoutComputationResult();
         r.itemsTotal = itemsTotal;
         r.shippingFee = shippingFee;
+        r.vatAmount = vatAmount;
         r.discountTotal = discountTotal;
         r.grandTotal = grandTotal;
         r.itemResponses = responses;
@@ -725,9 +804,24 @@ public class OrderService {
     }
 
     private OrderItemResponseDTO toItemResponse(OrderItem i) {
+        // Parse variantAttributesSnapshot JSON back to map
+        java.util.Map<String, String> attrMap = new java.util.LinkedHashMap<>();
+        if (i.getVariantAttributesSnapshot() != null && !i.getVariantAttributesSnapshot().isBlank()) {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                attrMap = mapper.readValue(i.getVariantAttributesSnapshot(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
+            } catch (Exception e) {
+                log.error("Failed to parse variant attributes snapshot for OrderItem {}", i.getId(), e);
+            }
+        }
+
+        String variantLabel = i.getVariant() != null ? i.getVariant().getVariantLabel() : null;
+
         return OrderItemResponseDTO.builder()
                 .id(i.getId())
                 .productId(i.getProductIdSnapshot())
+                .variantId(i.getVariant() != null ? i.getVariant().getId() : null)
+                .sku(i.getVariantSkuSnapshot())
                 .name(i.getProductNameSnapshot())
                 .brand(i.getBrandSnapshot())
                 .imagePath(i.getImagePathSnapshot() != null ? i.getImagePathSnapshot()
@@ -737,18 +831,17 @@ public class OrderService {
                 .quantity(i.getQuantity())
                 .unitPrice(i.getUnitPrice())
                 .lineTotal(i.getLineTotal())
-                .selectedColor(i.getSelectedColorSnapshot())
-                .selectedStorage(i.getSelectedStorageSnapshot())
+                .variantAttributes(attrMap)
+                .variantLabel(variantLabel)
                 .manufactureDate(i.getManufactureDateSnapshot())
                 .expiryDate(i.getExpiryDateSnapshot())
                 .description(i.getProductDescriptionSnapshot())
                 .specification(i.getSpecificationSnapshot())
                 .features(i.getFeaturesSnapshot())
-                .storageSpec(i.getStorageSpecSnapshot())
-                .colorOptions(i.getColorOptionsSnapshot())
-                .sellerStoreName(i.getProduct() != null && i.getProduct().getSellerProfile() != null 
+                .sellerStoreName(i.getProduct() != null && i.getProduct().getSellerProfile() != null
                         ? i.getProduct().getSellerProfile().getStoreName() : null)
-                .commissionRate(orderAccountingService.getCommissionRate(i.getProduct() != null ? i.getProduct().getCategory() : "Others"))
+                .commissionRate(orderAccountingService.getCommissionRate(
+                        i.getProduct() != null ? i.getProduct().getCategory() : "Others"))
                 .build();
     }
 
@@ -769,6 +862,7 @@ public class OrderService {
                 .paymentReference(o.getPaymentReference())
                 .itemsTotal(o.getItemsTotal())
                 .shippingFee(o.getShippingFee())
+                .vatAmount(o.getVatAmount())
                 .discountTotal(o.getDiscountTotal())
                 .grandTotal(o.getGrandTotal())
                 .createdAt(o.getCreatedAt())
@@ -847,9 +941,22 @@ public class OrderService {
     private static class CheckoutComputationResult {
         BigDecimal itemsTotal;
         BigDecimal shippingFee;
+        BigDecimal vatAmount;
         BigDecimal discountTotal;
         BigDecimal grandTotal;
         List<OrderItemResponseDTO> itemResponses;
         Map<Long, Product> productById;
+    }
+
+    /** Converts a dynamic attributes map to a compact JSON string snapshot. */
+    private String buildAttrSnapshot(java.util.Map<String, String> attrs) {
+        if (attrs == null || attrs.isEmpty()) return null;
+        StringBuilder sb = new StringBuilder("{");
+        attrs.forEach((k, v) -> {
+            if (sb.length() > 1) sb.append(',');
+            sb.append('"').append(k).append('"').append(':').append('"').append(v).append('"');
+        });
+        sb.append('}');
+        return sb.toString();
     }
 }

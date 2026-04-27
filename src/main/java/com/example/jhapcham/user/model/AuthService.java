@@ -114,15 +114,61 @@ public class AuthService {
             throw new AuthenticationException("Incorrect email or password. Please try again.");
         }
 
+        return validateUserStatus(user);
+    }
+
+    @Transactional
+    public User loginWithGoogle(String email, String name, String googleId, Role requestedRole) {
+        User user = users.findByEmail(email).orElse(null);
+
+        if (user == null) {
+            // Register new user via Google
+            String baseUsername = email.split("@")[0].replaceAll("[^a-zA-Z0-9]", "");
+            String username = baseUsername;
+            int counter = 1;
+            while (users.existsByUsername(username)) {
+                username = baseUsername + counter++;
+            }
+
+            Role role = (requestedRole != null) ? requestedRole : Role.CUSTOMER;
+            Status status = (role == Role.SELLER) ? Status.PENDING : Status.ACTIVE;
+
+            user = User.builder()
+                    .username(username)
+                    .fullName(name)
+                    .email(email)
+                    .password(passwordEncoder.encode(java.util.UUID.randomUUID().toString())) // Random password for OAuth
+                    .role(role)
+                    .status(status)
+                    .build();
+
+            user = users.save(user);
+
+            // Initialize loyalty
+            try {
+                loyaltyService.initializeLoyaltyPoints(user);
+            } catch (Exception e) {
+                org.slf4j.LoggerFactory.getLogger(AuthService.class).error("Loyalty init failed", e);
+            }
+        } else {
+            // Existing user - Check if we need to update role (e.g. Customer becoming a Seller)
+            if (requestedRole == Role.SELLER && user.getRole() == Role.CUSTOMER) {
+                user.setRole(Role.SELLER);
+                user.setStatus(Status.PENDING);
+                user = users.save(user);
+            }
+        }
+
+        return validateUserStatus(user);
+    }
+
+    private User validateUserStatus(User user) {
         if (user.getRole() == Role.SELLER) {
             if (user.getStatus() == Status.PENDING) {
-                // "Smart Solution": Block only if they have already submitted an application
-                // If they haven't submitted, allow them to login so they can submit.
                 boolean hasApplication = applicationRepository.existsByUser(user);
                 if (hasApplication) {
                     throw new AuthorizationException("Your application is pending approval");
                 }
-                // If no application, proceed (allow login)
             }
             if (user.getStatus() == Status.BLOCKED) {
                 throw new AuthorizationException("Your account is blocked, contact support");
@@ -132,7 +178,6 @@ public class AuthService {
                 throw new AuthorizationException("Account is not active");
             }
         }
-
         return user;
     }
 

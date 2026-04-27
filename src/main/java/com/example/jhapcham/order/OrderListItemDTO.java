@@ -14,6 +14,7 @@ public class OrderListItemDTO {
     private Long customerId; // NEW
     private OrderStatus status;
     private BigDecimal grandTotal;
+    private BigDecimal itemsTotal;
     private BigDecimal discountTotal;
     private Integer totalItems;
     private LocalDateTime createdAt;
@@ -27,6 +28,8 @@ public class OrderListItemDTO {
 
     private BigDecimal sellerGrossAmount;
     private BigDecimal sellerShippingCharge;
+    private BigDecimal vatAmount;
+    private BigDecimal marketplaceCommission;
     private BigDecimal sellerNetAmount;
     private DeliveryBranch deliveredBranch;
     private DeliveryBranch assignedBranch;

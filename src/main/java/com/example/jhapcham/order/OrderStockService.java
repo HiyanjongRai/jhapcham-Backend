@@ -22,57 +22,47 @@ public class OrderStockService {
     private final InventoryAlertService inventoryAlertService;
 
     /**
-     * Deducts stock for each item in the order
-     * and marks the order as stockDeducted = true.
-     * Safe to call per-product during order creation.
+     * Deducts stock from the specific variant.
      * Uses pessimistic locking to prevent race conditions.
+     * Also deducts from the product-level aggregate stock for reporting.
      */
     @Transactional
-    public void deductStock(Product product, int quantity, String color, String size, String storage) {
-        // Reload product with pessimistic lock to prevent concurrent stock modifications
-        Product lockedProduct = productRepository.findByIdForUpdate(product.getId())
-                .orElseThrow(() -> new BusinessValidationException("Product not found: " + product.getId()));
+    public void deductStock(ProductVariant variant, int quantity) {
+        // Reload variant with pessimistic lock
+        ProductVariant locked = productVariantRepository.findById(variant.getId())
+                .orElseThrow(() -> new BusinessValidationException("Variant not found: " + variant.getId()));
 
-        Integer current = lockedProduct.getStockQuantity();
-        if (current == null) current = 0;
-
+        int current = locked.getStockQuantity() != null ? locked.getStockQuantity() : 0;
         if (current < quantity) {
-            log.error("Insufficient stock for product id={} ({}): requested {}, available {}",
-                    lockedProduct.getId(), lockedProduct.getName(), quantity, current);
-            throw new BusinessValidationException("Not enough stock for " + lockedProduct.getName());
+            throw new BusinessValidationException(
+                "Insufficient stock for variant '" + locked.getVariantLabel() +
+                "' (Available: " + current + ", Requested: " + quantity + ")"
+            );
         }
 
-        lockedProduct.setStockQuantity(current - quantity);
-        productRepository.saveAndFlush(lockedProduct);
-        log.info("Deducted {} units from product {}. New stock: {}", quantity, lockedProduct.getId(), lockedProduct.getStockQuantity());
+        locked.setStockQuantity(current - quantity);
+        productVariantRepository.save(locked);
+        log.info("Deducted {} units from variant {} (SKU={}). New stock: {}",
+                quantity, locked.getId(), locked.getSku(), locked.getStockQuantity());
 
-        // Deduct Variant stock as well if exact features were provided
-        if (color != null || size != null || storage != null) {
-            java.util.List<ProductVariant> variants = productVariantRepository.findMatchingVariants(lockedProduct, color, size, storage);
-            for (ProductVariant v : variants) {
-                // Deduct from matched variant (usually just 1 matches perfectly)
-                if (v.getStockQuantity() != null && v.getStockQuantity() >= quantity) {
-                    v.setStockQuantity(v.getStockQuantity() - quantity);
-                    productVariantRepository.save(v);
-                    log.info("Deducted {} units from variant {}. New variant stock: {}", quantity, v.getSku(), v.getStockQuantity());
-                } else if (v.getStockQuantity() != null) {
-                    log.warn("Variant {} does not have enough stock. Required: {}, Available: {}", v.getSku(), quantity, v.getStockQuantity());
-                }
-            }
+        // Also deduct from product aggregate (for overall reporting)
+        Product product = locked.getProduct();
+        if (product != null && product.getStockQuantity() != null) {
+            Product lockedProduct = productRepository.findByIdForUpdate(product.getId())
+                    .orElse(product);
+            int prodCurrent = lockedProduct.getStockQuantity() != null ? lockedProduct.getStockQuantity() : 0;
+            lockedProduct.setStockQuantity(Math.max(0, prodCurrent - quantity));
+            productRepository.save(lockedProduct);
         }
 
-        // Trigger inventory alerts if stock has crossed a threshold
+        // Inventory alert
         try {
-            inventoryAlertService.checkAndCreateAlerts(lockedProduct);
+            inventoryAlertService.checkAndCreateAlerts(product);
         } catch (Exception e) {
-            log.error("Failed to check inventory alerts for product {}: {}", lockedProduct.getId(), e.getMessage());
+            log.error("Failed to check inventory alerts for variant {}: {}", locked.getId(), e.getMessage());
         }
     }
 
-    /**
-     * Marks the order's stockDeducted flag to true.
-     * Must be called after all items have been deducted in placeOrder.
-     */
     @Transactional
     public void markStockDeducted(Order order) {
         order.setStockDeducted(true);
@@ -81,86 +71,49 @@ public class OrderStockService {
     }
 
     /**
-     * Restores stock for a cancelled order ONLY if stock was previously deducted.
-     * This prevents double-restoration (e.g. eSewa cancel + manual cancel).
-     * Uses pessimistic locking to prevent race conditions.
+     * Restores stock for all items in a cancelled order.
      */
     @Transactional
     public void restoreStock(Order order) {
         if (!order.isStockDeducted()) {
-            log.warn("Skipping stock restore for order {} — stock was never deducted (stockDeducted=false)", order.getId());
+            log.warn("Skipping stock restore for order {} — stockDeducted=false", order.getId());
             return;
         }
 
-        log.info("Restoring stock for order {}", order.getId());
         for (OrderItem item : order.getItems()) {
-            Product product = item.getProduct();
-            if (product != null) {
-                // Reload product with pessimistic lock to prevent concurrent stock modifications
-                Product lockedProduct = productRepository.findByIdForUpdate(product.getId())
-                        .orElseThrow(() -> new BusinessValidationException("Product not found: " + product.getId()));
-
-                Integer current = lockedProduct.getStockQuantity();
-                if (current == null) current = 0;
-
-                lockedProduct.setStockQuantity(current + item.getQuantity());
-                productRepository.saveAndFlush(lockedProduct);
-                log.info("Restored {} units to product {} ({}). New stock: {}",
-                        item.getQuantity(), lockedProduct.getId(), lockedProduct.getName(), lockedProduct.getStockQuantity());
-
-                // Restore variant stock
-                String color = item.getSelectedColorSnapshot();
-                String size = item.getSelectedSizeSnapshot();
-                String storage = item.getSelectedStorageSnapshot();
-                if (color != null || size != null || storage != null) {
-                    java.util.List<ProductVariant> variants = productVariantRepository.findMatchingVariants(lockedProduct, color, size, storage);
-                    for (ProductVariant v : variants) {
-                        if (v.getStockQuantity() != null) {
-                            v.setStockQuantity(v.getStockQuantity() + item.getQuantity());
-                            productVariantRepository.save(v);
-                            log.info("Restored {} units to variant {}. New variant stock: {}", item.getQuantity(), v.getSku(), v.getStockQuantity());
-                        }
-                    }
-                }
-            } else {
-                log.warn("Could not restore stock for item {} as product is null", item.getId());
-            }
+            restoreItemStock(item);
         }
 
-        // Mark as no longer deducted so future cancel calls are no-ops
         order.setStockDeducted(false);
         orderRepository.save(order);
+        log.info("Stock restored for order {}", order.getId());
     }
 
     /**
-     * Restores stock for a single item (used for partial refunds)
+     * Restores stock for a single item (used for partial refunds).
      */
     @Transactional
     public void restoreItemStock(OrderItem item) {
-        log.info("Restoring stock for single item {}", item.getId());
+        ProductVariant variant = item.getVariant();
+        if (variant != null) {
+            ProductVariant locked = productVariantRepository.findById(variant.getId())
+                    .orElse(null);
+            if (locked != null) {
+                int current = locked.getStockQuantity() != null ? locked.getStockQuantity() : 0;
+                locked.setStockQuantity(current + item.getQuantity());
+                productVariantRepository.save(locked);
+                log.info("Restored {} units to variant {} (SKU={}). New stock: {}",
+                        item.getQuantity(), locked.getId(), locked.getSku(), locked.getStockQuantity());
+            }
+        }
+        // Also restore product aggregate
         Product product = item.getProduct();
         if (product != null) {
-            Product lockedProduct = productRepository.findByIdForUpdate(product.getId())
-                    .orElseThrow(() -> new BusinessValidationException("Product not found: " + product.getId()));
-
-            Integer current = lockedProduct.getStockQuantity();
-            if (current == null) current = 0;
-
-            lockedProduct.setStockQuantity(current + item.getQuantity());
-            productRepository.saveAndFlush(lockedProduct);
-
-            // Restore variant stock
-            String color = item.getSelectedColorSnapshot();
-            String size = item.getSelectedSizeSnapshot();
-            String storage = item.getSelectedStorageSnapshot();
-            if (color != null || size != null || storage != null) {
-                java.util.List<ProductVariant> variants = productVariantRepository.findMatchingVariants(lockedProduct, color, size, storage);
-                for (ProductVariant v : variants) {
-                    if (v.getStockQuantity() != null) {
-                        v.setStockQuantity(v.getStockQuantity() + item.getQuantity());
-                        productVariantRepository.save(v);
-                    }
-                }
+            Product lockedProduct = productRepository.findByIdForUpdate(product.getId()).orElse(null);
+            if (lockedProduct != null) {
+                int current = lockedProduct.getStockQuantity() != null ? lockedProduct.getStockQuantity() : 0;
+                lockedProduct.setStockQuantity(current + item.getQuantity());
+                productRepository.save(lockedProduct);
             }
         }
     }

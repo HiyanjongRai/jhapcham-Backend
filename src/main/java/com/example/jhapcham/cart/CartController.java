@@ -1,5 +1,6 @@
 package com.example.jhapcham.cart;
 
+import com.example.jhapcham.Error.ErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,12 +24,12 @@ public class CartController {
         } catch (RuntimeException e) {
             return ResponseEntity
                     .badRequest()
-                    .body(e.getMessage());
+                    .body(new ErrorResponse(e.getMessage()));
 
         } catch (Exception e) {
             return ResponseEntity
                     .status(500)
-                    .body("Unable to add item to cart");
+                    .body(new ErrorResponse("Unable to add item to cart"));
         }
 
     }
@@ -42,9 +43,9 @@ public class CartController {
             CartResponseDTO cart = cartService.updateQuantity(userId, cartItemId, qty);
             return ResponseEntity.ok(cart);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(500).body("Failed to update cart item");
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to update cart item"));
         }
     }
 
@@ -54,9 +55,9 @@ public class CartController {
             CartResponseDTO cart = cartService.getCart(userId);
             return ResponseEntity.ok(cart);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(500).body("Failed to fetch cart");
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to fetch cart"));
         }
     }
 

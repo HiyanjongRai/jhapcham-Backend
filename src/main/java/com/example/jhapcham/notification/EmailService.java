@@ -355,6 +355,111 @@ public class EmailService {
     }
 
     @org.springframework.scheduling.annotation.Async
+    public void sendOrderConfirmationToCustomer(String toEmail, String customerName, Long orderId, java.math.BigDecimal total) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            
+            helper.setTo(toEmail);
+            helper.setSubject("🛍️ Order Confirmed! - Jhapcham #" + orderId);
+            
+            String htmlContent = String.format(
+                "<div style='font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e4e4e7; border-radius: 12px; padding: 24px; color: #09090b;'>" +
+                "<h2 style='color: #08c; margin-bottom: 16px;'>Thank you for your order! 🛍️</h2>" +
+                "<p style='font-size: 16px; line-height: 1.5;'>Hello %s,</p>" +
+                "<p style='font-size: 16px; line-height: 1.5;'>We've received your order <b>#%d</b> and it's being prepared for shipment.</p>" +
+                "<div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;'>" +
+                "<p style='margin: 0; font-size: 14px; color: #64748b;'>Order Total</p>" +
+                "<p style='margin: 8px 0 0 0; font-size: 24px; font-weight: 800; color: #000;'>Rs. %s</p>" +
+                "</div>" +
+                "<p style='font-size: 15px; color: #09090b;'>You will receive another email with your delivery details once your order is on its way.</p>" +
+                "<hr style='border: 0; border-top: 1px solid #e4e4e7; margin: 24px 0;' />" +
+                "<p style='font-size: 14px; color: #71717a; text-align: center;'>Thank you for shopping with <b>Jhapcham</b>!</p>" +
+                "</div>",
+                customerName != null ? customerName : "Customer",
+                orderId,
+                total
+            );
+            
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+            log.info("Order confirmation email sent to {}", toEmail);
+        } catch (Exception e) {
+            log.error("Failed to send order confirmation email to {}: {}", toEmail, e.getMessage());
+        }
+    }
+
+    @org.springframework.scheduling.annotation.Async
+    public void sendNewOrderAlertToSeller(String toEmail, String sellerName, Long orderId, java.math.BigDecimal amount) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            
+            helper.setTo(toEmail);
+            helper.setSubject("🚀 New Order Received! #" + orderId);
+            
+            String htmlContent = String.format(
+                "<div style='font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e4e4e7; border-radius: 12px; padding: 24px; color: #09090b;'>" +
+                "<h2 style='color: #22c55e; margin-bottom: 16px;'>You have a new order! 🚀</h2>" +
+                "<p style='font-size: 16px; line-height: 1.5;'>Hello %s,</p>" +
+                "<p style='font-size: 16px; line-height: 1.5;'>Congratulations! A new order <b>#%d</b> has been placed in your store.</p>" +
+                "<div style='background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; margin: 24px 0;'>" +
+                "<p style='margin: 0; font-size: 14px; color: #166534;'>Order Value</p>" +
+                "<p style='margin: 8px 0 0 0; font-size: 24px; font-weight: 800; color: #166534;'>Rs. %s</p>" +
+                "</div>" +
+                "<p style='font-size: 15px; color: #09090b;'>Please log in to your seller dashboard to process this order and prepare it for dispatch.</p>" +
+                "<a href='https://jhapcham.com/seller/orders' style='display: inline-block; background: #000; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; margin-top: 16px;'>Process Order</a>" +
+                "<hr style='border: 0; border-top: 1px solid #e4e4e7; margin: 24px 0;' />" +
+                "<p style='font-size: 14px; color: #71717a; text-align: center;'>Keep up the great work! - <b>Jhapcham Merchant Support</b></p>" +
+                "</div>",
+                sellerName != null ? sellerName : "Seller",
+                orderId,
+                amount
+            );
+            
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+            log.info("Seller new order alert sent to {}", toEmail);
+        } catch (Exception e) {
+            log.error("Failed to send seller new order alert to {}: {}", toEmail, e.getMessage());
+        }
+    }
+
+    @org.springframework.scheduling.annotation.Async
+    public void sendOrderStatusUpdateEmail(String toEmail, String customerName, Long orderId, String status) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            
+            helper.setTo(toEmail);
+            helper.setSubject("📦 Order Status Updated - Jhapcham #" + orderId);
+            
+            String htmlContent = String.format(
+                "<div style='font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e4e4e7; border-radius: 12px; padding: 24px; color: #09090b;'>" +
+                "<h2 style='color: #08c; margin-bottom: 16px;'>Your order status has changed! 📦</h2>" +
+                "<p style='font-size: 16px; line-height: 1.5;'>Hello %s,</p>" +
+                "<p style='font-size: 16px; line-height: 1.5;'>The status of your order <b>#%d</b> has been updated to:</p>" +
+                "<div style='background: #f0faff; border: 1px solid #bae6fd; border-radius: 8px; padding: 20px; margin: 24px 0; text-align: center;'>" +
+                "<span style='font-size: 20px; font-weight: 800; text-transform: uppercase; color: #0369a1;'>%s</span>" +
+                "</div>" +
+                "<p style='font-size: 15px; color: #09090b;'>You can track your order in real-time from your account dashboard.</p>" +
+                "<hr style='border: 0; border-top: 1px solid #e4e4e7; margin: 24px 0;' />" +
+                "<p style='font-size: 14px; color: #71717a; text-align: center;'>Thank you for your trust in <b>Jhapcham</b>!</p>" +
+                "</div>",
+                customerName != null ? customerName : "Customer",
+                orderId,
+                status.replace("_", " ")
+            );
+            
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+            log.info("Order status update email sent to {}", toEmail);
+        } catch (Exception e) {
+            log.error("Failed to send order status update email to {}: {}", toEmail, e.getMessage());
+        }
+    }
+
+    @org.springframework.scheduling.annotation.Async
     public void sendInventoryAlertEmail(String toEmail, String sellerName, String productName, 
                                         String alertType, Integer currentStock) {
         try {

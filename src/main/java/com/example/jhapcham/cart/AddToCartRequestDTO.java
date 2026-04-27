@@ -5,8 +5,9 @@ import lombok.Data;
 @Data
 public class AddToCartRequestDTO {
     private Integer quantity;
-    private String selectedColor;
-    private String selectedStorage;
-    private String selectedSize;
-
+    /**
+     * The specific variant ID selected by the customer.
+     * Replaces selectedColor, selectedStorage, selectedSize.
+     */
+    private Long variantId;
 }

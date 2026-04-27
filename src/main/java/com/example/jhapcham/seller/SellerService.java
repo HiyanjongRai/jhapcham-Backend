@@ -178,6 +178,7 @@ public class SellerService {
                         .totalProducts(0L)
                         .activeProducts(0L)
                         .inactiveProducts(0L)
+                        .followerCount(0L)
                         .last30DaysIncome(BigDecimal.ZERO)
                         .last30DaysOrders(0L)
                         .weeklySales(java.util.Collections.nCopies(7, BigDecimal.ZERO))
@@ -205,6 +206,9 @@ public class SellerService {
                 Long activeProducts = productRepository.countBySellerProfileAndStatus(profile, ProductStatus.ACTIVE);
                 Long inactiveProducts = productRepository.countBySellerProfileAndStatus(profile,
                                 ProductStatus.INACTIVE);
+
+                // Follower count
+                Long followerCount = followRepository.countBySeller(profile);
 
                 // Last 30 days statistics
                 LocalDateTime thirtyDaysAgo = LocalDateTime.now().minusDays(30);
@@ -253,6 +257,7 @@ public class SellerService {
                                 .totalIncome(profile.getTotalIncome() != null ? profile.getTotalIncome() : BigDecimal.ZERO)
                                 .totalShippingCost(profile.getTotalShippingCost() != null ? profile.getTotalShippingCost() : BigDecimal.ZERO)
                                 .totalCommission(profile.getTotalCommission() != null ? profile.getTotalCommission() : BigDecimal.ZERO)
+                                .totalVatCollected(profile.getTotalVatCollected() != null ? profile.getTotalVatCollected() : BigDecimal.ZERO)
                                 .netIncome(profile.getNetIncome() != null ? profile.getNetIncome() : BigDecimal.ZERO)
 
                                 // Order counts
@@ -276,6 +281,7 @@ public class SellerService {
                                 .profileImagePath(profile.getUser() != null ? profile.getUser().getProfileImagePath() : null)
                                 .weeklySales(weeklySales)
                                 .topSellingProducts(topSellingProducts)
+                                .followerCount(followerCount)
                                 .build();
         }
 

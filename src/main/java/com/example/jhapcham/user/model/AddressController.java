@@ -26,10 +26,14 @@ public class AddressController {
                 .label((String) body.getOrDefault("label", "Home"))
                 .receiverName((String) body.get("receiverName"))
                 .receiverPhone((String) body.get("receiverPhone"))
+                .province((String) body.get("province"))
+                .district((String) body.get("district"))
+                .municipality((String) body.get("municipality"))
+                .wardNo((String) body.get("wardNo"))
                 .city((String) body.get("city"))
                 .state((String) body.get("state"))
                 .street((String) body.get("street"))
-                .landMark((String) body.get("landMark"))
+                .landmark((String) (body.containsKey("landmark") ? body.get("landmark") : body.get("landMark")))
                 .fullAddress((String) body.get("fullAddress"))
                 .isDefault(Boolean.TRUE.equals(body.get("isDefault")))
                 .build();
@@ -55,10 +59,15 @@ public class AddressController {
         if (body.containsKey("label")) address.setLabel((String) body.get("label"));
         if (body.containsKey("receiverName")) address.setReceiverName((String) body.get("receiverName"));
         if (body.containsKey("receiverPhone")) address.setReceiverPhone((String) body.get("receiverPhone"));
+        if (body.containsKey("province")) address.setProvince((String) body.get("province"));
+        if (body.containsKey("district")) address.setDistrict((String) body.get("district"));
+        if (body.containsKey("municipality")) address.setMunicipality((String) body.get("municipality"));
+        if (body.containsKey("wardNo")) address.setWardNo((String) body.get("wardNo"));
         if (body.containsKey("city")) address.setCity((String) body.get("city"));
         if (body.containsKey("state")) address.setState((String) body.get("state"));
         if (body.containsKey("street")) address.setStreet((String) body.get("street"));
-        if (body.containsKey("landMark")) address.setLandMark((String) body.get("landMark"));
+        if (body.containsKey("landmark")) address.setLandmark((String) body.get("landmark"));
+        else if (body.containsKey("landMark")) address.setLandmark((String) body.get("landMark"));
         if (body.containsKey("fullAddress")) address.setFullAddress((String) body.get("fullAddress"));
         if (body.containsKey("isDefault")) {
             boolean setDefault = Boolean.TRUE.equals(body.get("isDefault"));

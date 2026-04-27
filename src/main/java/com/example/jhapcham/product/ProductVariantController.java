@@ -1,102 +1,79 @@
 package com.example.jhapcham.product;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
-@Slf4j
 @RestController
-@RequestMapping("/api/products/{productId}/variants")
+@RequestMapping("/api/products")
 @RequiredArgsConstructor
 public class ProductVariantController {
 
     private final ProductVariantService variantService;
 
-    @PostMapping
-    public ResponseEntity<?> createVariant(
+    /** List all active variants for a product */
+    @GetMapping("/{productId}/variants")
+    public ResponseEntity<List<ProductVariantDTO>> getVariants(@PathVariable Long productId) {
+        return ResponseEntity.ok(variantService.getProductVariants(productId));
+    }
+
+    /** Get a single variant */
+    @GetMapping("/variants/{variantId}")
+    public ResponseEntity<ProductVariantDTO> getVariant(@PathVariable Long variantId) {
+        return ResponseEntity.ok(variantService.getVariant(variantId));
+    }
+
+    /**
+     * Create a new variant.
+     * Body example:
+     * {
+     *   "sku": "optional-custom-sku",
+     *   "price": 1299.00,
+     *   "stockQuantity": 50,
+     *   "attributeValueIds": [1, 5, 9]
+     * }
+     */
+    @PostMapping("/{productId}/variants")
+    public ResponseEntity<ProductVariantDTO> createVariant(
             @PathVariable Long productId,
-            @RequestBody ProductVariantDTO dto) {
-        try {
-            ProductVariantDTO response = variantService.createVariant(productId, dto);
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
-        } catch (Exception e) {
-            log.error("Error creating variant: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", e.getMessage()));
-        }
+            @RequestBody ProductVariantDTO.CreateRequest req) {
+        return ResponseEntity.ok(variantService.createVariant(productId, req));
     }
 
-    @GetMapping
-    public ResponseEntity<?> getVariants(@PathVariable Long productId) {
-        try {
-            List<ProductVariantDTO> variants = variantService.getProductVariants(productId);
-            return ResponseEntity.ok(variants);
-        } catch (Exception e) {
-            log.error("Error fetching variants: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @GetMapping("/{variantId}")
-    public ResponseEntity<?> getVariant(@PathVariable Long variantId) {
-        try {
-            ProductVariantDTO variant = variantService.getVariant(variantId);
-            return ResponseEntity.ok(variant);
-        } catch (Exception e) {
-            log.error("Error fetching variant: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PutMapping("/{variantId}")
-    public ResponseEntity<?> updateVariant(
+    /**
+     * Update stock, price or active flag of a variant.
+     */
+    @PatchMapping("/variants/{variantId}")
+    public ResponseEntity<ProductVariantDTO> updateVariant(
             @PathVariable Long variantId,
-            @RequestBody ProductVariantDTO dto) {
-        try {
-            ProductVariantDTO response = variantService.updateVariant(variantId, dto);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            log.error("Error updating variant: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", e.getMessage()));
-        }
+            @RequestBody Map<String, Object> body) {
+
+        BigDecimal price = body.containsKey("price")
+                ? new BigDecimal(body.get("price").toString()) : null;
+        Integer stock = body.containsKey("stockQuantity")
+                ? Integer.parseInt(body.get("stockQuantity").toString()) : null;
+        Boolean active = body.containsKey("active")
+                ? Boolean.parseBoolean(body.get("active").toString()) : null;
+
+        return ResponseEntity.ok(variantService.updateVariant(variantId, price, stock, active));
     }
 
-    @PutMapping("/{variantId}/stock")
-    public ResponseEntity<?> updateStock(
-            @PathVariable Long variantId,
-            @RequestBody Map<String, Integer> body) {
-        try {
-            Integer newStock = body.get("stockQuantity");
-            if (newStock == null) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Map.of("error", "stockQuantity is required"));
-            }
-            variantService.updateVariantStock(variantId, newStock);
-            return ResponseEntity.ok(Map.of("message", "Stock updated successfully"));
-        } catch (Exception e) {
-            log.error("Error updating stock: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", e.getMessage()));
-        }
-    }
+    /**
+     * Resolve variant from a set of attribute value IDs.
+     * Body: { "productId": 5, "attributeValueIds": [1, 5] }
+     */
+    @PostMapping("/variants/resolve")
+    public ResponseEntity<ProductVariantDTO> resolveVariant(@RequestBody Map<String, Object> body) {
+        Long productId = Long.parseLong(body.get("productId").toString());
+        @SuppressWarnings("unchecked")
+        List<Integer> rawIds = (List<Integer>) body.get("attributeValueIds");
+        List<Long> attrValueIds = rawIds.stream().map(Long::valueOf).toList();
 
-    @GetMapping("/sku/{sku}")
-    public ResponseEntity<?> getVariantBySku(@PathVariable String sku) {
-        try {
-            ProductVariantDTO variant = variantService.getVariantBySku(sku);
-            return ResponseEntity.ok(variant);
-        } catch (Exception e) {
-            log.error("Error fetching variant by SKU: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", e.getMessage()));
-        }
+        ProductVariant v = variantService.resolveVariant(productId, attrValueIds);
+        return ResponseEntity.ok(variantService.toDTO(v, v.getProduct().getPrice()));
     }
 }

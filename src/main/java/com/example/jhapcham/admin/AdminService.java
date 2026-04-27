@@ -171,18 +171,47 @@ public class AdminService {
                 storeName = firstItem.getProduct().getSellerProfile().getStoreName();
             }
         }
+
+        // Convert OrderItems to OrderItemResponseDTOs
+        List<com.example.jhapcham.order.OrderItemResponseDTO> itemDTOs = o.getItems() != null 
+            ? o.getItems().stream()
+                .map(item -> com.example.jhapcham.order.OrderItemResponseDTO.builder()
+                    .productId(item.getProduct() != null ? item.getProduct().getId() : null)
+                    .name(item.getProduct() != null ? item.getProduct().getName() : "Unknown Product")
+                    .imagePath(item.getProduct() != null && item.getProduct().getImages() != null && !item.getProduct().getImages().isEmpty() ? item.getProduct().getImages().get(0).getImagePath() : null)
+                    .quantity(item.getQuantity())
+                    .unitPrice(item.getUnitPrice())
+                    .build())
+                .collect(java.util.stream.Collectors.toList())
+            : new java.util.ArrayList<>();
+
         return com.example.jhapcham.order.OrderSummaryDTO.builder()
                 .orderId(o.getId())
+                .customerId(o.getUser() != null ? o.getUser().getId() : null)
                 .status(o.getStatus())
                 .customerName(o.getCustomerName())
+                .customerPhone(o.getCustomerPhone())
+                .customerEmail(o.getUser() != null ? o.getUser().getEmail() : null)
+                .customerAlternativePhone(o.getCustomerAlternativePhone())
+                .customerProfileImagePath(o.getUser() != null ? o.getUser().getProfileImagePath() : null)
+                .shippingAddress(o.getShippingAddress())
+                .shippingLocation(o.getShippingLocation())
+                .deliveryTimePreference(o.getDeliveryTimePreference())
+                .orderNote(o.getOrderNote())
+                .itemsTotal(o.getItemsTotal())
+                .shippingFee(o.getShippingFee())
+                .discountTotal(o.getDiscountTotal())
                 .grandTotal(o.getGrandTotal())
                 .createdAt(o.getCreatedAt())
                 .paymentMethod(o.getPaymentMethod())
+                .paymentReference(o.getPaymentReference())
+                .items(itemDTOs)
                 .sellerStoreName(storeName)
                 .sellerGrossAmount(o.getSellerGrossAmount())
                 .sellerShippingCharge(o.getSellerShippingCharge())
                 .sellerNetAmount(o.getSellerNetAmount())
                 .marketplaceCommission(o.getMarketplaceCommission())
+                .deliveredBranch(o.getDeliveredBranch())
                 .build();
     }
 
@@ -456,7 +485,7 @@ public class AdminService {
                         .sellerEmail(email)
                         .sellerPhone(phone)
                         .saleAmount(o.getGrandTotal() != null ? o.getGrandTotal() : java.math.BigDecimal.ZERO)
-                        .commissionRate(!o.getItems().isEmpty() && o.getItems().get(0).getCommissionPercentageSnapshot() != null ? o.getItems().get(0).getCommissionPercentageSnapshot() : 10.0)
+                        .commissionRate(!o.getItems().isEmpty() && o.getItems().get(0).getCommissionPercentageSnapshot() != null ? o.getItems().get(0).getCommissionPercentageSnapshot() : Double.valueOf(10.0))
                         .commissionEarned(baseComm)
                         .fineAmount(fine)
                         .status(o.getCommissionStatus() != null ? o.getCommissionStatus() : com.example.jhapcham.order.CommissionStatus.PENDING)

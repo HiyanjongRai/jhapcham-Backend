@@ -6,6 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -14,12 +16,20 @@ import java.math.BigDecimal;
 public class ProductVariantDTO {
     private Long id;
     private String sku;
-    private String size;
-    private String color;
-    private String capacity;
-    private String description;
+    private BigDecimal price;          // absolute price for this variant
     private Integer stockQuantity;
-    private BigDecimal priceModifier;
     private Boolean active;
-    private String variantName;
+    private String variantLabel;       // e.g. "Color: Red, Storage: 128GB"
+    // Flat map: { "Color": "Red", "Storage": "128GB" }
+    private Map<String, String> attributes;
+    // List of attribute value IDs for resolution
+    private List<Long> attributeValueIds;
+
+    // Request fields (used when creating/updating a variant)
+    public static class CreateRequest {
+        public String sku;
+        public BigDecimal price;
+        public Integer stockQuantity;
+        public List<Long> attributeValueIds; // IDs of AttributeValue rows to assign
+    }
 }
