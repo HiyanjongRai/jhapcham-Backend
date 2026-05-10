@@ -23,7 +23,7 @@ public class PromoCode {
     @Column(nullable = false, unique = true, updatable = false)
     private String code;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Long sellerId; // Null if global, but requirement says seller-specific initially
 
     @Enumerated(EnumType.STRING)
@@ -44,6 +44,10 @@ public class PromoCode {
 
     @Column(nullable = false)
     private Integer usageLimit;
+
+    @Column(nullable = false, columnDefinition = "integer default 1")
+    @Builder.Default
+    private Integer perUserUsageLimit = 1;
 
     @Column(nullable = false)
     private Integer usedCount;

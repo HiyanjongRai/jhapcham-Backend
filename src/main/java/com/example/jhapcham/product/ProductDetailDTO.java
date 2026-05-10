@@ -16,6 +16,7 @@ public class ProductDetailDTO {
     private Long sellerUserId;
 
     private String name;
+    private String slug;
     private String shortDescription;
     private String description;
     private String category;
@@ -70,6 +71,9 @@ public class ProductDetailDTO {
     private List<ProductVariantDTO> variants;
     /** All unique attribute groups across all variants — used to build UI selectors */
     private Map<String, List<AttributeOptionDTO>> attributeOptions;
+
+    @com.fasterxml.jackson.annotation.JsonProperty("hasVariants")
+    private boolean hasVariants;
 
     @Data
     @Builder

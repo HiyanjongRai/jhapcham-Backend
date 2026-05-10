@@ -128,7 +128,7 @@ public class UserActivityService {
 
     // Data format for IBCF: List of interactions with weights
     public List<Map<String, Object>> getInteractionsForIBCF() {
-        List<UserActivity> allActivities = userActivityRepository.findAll();
+        List<UserActivity> allActivities = userActivityRepository.findTop10000ByOrderByTimestampDesc();
 
         // Group by user and product, then assign a max weight or sum weights
         return allActivities.stream()

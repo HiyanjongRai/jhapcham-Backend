@@ -3,6 +3,7 @@ package com.example.jhapcham.product;
 import com.example.jhapcham.Error.ErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartException;
 
@@ -17,6 +18,7 @@ public class ProductController {
 
     private final ProductService productService;
     private final ProductViewService productViewService;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     // ===================== CUSTOMER LIST =====================
     @GetMapping
@@ -47,8 +49,9 @@ public class ProductController {
 
     // ===================== SELLER FULL LIST =====================
     @GetMapping("/seller/{sellerUserId}/all")
-    public ResponseEntity<?> listAllProductsForSeller(@PathVariable Long sellerUserId) {
+    public ResponseEntity<?> listAllProductsForSeller(@PathVariable Long sellerUserId, Authentication authentication) {
         try {
+            currentUserService.requireSellerSelfOrAdmin(currentUserService.requireUser(authentication), sellerUserId);
             List<ProductResponseDTO> list = productService.listProductsForSeller(sellerUserId);
             return ResponseEntity.ok(list);
         } catch (RuntimeException e) {
@@ -61,12 +64,49 @@ public class ProductController {
     }
 
     // ===================== PRODUCT DETAIL + RECORD VIEW =====================
+    @GetMapping("/slug/{slug}")
+    public ResponseEntity<?> getProductDetailBySlug(
+            @PathVariable String slug,
+            @RequestParam(required = false) Long userId,
+            Authentication authentication) {
+        try {
+            Long resolvedUserId = null;
+            if (userId != null && authentication != null && authentication.isAuthenticated()
+                    && !"anonymousUser".equals(authentication.getName())) {
+                var actor = currentUserService.requireUser(authentication);
+                if (actor.getId().equals(userId) || actor.getRole() == com.example.jhapcham.user.model.Role.ADMIN) {
+                    resolvedUserId = userId;
+                }
+            }
+
+            ProductDetailDTO dto = productService.getProductDetailBySlug(slug);
+            productViewService.recordView(dto.getProductId(), resolvedUserId);
+            return ResponseEntity.ok(dto);
+
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(new ErrorResponse("Failed to fetch product detail"));
+        }
+    }
+
     @GetMapping("/{productId}")
     public ResponseEntity<?> getProductDetail(
             @PathVariable Long productId,
-            @RequestParam(required = false) Long userId) {
+            @RequestParam(required = false) Long userId,
+            Authentication authentication) {
         try {
-            productViewService.recordView(productId, userId);
+            Long resolvedUserId = null;
+            if (userId != null && authentication != null && authentication.isAuthenticated()
+                    && !"anonymousUser".equals(authentication.getName())) {
+                var actor = currentUserService.requireUser(authentication);
+                if (actor.getId().equals(userId) || actor.getRole() == com.example.jhapcham.user.model.Role.ADMIN) {
+                    resolvedUserId = userId;
+                }
+            }
+            productViewService.recordView(productId, resolvedUserId);
 
             ProductDetailDTO dto = productService.getProductDetail(productId);
             return ResponseEntity.ok(dto);
@@ -84,8 +124,10 @@ public class ProductController {
     @PostMapping("/seller/{sellerUserId}")
     public ResponseEntity<?> createProduct(
             @PathVariable Long sellerUserId,
-            @ModelAttribute ProductCreateRequestDTO dto) {
+            @ModelAttribute ProductCreateRequestDTO dto,
+            Authentication authentication) {
         try {
+            currentUserService.requireSellerSelfOrAdmin(currentUserService.requireUser(authentication), sellerUserId);
             ProductResponseDTO response = productService.createProductForSeller(sellerUserId, dto);
             return ResponseEntity.ok(response);
         } catch (MultipartException e) {
@@ -104,9 +146,11 @@ public class ProductController {
     @PutMapping("/{productId}")
     public ResponseEntity<?> updateProduct(
             @PathVariable Long productId,
-            @ModelAttribute ProductUpdateRequestDTO dto) {
+            @ModelAttribute ProductUpdateRequestDTO dto,
+            Authentication authentication) {
         try {
-            ProductResponseDTO response = productService.updateProduct(productId, dto);
+            ProductResponseDTO response = productService.updateProduct(currentUserService.requireUser(authentication).getId(),
+                    productId, dto);
             return ResponseEntity.ok(response);
         } catch (MultipartException e) {
             return ResponseEntity.badRequest()
@@ -122,8 +166,9 @@ public class ProductController {
 
     // ===================== RECENT VIEWS =====================
     @GetMapping("/views/user/{userId}/recent")
-    public ResponseEntity<?> getRecentViewsForUser(@PathVariable Long userId) {
+    public ResponseEntity<?> getRecentViewsForUser(@PathVariable Long userId, Authentication authentication) {
         try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
             List<ProductView> views = productViewService.getRecentViewsForUser(userId);
 
             List<ProductViewDTO> dtoList = views.stream()
@@ -150,9 +195,10 @@ public class ProductController {
     @PutMapping("/{productId}/status")
     public ResponseEntity<?> updateProductStatus(
             @PathVariable Long productId,
-            @RequestParam ProductStatus status) {
+            @RequestParam ProductStatus status,
+            Authentication authentication) {
         try {
-            productService.updateProductStatus(productId, status);
+            productService.updateProductStatus(currentUserService.requireUser(authentication).getId(), productId, status);
             return ResponseEntity.ok("Product status updated successfully");
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
@@ -237,8 +283,10 @@ public class ProductController {
     @DeleteMapping("/{productId}/seller/{sellerUserId}/hard")
     public ResponseEntity<?> hardDeleteProduct(
             @PathVariable Long productId,
-            @PathVariable Long sellerUserId) {
+            @PathVariable Long sellerUserId,
+            Authentication authentication) {
         try {
+            currentUserService.requireSellerSelfOrAdmin(currentUserService.requireUser(authentication), sellerUserId);
             productService.hardDeleteProductWithOrderCheck(productId, sellerUserId);
             return ResponseEntity.ok("Product deleted from database");
         } catch (RuntimeException e) {

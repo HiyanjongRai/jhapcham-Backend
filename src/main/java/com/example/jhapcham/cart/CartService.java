@@ -12,7 +12,7 @@ import com.example.jhapcham.product.ProductVariantRepository;
 import com.example.jhapcham.product.ProductVariantService;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -40,29 +40,36 @@ public class CartService {
         if (dto.getQuantity() == null || dto.getQuantity() <= 0) {
             throw new BusinessValidationException("Quantity must be greater than zero");
         }
-        if (dto.getVariantId() == null) {
-            throw new BusinessValidationException("A variant must be selected before adding to cart");
-        }
-
         User user = userRepository.findById(Objects.requireNonNull(userId))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         Product product = productRepository.findById(Objects.requireNonNull(productId))
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
-        ProductVariant variant = variantRepository.findById(dto.getVariantId())
-                .orElseThrow(() -> new ResourceNotFoundException("Variant not found: " + dto.getVariantId()));
+        boolean effectivelyHasVariants = Boolean.TRUE.equals(product.getHasVariants()) || (product.getVariants() != null && !product.getVariants().isEmpty());
 
-        if (!variant.getProduct().getId().equals(productId)) {
-            throw new BusinessValidationException("Variant does not belong to this product");
+        ProductVariant variant = null;
+        if (effectivelyHasVariants) {
+            if (dto.getVariantId() == null) {
+                throw new BusinessValidationException("A variant must be selected for this product");
+            }
+            variant = variantRepository.findById(dto.getVariantId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Variant not found: " + dto.getVariantId()));
+            
+            if (!variant.getProduct().getId().equals(productId)) {
+                throw new BusinessValidationException("Variant does not belong to this product");
+            }
+            if (!Boolean.TRUE.equals(variant.getActive())) {
+                throw new BusinessValidationException("Selected variant is not available");
+            }
+        } else {
+            if (dto.getVariantId() != null) {
+                throw new BusinessValidationException("This product does not have variants. variantId must be null.");
+            }
         }
 
-        if (!Boolean.TRUE.equals(variant.getActive())) {
-            throw new BusinessValidationException("Selected variant is not available");
-        }
-
-        // Find existing cart item for same user + variant
-        CartItem item = cartItemRepository.findByUserAndVariant(user, variant)
+        // Find existing cart item for same user + product + variant
+        CartItem item = cartItemRepository.findByUserAndProductAndVariant(user, product, variant)
                 .orElse(CartItem.builder()
                         .user(user)
                         .product(product)
@@ -71,16 +78,18 @@ public class CartService {
                         .build());
 
         int newQty = item.getQuantity() + dto.getQuantity();
-        if (variant.getStockQuantity() < newQty) {
-            throw new BusinessValidationException(
-                    "Only " + variant.getStockQuantity() + " items available for " + variant.getVariantLabel());
+        int availableStock = (variant != null) ? variant.getStockQuantity() : product.getStockQuantity();
+        
+        if (availableStock < newQty) {
+            String label = (variant != null) ? variant.getVariantLabel() : product.getName();
+            throw new BusinessValidationException("Only " + availableStock + " items available for " + label);
         }
 
         item.setQuantity(newQty);
         cartItemRepository.save(item);
 
         userActivityService.recordActivity(userId, productId, ActivityType.ADD_TO_CART,
-                "Variant: " + variant.getSku() + " Qty: " + dto.getQuantity());
+                "Variant: " + (variant != null ? variant.getSku() : "N/A") + " Qty: " + dto.getQuantity());
 
         return getCart(userId);
     }

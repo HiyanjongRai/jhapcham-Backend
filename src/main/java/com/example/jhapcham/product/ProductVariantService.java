@@ -1,16 +1,22 @@
 package com.example.jhapcham.product;
 
+import com.example.jhapcham.Error.AuthorizationException;
 import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
+import com.example.jhapcham.user.model.Role;
+import com.example.jhapcham.user.model.User;
+import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -22,6 +28,7 @@ public class ProductVariantService {
     private final ProductRepository productRepository;
     private final AttributeValueRepository attributeValueRepository;
     private final AttributeService attributeService;
+    private final UserRepository userRepository;
 
     /**
      * Synchronizes variants from a JSON string.
@@ -39,6 +46,7 @@ public class ProductVariantService {
             List<Map<String, Object>> variantList = mapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
 
             List<Long> processedIds = new java.util.ArrayList<>();
+            Set<String> submittedSkus = new HashSet<>();
 
             for (Map<String, Object> vMap : variantList) {
                 @SuppressWarnings("unchecked")
@@ -67,17 +75,24 @@ public class ProductVariantService {
 
                 List<ProductVariant> existing = variantRepository.findByProductAndAttributeValues(product, attrValueIds, (long) attrValueIds.size());
                 ProductVariant variant;
+                String normalizedSku = sku != null ? sku.trim() : null;
+
+                if (normalizedSku != null && !normalizedSku.isBlank() && !submittedSkus.add(normalizedSku)) {
+                    throw new BusinessValidationException("Duplicate SKU in variant submission: " + normalizedSku);
+                }
 
                 if (!existing.isEmpty()) {
                     variant = existing.get(0);
+                    validateSkuForSync(normalizedSku, variant.getId());
                     variant.setPrice(price);
                     variant.setStockQuantity(stock);
                     variant.setActive(true);
-                    if (sku != null && !sku.isBlank()) variant.setSku(sku);
+                    if (normalizedSku != null && !normalizedSku.isBlank()) variant.setSku(normalizedSku);
                 } else {
+                    validateSkuForSync(normalizedSku, null);
                     variant = ProductVariant.builder()
                             .product(product)
-                            .sku(sku != null && !sku.isBlank() ? sku : generateSku(product, attrValueIds.stream().map(attributeService::getAttributeValue).toList()))
+                            .sku(normalizedSku != null && !normalizedSku.isBlank() ? normalizedSku : generateSku(product, attrValueIds.stream().map(attributeService::getAttributeValue).toList()))
                             .price(price)
                             .stockQuantity(stock)
                             .active(true)
@@ -94,6 +109,16 @@ public class ProductVariantService {
                 processedIds.add(variant.getId());
             }
 
+            if (variantList.isEmpty()) {
+                // If syncing empty list, inactivate all existing variants but PRESERVE product-level stock
+                variantRepository.findByProduct(product).forEach(v -> {
+                    v.setActive(false);
+                    v.setStockQuantity(0);
+                    variantRepository.save(v);
+                });
+                return;
+            }
+
             // Inactivate others (variants not present in the filtered submission)
             variantRepository.findByProduct(product).forEach(v -> {
                 if (!processedIds.contains(v.getId())) {
@@ -104,12 +129,7 @@ public class ProductVariantService {
             });
 
             // ⚡ Aggregate Stock Calculation
-            List<ProductVariant> activeVariants = variantRepository.findByProductAndActive(product, true);
-            int totalStock = activeVariants.stream()
-                    .mapToInt(v -> v.getStockQuantity() != null ? v.getStockQuantity() : 0)
-                    .sum();
-            product.setStockQuantity(totalStock);
-            productRepository.save(product);
+            syncProductAggregateStock(product);
 
         } catch (BusinessValidationException bve) {
             throw bve;
@@ -130,9 +150,10 @@ public class ProductVariantService {
     // ── Create ────────────────────────────────────────────────────
 
     @Transactional
-    public ProductVariantDTO createVariant(Long productId, ProductVariantDTO.CreateRequest req) {
+    public ProductVariantDTO createVariant(Long actorUserId, Long productId, ProductVariantDTO.CreateRequest req) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        ensureVariantOwner(actorUserId, product);
 
         if (req.attributeValueIds == null || req.attributeValueIds.isEmpty()) {
             throw new BusinessValidationException("At least one attribute value is required for a variant");
@@ -154,6 +175,7 @@ public class ProductVariantService {
         String sku = (req.sku != null && !req.sku.isBlank())
                 ? req.sku
                 : generateSku(product, attrValues);
+        validateVariantNumbers(req.price, req.stockQuantity);
 
         // Check SKU uniqueness
         variantRepository.findBySku(sku).ifPresent(v -> {
@@ -181,41 +203,54 @@ public class ProductVariantService {
 
         variantRepository.save(variant);
         log.info("Created variant SKU={} for productId={}", sku, productId);
+        syncProductAggregateStock(product);
         return toDTO(variant, product.getPrice());
     }
 
     // ── Update ────────────────────────────────────────────────────
 
     @Transactional
-    public ProductVariantDTO updateVariant(Long variantId, BigDecimal price, Integer stockQuantity, Boolean active) {
+    public ProductVariantDTO updateVariant(Long actorUserId, Long variantId, BigDecimal price, Integer stockQuantity,
+            Boolean active) {
         ProductVariant variant = variantRepository.findById(variantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Variant not found: " + variantId));
+        ensureVariantOwner(actorUserId, variant.getProduct());
 
+        validateVariantNumbers(price, stockQuantity);
         if (price != null) variant.setPrice(price);
         if (stockQuantity != null) variant.setStockQuantity(stockQuantity);
         if (active != null) variant.setActive(active);
 
         variantRepository.save(variant);
+        syncProductAggregateStock(variant.getProduct());
         log.info("Updated variant {}", variantId);
         return toDTO(variant, variant.getProduct().getPrice());
     }
 
     @Transactional
     public void updateStock(Long variantId, Integer newStock) {
+        if (newStock == null || newStock < 0) {
+            throw new BusinessValidationException("Variant stock cannot be negative");
+        }
         ProductVariant variant = variantRepository.findById(variantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Variant not found"));
         variant.setStockQuantity(newStock);
         variantRepository.save(variant);
+        syncProductAggregateStock(variant.getProduct());
     }
 
     // ── Query ─────────────────────────────────────────────────────
 
-    public List<ProductVariantDTO> getProductVariants(Long productId) {
+    public List<ProductVariantDTO> getProductVariants(Long productId, boolean includeInactive) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
         BigDecimal basePrice = product.getPrice();
 
-        return variantRepository.findByProductAndActive(product, true)
+        List<ProductVariant> variants = includeInactive
+                ? variantRepository.findByProduct(product)
+                : variantRepository.findByProductAndActive(product, true);
+
+        return variants
                 .stream()
                 .map(v -> toDTO(v, basePrice))
                 .collect(Collectors.toList());
@@ -241,7 +276,11 @@ public class ProductVariantService {
         if (matches.isEmpty()) {
             throw new BusinessValidationException("No variant found for selected attributes");
         }
-        return matches.get(0);
+        ProductVariant match = matches.get(0);
+        if (!Boolean.TRUE.equals(match.getActive())) {
+            throw new BusinessValidationException("Selected variant is not active");
+        }
+        return match;
     }
 
     // ── Helpers ───────────────────────────────────────────────────
@@ -251,6 +290,37 @@ public class ProductVariantService {
                 .map(av -> av.getValue().replaceAll("\\s+", "-").toUpperCase())
                 .collect(Collectors.joining("-"));
         return "P" + product.getId() + "-" + attrPart;
+    }
+
+    private void validateSkuForSync(String sku, Long currentVariantId) {
+        if (sku == null || sku.isBlank()) {
+            return;
+        }
+
+        variantRepository.findBySku(sku).ifPresent(existingVariant -> {
+            if (currentVariantId == null || !existingVariant.getId().equals(currentVariantId)) {
+                throw new BusinessValidationException("SKU already exists: " + sku);
+            }
+        });
+    }
+
+    private void validateVariantNumbers(BigDecimal price, Integer stockQuantity) {
+        if (price != null && price.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessValidationException("Variant price must be greater than zero");
+        }
+        if (stockQuantity != null && stockQuantity < 0) {
+            throw new BusinessValidationException("Variant stock cannot be negative");
+        }
+    }
+
+    private void syncProductAggregateStock(Product product) {
+        List<ProductVariant> activeVariants = variantRepository.findByProductAndActive(product, true);
+        int totalStock = activeVariants.stream()
+                .mapToInt(v -> v.getStockQuantity() != null ? v.getStockQuantity() : 0)
+                .sum();
+        product.setStockQuantity(totalStock);
+        product.setHasVariants(!activeVariants.isEmpty() || Boolean.TRUE.equals(product.getHasVariants()));
+        productRepository.save(product);
     }
 
     public ProductVariantDTO toDTO(ProductVariant variant, BigDecimal basePrice) {
@@ -299,5 +369,17 @@ public class ProductVariantService {
         // 3. Delete unused attribute values
         int deletedValues = attributeValueRepository.deleteUnusedValues();
         log.info("Deleted {} unused attribute values", deletedValues);
+    }
+
+    private void ensureVariantOwner(Long actorUserId, Product product) {
+        User actor = userRepository.findById(actorUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (actor.getRole() == Role.ADMIN) {
+            return;
+        }
+        if (product.getSellerProfile() == null || product.getSellerProfile().getUser() == null
+                || !product.getSellerProfile().getUser().getId().equals(actorUserId)) {
+            throw new AuthorizationException("You do not have permission to modify variants for this product");
+        }
     }
 }

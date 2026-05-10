@@ -18,8 +18,11 @@ public class OrderListItemDTO {
     private BigDecimal discountTotal;
     private Integer totalItems;
     private LocalDateTime createdAt;
+    private String appliedCoupon;
     private PaymentMethod paymentMethod;
+    private PaymentStatus paymentStatus;
     private String paymentReference;
+    private com.example.jhapcham.delivery.DeliveryStatus deliveryStatus;
     private String storeName; // for seller view
     private String customerName;
     private String customerPhone;

@@ -3,6 +3,7 @@ package com.example.jhapcham.user.model;
 import com.example.jhapcham.Error.ErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Objects;
@@ -13,9 +14,11 @@ import java.util.Objects;
 public class UserController {
 
     private final UserRepository userRepository;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     @GetMapping("/{userId}")
-    public ResponseEntity<?> getUserProfile(@PathVariable Long userId) {
+    public ResponseEntity<?> getUserProfile(@PathVariable Long userId, Authentication authentication) {
+        currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
         var user = userRepository.findById(Objects.requireNonNull(userId, "User ID cannot be null"));
         if (user.isPresent()) {
             return ResponseEntity.ok(mapToDto(user.get()));
@@ -26,8 +29,10 @@ public class UserController {
     private final AuthService authService;
 
     @PutMapping("/{userId}")
-    public ResponseEntity<?> updateUserJson(@PathVariable Long userId, @RequestBody UserProfileUpdateRequestDTO dto) {
+    public ResponseEntity<?> updateUserJson(@PathVariable Long userId, @RequestBody UserProfileUpdateRequestDTO dto,
+            Authentication authentication) {
         try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
             User updated = authService.updateUserById(userId, dto);
             return ResponseEntity.ok(mapToDto(updated));
         } catch (RuntimeException e) {
@@ -37,8 +42,10 @@ public class UserController {
 
     @PostMapping("/{userId}/profile-image")
     public ResponseEntity<?> uploadProfileImage(@PathVariable Long userId,
-            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            Authentication authentication) {
         try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
             UserProfileUpdateRequestDTO dto = new UserProfileUpdateRequestDTO();
             dto.setProfileImage(file);
             User updated = authService.updateUserById(userId, dto);

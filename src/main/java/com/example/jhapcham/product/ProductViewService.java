@@ -4,7 +4,7 @@ import com.example.jhapcham.activity.ActivityType;
 import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

@@ -3,6 +3,8 @@ package com.example.jhapcham.admin;
 import com.example.jhapcham.notification.NotificationService;
 import com.example.jhapcham.order.Order;
 import com.example.jhapcham.order.OrderRepository;
+import com.example.jhapcham.order.PaymentMethod;
+import com.example.jhapcham.order.PaymentStatus;
 import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.product.ProductResponseDTO;
 import com.example.jhapcham.product.ProductService;
@@ -21,15 +23,18 @@ import com.example.jhapcham.user.model.Status;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AdminService {
 
     private final AuthService authService;
@@ -45,6 +50,10 @@ public class AdminService {
     private final NotificationService notificationService;
     private final com.example.jhapcham.wishlist.WishlistService wishlistService;
     private final com.example.jhapcham.order.OrderAccountingService orderAccountingService;
+    private final com.example.jhapcham.order.OrderStatusService orderStatusService;
+    private final com.example.jhapcham.order.OrderStockService orderStockService;
+    private final com.example.jhapcham.delivery.ShipmentService shipmentService;
+    private final com.example.jhapcham.delivery.TrackingService trackingService;
 
     public List<User> getAllUsers() {
         return authService.getAllUsers();
@@ -82,15 +91,15 @@ public class AdminService {
             // Trends for charts
             java.time.LocalDateTime thirtyDaysAgo = java.time.LocalDateTime.now().minusDays(30);
             java.util.Map<String, Long> dailyOrders = orderRepository.findByCreatedAtAfter(thirtyDaysAgo).stream()
-                    .collect(java.util.stream.Collectors.groupingBy(
+                    .collect(Collectors.groupingBy(
                             o -> o.getCreatedAt().toLocalDate().toString(),
-                            java.util.stream.Collectors.counting()));
+                            Collectors.counting()));
 
             java.time.LocalDateTime twelveMonthsAgo = java.time.LocalDateTime.now().minusMonths(12).withDayOfMonth(1).withHour(0).withMinute(0);
             java.util.Map<String, Double> monthlyRevenue = orderRepository.findByStatusAndCreatedAtAfter(com.example.jhapcham.order.OrderStatus.DELIVERED, twelveMonthsAgo).stream()
-                    .collect(java.util.stream.Collectors.groupingBy(
+                    .collect(Collectors.groupingBy(
                             o -> o.getCreatedAt().getYear() + "-" + String.format("%02d", o.getCreatedAt().getMonthValue()),
-                            java.util.stream.Collectors.summingDouble(o -> o.getGrandTotal() != null ? o.getGrandTotal().doubleValue() : 0.0)));
+                            Collectors.summingDouble(o -> o.getGrandTotal() != null ? o.getGrandTotal().doubleValue() : 0.0)));
 
             return PlatformAnalyticsDTO.builder()
                     .totalUsers(totalUsers)
@@ -121,33 +130,139 @@ public class AdminService {
     public List<com.example.jhapcham.order.OrderSummaryDTO> getAllOrders() {
         return orderRepository.findAllWithDetails().stream()
                 .map(this::mapToOrderSummary)
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
     }
 
     @Transactional
     public void updateOrderStatus(Long orderId, com.example.jhapcham.order.OrderStatus status) {
         Order order = orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
+        orderStatusService.validateTransition(order.getStatus(), status);
         order.setStatus(status);
         if (status == com.example.jhapcham.order.OrderStatus.DELIVERED) {
-            orderAccountingService.finalizeSellerAccounting(order);
+            if (order.getPaymentMethod() == PaymentMethod.COD) {
+                order.setPaymentStatus(PaymentStatus.COD_COLLECTED);
+            }
+            orderAccountingService.finalizeDeliveredOrder(order);
             // Set due date for commission (1 week grace period)
             order.setCommissionDueDate(java.time.LocalDateTime.now().plusWeeks(1));
-        } else if (status == com.example.jhapcham.order.OrderStatus.CANCELED) {
+        } else if (status == com.example.jhapcham.order.OrderStatus.CANCELLED
+                || status == com.example.jhapcham.order.OrderStatus.FAILED) {
+            orderStockService.restoreStock(order);
+            if (order.getPaymentMethod() != PaymentMethod.COD && order.getPaymentStatus() == PaymentStatus.PAID) {
+                order.setRefundPending(true);
+                order.setPaymentStatus(PaymentStatus.REFUND_PENDING);
+            } else if (order.getPaymentMethod() == PaymentMethod.COD
+                    && status == com.example.jhapcham.order.OrderStatus.FAILED) {
+                order.setPaymentStatus(PaymentStatus.COD_FAILED);
+            } else if (order.getPaymentStatus() != PaymentStatus.PAID) {
+                order.setPaymentStatus(status == com.example.jhapcham.order.OrderStatus.FAILED
+                        ? PaymentStatus.FAILED
+                        : PaymentStatus.CANCELLED);
+            }
             orderAccountingService.cancelAccounting(order);
+        } else if (status == com.example.jhapcham.order.OrderStatus.RETURNED) {
+            orderStockService.restoreStock(order);
+            orderAccountingService.cancelAccounting(order);
+            if (order.getPaymentMethod() != PaymentMethod.COD && order.getPaymentStatus() == PaymentStatus.PAID) {
+                order.setRefundPending(true);
+                order.setPaymentStatus(PaymentStatus.REFUND_PENDING);
+            } else if (order.getPaymentMethod() == PaymentMethod.COD
+                    && order.getPaymentStatus() != PaymentStatus.COD_REMITTED) {
+                order.setPaymentStatus(PaymentStatus.COD_FAILED);
+            }
         }
         orderRepository.save(order);
+        synchronizeShipment(order, status);
     }
 
     @Transactional
     public void manuallyDeliverOrder(Long orderId) {
-        Order order = orderRepository.findById(orderId).orElseThrow(() -> new RuntimeException("Order not found"));
-        order.setStatus(com.example.jhapcham.order.OrderStatus.DELIVERED);
-        orderAccountingService.finalizeSellerAccounting(order);
-        
-        // Settlement timing: Commission is due 7 days after delivery
-        order.setCommissionDueDate(java.time.LocalDateTime.now().plusDays(7));
-        
-        orderRepository.save(order);
+        throw new RuntimeException("Manual delivery is disabled. Use courier OTP verification and COD collection flow.");
+    }
+
+    private void synchronizeShipment(Order order, com.example.jhapcham.order.OrderStatus status) {
+        com.example.jhapcham.delivery.Shipment shipment = shipmentService.findByOrderId(order.getId());
+
+        switch (status) {
+            case PACKED -> shipmentService.createShipment(order.getId());
+            case SHIPPED -> {
+                if (shipment == null) {
+                    shipmentService.createShipment(order.getId());
+                    shipment = shipmentService.findByOrderId(order.getId());
+                }
+                if (shipment != null && (shipment.getStatus() == com.example.jhapcham.delivery.DeliveryStatus.CREATED
+                        || shipment.getStatus() == com.example.jhapcham.delivery.DeliveryStatus.RIDER_ASSIGNED)) {
+                    advanceShipmentToStatus(
+                            shipment,
+                            com.example.jhapcham.delivery.DeliveryStatus.PICKED_UP,
+                            "Admin advanced order to shipped");
+                }
+            }
+            case OUT_FOR_DELIVERY -> {
+                if (shipment == null) {
+                    shipmentService.createShipment(order.getId());
+                    shipment = shipmentService.findByOrderId(order.getId());
+                }
+                if (shipment != null && shipment.getStatus() != com.example.jhapcham.delivery.DeliveryStatus.OUT_FOR_DELIVERY) {
+                    advanceShipmentToStatus(
+                            shipment,
+                            com.example.jhapcham.delivery.DeliveryStatus.OUT_FOR_DELIVERY,
+                            "Admin advanced order to out for delivery");
+                }
+            }
+            case DELIVERED -> {
+                if (shipment == null) {
+                    throw new RuntimeException("Cannot mark delivered without a shipment and courier OTP verification");
+                }
+                if (shipment != null && shipment.getStatus() != com.example.jhapcham.delivery.DeliveryStatus.DELIVERED) {
+                    advanceShipmentToStatus(
+                            shipment,
+                            com.example.jhapcham.delivery.DeliveryStatus.DELIVERED,
+                            "Admin marked order as delivered");
+                }
+            }
+            case CANCELLED, FAILED -> {
+                if (shipment != null) {
+                    shipmentService.cancelShipmentForOrder(order.getId(), "Admin cancelled order");
+                }
+            }
+            case RETURNED -> {
+                if (shipment != null && shipment.getStatus() != com.example.jhapcham.delivery.DeliveryStatus.RETURN_TO_SELLER) {
+                    trackingService.updateStatus(
+                            shipment.getTrackingId(),
+                            com.example.jhapcham.delivery.DeliveryStatus.RETURN_TO_SELLER,
+                            shipment.getShippingLocation(),
+                            "Admin marked order as returned",
+                            null);
+                }
+            }
+            default -> {
+                // No delivery action needed.
+            }
+        }
+    }
+
+    private void advanceShipmentToStatus(com.example.jhapcham.delivery.Shipment shipment,
+                                         com.example.jhapcham.delivery.DeliveryStatus targetStatus,
+                                         String note) {
+        com.example.jhapcham.delivery.DeliveryStatus current = shipment.getStatus();
+        while (current != targetStatus) {
+            com.example.jhapcham.delivery.DeliveryStatus next = switch (current) {
+                case CREATED -> com.example.jhapcham.delivery.DeliveryStatus.RIDER_ASSIGNED;
+                case RIDER_ASSIGNED -> com.example.jhapcham.delivery.DeliveryStatus.PICKED_UP;
+                case PICKED_UP, DELAYED -> com.example.jhapcham.delivery.DeliveryStatus.IN_TRANSIT;
+                case IN_TRANSIT -> com.example.jhapcham.delivery.DeliveryStatus.OUT_FOR_DELIVERY;
+                case OUT_FOR_DELIVERY -> com.example.jhapcham.delivery.DeliveryStatus.DELIVERED;
+                default -> targetStatus;
+            };
+
+            trackingService.updateStatus(shipment.getTrackingId(), next, shipment.getShippingLocation(), note, null);
+            shipment = shipmentService.findByOrderId(shipment.getOrder().getId());
+            if (shipment == null) {
+                return;
+            }
+            current = shipment.getStatus();
+        }
     }
 
     public List<com.example.jhapcham.review.ReviewResponseDTO> getAllReviews() {
@@ -160,7 +275,7 @@ public class AdminService {
                         .comment(r.getComment())
                         .createdAt(r.getCreatedAt())
                         .build())
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
     }
 
     private com.example.jhapcham.order.OrderSummaryDTO mapToOrderSummary(com.example.jhapcham.order.Order o) {
@@ -182,7 +297,7 @@ public class AdminService {
                     .quantity(item.getQuantity())
                     .unitPrice(item.getUnitPrice())
                     .build())
-                .collect(java.util.stream.Collectors.toList())
+                .collect(Collectors.toList())
             : new java.util.ArrayList<>();
 
         return com.example.jhapcham.order.OrderSummaryDTO.builder()
@@ -234,7 +349,7 @@ public class AdminService {
     }
 
     public void setProductVisibility(Long productId, boolean visible) {
-        productService.updateProductStatus(productId, visible ? ProductStatus.ACTIVE : ProductStatus.INACTIVE);
+        productService.updateProductStatus(null, productId, visible ? ProductStatus.ACTIVE : ProductStatus.INACTIVE);
     }
 
     public List<ReportResponseDTO> getAllReports() {
@@ -251,12 +366,17 @@ public class AdminService {
                     .replace(")", "");
 
             boolean isApproved = false;
-            if ("ADMIN_APPROVED".equals(cleanStatus) || "RESOLVED".equals(cleanStatus) || "APPROVED".equals(cleanStatus)) {
+            if ("ADMIN_APPROVED".equals(cleanStatus)
+                    || "RESOLVED".equals(cleanStatus)
+                    || "RESOLVED_REFUNDED".equals(cleanStatus)
+                    || "APPROVED".equals(cleanStatus)) {
                 isApproved = true;
-            } else if ("REJECTED".equals(cleanStatus)) {
+            } else if ("REJECTED".equals(cleanStatus)
+                    || "CLOSED_REJECTED".equals(cleanStatus)
+                    || "DISMISSED".equals(cleanStatus)) {
                 isApproved = false;
             } else {
-                isApproved = true; // default
+                throw new IllegalArgumentException("Unsupported report resolution status: " + status);
             }
 
             com.example.jhapcham.report.dto.AdminActionDTO action = new com.example.jhapcham.report.dto.AdminActionDTO();
@@ -296,8 +416,7 @@ public class AdminService {
             try {
                 app = sellerApplicationRepository.findByUserId(sellerUserId).orElse(null);
             } catch (Exception e) {
-                // Log but don't fail the whole list
-                System.err.println("Error fetching application for seller " + sellerUserId + ": " + e.getMessage());
+                log.warn("Error fetching application for seller {}: {}", sellerUserId, e.getMessage());
             }
 
             return SellerAdminDetailDTO.builder()
@@ -317,7 +436,7 @@ public class AdminService {
                     .businessLicensePath(app != null ? app.getBusinessLicensePath() : null)
                     .taxCertificatePath(app != null ? app.getTaxCertificatePath() : null)
                     .build();
-        }).toList();
+        }).collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -347,7 +466,7 @@ public class AdminService {
         try {
             app = sellerApplicationRepository.findByUserId(sellerUserId).orElse(null);
         } catch (Exception e) {
-            System.err.println("Error fetching application for seller " + sellerUserId + ": " + e.getMessage());
+            log.warn("Error fetching application for seller {}: {}", sellerUserId, e.getMessage());
         }
 
         double totalCommission = sellerOrders.stream()
@@ -383,7 +502,7 @@ public class AdminService {
     public List<com.example.jhapcham.order.OrderSummaryDTO> getOrdersBySeller(Long sellerId) {
         return orderRepository.findOrdersBySeller(sellerId).stream()
                 .map(this::mapToOrderSummary)
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
     }
 
     public void approveSellerApplication(Long appId, String note) {
@@ -401,11 +520,11 @@ public class AdminService {
 
         List<com.example.jhapcham.order.OrderSummaryDTO> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
                 .map(this::mapToOrderSummary)
-                .toList();
+                .collect(Collectors.toList());
 
         List<ReportResponseDTO> reports = reportService.getAllReports().stream()
                 .filter(r -> r.getCustomerId() != null && r.getCustomerId().equals(userId))
-                .toList();
+                .collect(Collectors.toList());
 
         List<com.example.jhapcham.product.ProductResponseDTO> wishlist = wishlistService.getWishlist(userId);
 
@@ -416,7 +535,7 @@ public class AdminService {
 
         String favPayment = orderRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
                 .filter(o -> o.getPaymentMethod() != null)
-                .collect(java.util.stream.Collectors.groupingBy(o -> o.getPaymentMethod(), java.util.stream.Collectors.counting()))
+                .collect(Collectors.groupingBy(o -> o.getPaymentMethod(), Collectors.counting()))
                 .entrySet().stream()
                 .max(java.util.Map.Entry.comparingByValue())
                 .map(e -> e.getKey().name())
@@ -499,7 +618,7 @@ public class AdminService {
                     if (a.getCreatedAt() == null || b.getCreatedAt() == null) return 0;
                     return b.getCreatedAt().compareTo(a.getCreatedAt());
                 })
-                .toList();
+                .collect(Collectors.toList());
     }
 
     @Transactional

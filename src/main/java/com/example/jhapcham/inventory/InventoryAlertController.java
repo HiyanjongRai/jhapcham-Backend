@@ -1,11 +1,11 @@
 package com.example.jhapcham.inventory;
 
 import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,19 +19,14 @@ import java.util.Map;
 public class InventoryAlertController {
 
     private final InventoryAlertService alertService;
-    private final UserRepository userRepository;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     @GetMapping("/my-alerts")
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getMyAlerts(Authentication authentication) {
         try {
-            if (authentication == null || authentication.getName().equals("anonymousUser")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Please login"));
-            }
-            String principal = authentication.getName();
-            User user = userRepository.findByUsername(principal)
-                    .or(() -> userRepository.findByEmail(principal))
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            User user = currentUserService.requireUser(authentication);
+            currentUserService.requireSellerSelfOrAdmin(user, user.getId());
 
             List<InventoryAlertDTO> alerts = alertService.getSellerAlerts(user.getId());
             return ResponseEntity.ok(alerts);
@@ -43,16 +38,11 @@ public class InventoryAlertController {
     }
 
     @GetMapping("/unacknowledged")
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<?> getUnacknowledgedAlerts(Authentication authentication) {
         try {
-            if (authentication == null || authentication.getName().equals("anonymousUser")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Please login"));
-            }
-            String principal = authentication.getName();
-            User user = userRepository.findByUsername(principal)
-                    .or(() -> userRepository.findByEmail(principal))
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            User user = currentUserService.requireUser(authentication);
+            currentUserService.requireSellerSelfOrAdmin(user, user.getId());
 
             List<InventoryAlertDTO> alerts = alertService.getUnacknowledgedAlerts(user.getId());
             return ResponseEntity.ok(alerts);
@@ -64,9 +54,10 @@ public class InventoryAlertController {
     }
 
     @GetMapping("/{alertId}")
-    public ResponseEntity<?> getAlert(@PathVariable Long alertId) {
+    public ResponseEntity<?> getAlert(@PathVariable Long alertId, Authentication authentication) {
         try {
-            InventoryAlertDTO alert = alertService.getAlert(alertId);
+            User user = currentUserService.requireUser(authentication);
+            InventoryAlertDTO alert = alertService.getAlert(alertId, user);
             return ResponseEntity.ok(alert);
         } catch (Exception e) {
             log.error("Error fetching alert: {}", e.getMessage());
@@ -80,14 +71,8 @@ public class InventoryAlertController {
             @PathVariable Long alertId,
             Authentication authentication) {
         try {
-            if (authentication == null || authentication.getName().equals("anonymousUser")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Please login"));
-            }
-            String principal = authentication.getName();
-            User user = userRepository.findByUsername(principal)
-                    .or(() -> userRepository.findByEmail(principal))
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            User user = currentUserService.requireUser(authentication);
+            currentUserService.requireSellerSelfOrAdmin(user, user.getId());
 
             alertService.acknowledgeAlert(alertId, user.getId());
             return ResponseEntity.ok(Map.of("message", "Alert acknowledged"));

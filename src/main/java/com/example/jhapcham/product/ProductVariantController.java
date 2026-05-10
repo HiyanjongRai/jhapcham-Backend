@@ -2,6 +2,7 @@ package com.example.jhapcham.product;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -14,11 +15,14 @@ import java.util.Map;
 public class ProductVariantController {
 
     private final ProductVariantService variantService;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
-    /** List all active variants for a product */
+    /** List product variants, optionally including inactive ones for editing */
     @GetMapping("/{productId}/variants")
-    public ResponseEntity<List<ProductVariantDTO>> getVariants(@PathVariable Long productId) {
-        return ResponseEntity.ok(variantService.getProductVariants(productId));
+    public ResponseEntity<List<ProductVariantDTO>> getVariants(
+            @PathVariable Long productId,
+            @RequestParam(defaultValue = "false") boolean includeInactive) {
+        return ResponseEntity.ok(variantService.getProductVariants(productId, includeInactive));
     }
 
     /** Get a single variant */
@@ -40,8 +44,10 @@ public class ProductVariantController {
     @PostMapping("/{productId}/variants")
     public ResponseEntity<ProductVariantDTO> createVariant(
             @PathVariable Long productId,
-            @RequestBody ProductVariantDTO.CreateRequest req) {
-        return ResponseEntity.ok(variantService.createVariant(productId, req));
+            @RequestBody ProductVariantDTO.CreateRequest req,
+            Authentication authentication) {
+        return ResponseEntity.ok(
+                variantService.createVariant(currentUserService.requireUser(authentication).getId(), productId, req));
     }
 
     /**
@@ -50,7 +56,8 @@ public class ProductVariantController {
     @PatchMapping("/variants/{variantId}")
     public ResponseEntity<ProductVariantDTO> updateVariant(
             @PathVariable Long variantId,
-            @RequestBody Map<String, Object> body) {
+            @RequestBody Map<String, Object> body,
+            Authentication authentication) {
 
         BigDecimal price = body.containsKey("price")
                 ? new BigDecimal(body.get("price").toString()) : null;
@@ -59,7 +66,8 @@ public class ProductVariantController {
         Boolean active = body.containsKey("active")
                 ? Boolean.parseBoolean(body.get("active").toString()) : null;
 
-        return ResponseEntity.ok(variantService.updateVariant(variantId, price, stock, active));
+        return ResponseEntity.ok(variantService.updateVariant(currentUserService.requireUser(authentication).getId(),
+                variantId, price, stock, active));
     }
 
     /**

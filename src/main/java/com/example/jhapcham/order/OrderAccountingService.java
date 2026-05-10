@@ -142,6 +142,20 @@ public class OrderAccountingService {
     }
 
     @Transactional
+    public void finalizeDeliveredOrder(Order order) {
+        if (order.getPaymentMethod() == PaymentMethod.COD) {
+            if (order.getPaymentStatus() == PaymentStatus.COD_REMITTED) {
+                finalizeSellerAccounting(order);
+            }
+            return;
+        }
+
+        if (order.getPaymentStatus() == PaymentStatus.PAID) {
+            finalizeSellerAccounting(order);
+        }
+    }
+
+    @Transactional
     public void markCommissionAsPaid(Order order) {
         if (order.getCommissionStatus() != CommissionStatus.UNPAID && order.getCommissionStatus() != CommissionStatus.PENDING) {
             throw new RuntimeException("Cannot pay commission: current status is " + order.getCommissionStatus());
@@ -168,10 +182,17 @@ public class OrderAccountingService {
     @Transactional
     public void cancelAccounting(Order order) {
         if (order.isSellerAccounted()) {
-             // If already accounted, we might need to deduct from SellerProfile.
-             // But usually you can't cancel a DELIVERED order directly. 
-             // Just in case:
-             log.warn("Order {} was already finalized, manual reversal required for SellerProfile.", order.getId());
+             SellerProfile seller = order.getItems().isEmpty() ? null : order.getItems().get(0).getProduct().getSellerProfile();
+             if (seller != null) {
+                 seller.setTotalIncome(safeSubtract(seller.getTotalIncome(), order.getSellerGrossAmount()));
+                 seller.setTotalShippingCost(safeSubtract(seller.getTotalShippingCost(), order.getSellerShippingCharge()));
+                 seller.setTotalCommission(safeSubtract(seller.getTotalCommission(), order.getMarketplaceCommission()));
+                 seller.setTotalVatCollected(safeSubtract(seller.getTotalVatCollected(),
+                         order.getVatAmount() != null ? order.getVatAmount() : BigDecimal.ZERO));
+                 seller.setNetIncome(safeSubtract(seller.getNetIncome(), order.getSellerNetAmount()));
+                 sellerProfileRepository.save(seller);
+             }
+             order.setSellerAccounted(false);
         }
         
         order.setCommissionStatus(CommissionStatus.CANCELLED);
@@ -216,5 +237,11 @@ public class OrderAccountingService {
             return BigDecimal
                     .valueOf(seller.getInsideValleyDeliveryFee() != null ? seller.getInsideValleyDeliveryFee() : 0);
         }
+    }
+
+    private BigDecimal safeSubtract(BigDecimal current, BigDecimal amount) {
+        BigDecimal left = current != null ? current : BigDecimal.ZERO;
+        BigDecimal right = amount != null ? amount : BigDecimal.ZERO;
+        return left.subtract(right);
     }
 }

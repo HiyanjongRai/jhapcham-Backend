@@ -8,13 +8,15 @@ import com.example.jhapcham.product.ProductResponseDTO;
 import com.example.jhapcham.product.ProductService;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -71,16 +73,21 @@ public class WishlistService {
 
                 List<Wishlist> items = wishlistRepository.findByUser(user);
 
+                List<Long> productIds = items.stream()
+                                .map(w -> w.getProduct().getId())
+                                .distinct()
+                                .toList();
+                Map<Long, ProductResponseDTO> activeProductsById = productService.listActiveProductsByIds(productIds)
+                                .stream()
+                                .collect(Collectors.toMap(ProductResponseDTO::getId, p -> p));
+
                 List<ProductResponseDTO> result = new ArrayList<>();
                 for (Wishlist w : items) {
-                        result.add(productService.listAllActiveProducts()
-                                        .stream()
-                                        .filter(p -> p.getId().equals(w.getProduct().getId()))
-                                        .findFirst()
-                                        .orElse(null));
+                        ProductResponseDTO product = activeProductsById.get(w.getProduct().getId());
+                        if (product != null) {
+                                result.add(product);
+                        }
                 }
-
-                result.removeIf(p -> p == null);
                 return result;
         }
 

@@ -97,13 +97,12 @@ public enum OrderStatus {
 ```java
 public enum PaymentMethod {
     COD,      // Cash on Delivery
-    KHALTI,   // Nepali payment gateway
-    ESEWA,    // Nepali payment gateway
+    ESEWA,    // eSewa payment gateway (sandbox supported)
     STRIPE    // International payment
 }
 ```
 
-✅ **Covers all major payment options for Nepal**
+✅ **Supports COD + eSewa + Stripe, while allowing legacy values in the database**
 
 ---
 

@@ -32,5 +32,6 @@ public record ProductUpdateRequestDTO(
                 Double insideValleyShipping,
                 Double outsideValleyShipping,
                 Double sellerFreeShippingMinOrder,
+                Boolean hasVariants,
                 String variantsJson) {
 }

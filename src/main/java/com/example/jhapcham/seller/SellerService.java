@@ -185,27 +185,21 @@ public class SellerService {
                         .topSellingProducts(java.util.Collections.emptyList())
                         .build();
                 }
-
                 SellerProfile profile = profileOpt.get();
                 // Get all orders for this seller
                 List<Order> allOrders = orderRepository.findOrdersBySeller(sellerUserId);
 
                 // Count orders by status
                 Long deliveredCount = orderRepository.countOrdersBySellerAndStatus(sellerUserId, OrderStatus.DELIVERED);
-                Long pendingCount = orderRepository.countOrdersBySellerAndStatus(sellerUserId, OrderStatus.NEW);
-                Long processingCount = orderRepository.countOrdersBySellerAndStatus(sellerUserId,
-                                OrderStatus.PROCESSING);
-                Long shippedCount = orderRepository.countOrdersBySellerAndStatus(sellerUserId,
-                                OrderStatus.SHIPPED_TO_BRANCH)
-                                + orderRepository.countOrdersBySellerAndStatus(sellerUserId,
-                                                OrderStatus.OUT_FOR_DELIVERY);
-                Long canceledCount = orderRepository.countOrdersBySellerAndStatus(sellerUserId, OrderStatus.CANCELED);
+                Long pendingCount = orderRepository.countOrdersBySellerAndStatus(sellerUserId, OrderStatus.PENDING);
+                Long processingCount = orderRepository.countOrdersBySellerAndStatus(sellerUserId, OrderStatus.PROCESSING);
+                Long shippedCount = orderRepository.countOrdersBySellerAndStatus(sellerUserId, OrderStatus.SHIPPED);
+                Long canceledCount = orderRepository.countOrdersBySellerAndStatus(sellerUserId, OrderStatus.CANCELLED);
 
                 // Product counts
                 Long totalProducts = productRepository.countBySellerProfile(profile);
                 Long activeProducts = productRepository.countBySellerProfileAndStatus(profile, ProductStatus.ACTIVE);
-                Long inactiveProducts = productRepository.countBySellerProfileAndStatus(profile,
-                                ProductStatus.INACTIVE);
+                Long inactiveProducts = productRepository.countBySellerProfileAndStatus(profile, ProductStatus.INACTIVE);
 
                 // Follower count
                 Long followerCount = followRepository.countBySeller(profile);

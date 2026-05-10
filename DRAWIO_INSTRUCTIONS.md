@@ -24,7 +24,6 @@ sequenceDiagram
     participant FE as Frontend (Next.js)
     participant BE as Backend API (Node.js)
     participant DB as PostgreSQL Database
-    participant eSewa as eSewa Payment Gateway
     participant IBCF as Recommendation Engine
 
     %% Flow 1: Authentication
@@ -91,41 +90,7 @@ sequenceDiagram
     BE->>DB: INSERT INTO orders (status=PENDING)
     DB-->>BE: orderId
     BE-->>FE: orderId, amount, payment methods
-    FE-->>Customer: Show Payment Options (eSewa/COD)
-
-    %% Flow 4: eSewa Payment
-    Note over Customer, IBCF: FLOW 4: eSewa Payment & Order Processing
-    Customer->>FE: Select eSewa "Pay Now"
-    FE->>BE: POST /api/payment/esewa/initiate
-    BE->>BE: Generate HMAC-SHA256 Signature
-    BE->>DB: UPDATE orders (status=INITIATED)
-    BE-->>FE: Return eSewa form params, signature
-    FE->>eSewa: Auto-submit form to eSewa URL
-    Customer->>eSewa: Authenticate & Confirm Payment
-    loop Max 3 retries
-        alt Failed Attempt
-            eSewa-->>Customer: Show Error
-            Customer->>eSewa: Retry
-        end
-    end
-    alt Payment Successful
-        eSewa-->>FE: Redirect success_url ?data=Base64
-        FE->>BE: POST /api/payment/esewa/verify
-        BE->>BE: Decode Base64 payload
-        BE->>eSewa: GET transaction/status
-        eSewa-->>BE: return COMPLETE
-        BE->>DB: UPDATE orders (status=CONFIRMED, payment=PAID)
-        BE->>DB: UPDATE products (deduct stock)
-        BE->>DB: INSERT INTO order_items
-        BE-->>FE: 200 OK {order}
-        FE-->>Customer: Show Confirmation Page
-    else Payment Cancelled/Failed
-        eSewa-->>FE: Redirect failure_url
-        FE->>BE: POST /api/payment/esewa/failure
-        BE->>DB: UPDATE orders (status=CANCELLED)
-        BE-->>FE: 200 OK Failed
-        FE-->>Customer: Show Payment Failed Page
-    end
+    FE-->>Customer: Show Payment Options (COD/eSewa)
 
     %% Flow 5: Admin
     Note over Customer, IBCF: FLOW 5: Admin Product & Order Management

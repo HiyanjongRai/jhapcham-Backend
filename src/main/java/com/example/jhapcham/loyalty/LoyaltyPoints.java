@@ -40,11 +40,17 @@ public class LoyaltyPoints {
     private LocalDateTime lastRedeemedAt;
 
     public void addPoints(Long points) {
+        if (points == null || points <= 0) {
+            return;
+        }
         this.totalPoints += points;
         this.availablePoints += points;
     }
 
     public void redeemPoints(Long points) {
+        if (points == null || points <= 0) {
+            throw new RuntimeException("Points to redeem must be greater than zero");
+        }
         if (points > this.availablePoints) {
             throw new RuntimeException("Insufficient points for redemption");
         }

@@ -3,6 +3,7 @@ package com.example.jhapcham.message;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.product.ProductImage;
 import com.example.jhapcham.product.ProductRepository;
+import com.example.jhapcham.user.model.Role;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class MessageService {
                     .findById(Objects.requireNonNull(request.getProductId(), "Product ID cannot be null"))
                     .orElse(null);
         }
+        validateConversationPolicy(sender, receiver, product);
 
         Message message = Message.builder()
                 .sender(sender)
@@ -90,6 +92,31 @@ public class MessageService {
     @Transactional
     public void markAsRead(Long receiverId, Long senderId) {
         messageRepository.markConversationAsRead(receiverId, senderId);
+    }
+
+    private void validateConversationPolicy(User sender, User receiver, Product product) {
+        if (sender.getId().equals(receiver.getId())) {
+            throw new RuntimeException("Cannot send a message to yourself");
+        }
+        if (sender.getRole() == Role.ADMIN || receiver.getRole() == Role.ADMIN) {
+            return;
+        }
+        if ((sender.getRole() == Role.CUSTOMER && receiver.getRole() == Role.SELLER)
+                || (sender.getRole() == Role.SELLER && receiver.getRole() == Role.CUSTOMER)) {
+            if (product == null) {
+                throw new RuntimeException("Customer-seller messages must be linked to a product");
+            }
+            Long productSellerUserId = product.getSellerProfile() != null
+                    && product.getSellerProfile().getUser() != null
+                    ? product.getSellerProfile().getUser().getId()
+                    : null;
+            Long sellerUserId = sender.getRole() == Role.SELLER ? sender.getId() : receiver.getId();
+            if (!Objects.equals(productSellerUserId, sellerUserId)) {
+                throw new RuntimeException("Messages for this product must include the owning seller");
+            }
+            return;
+        }
+        throw new RuntimeException("This message route is not allowed");
     }
 
     private MessageDTO convertToDTO(Message message) {

@@ -9,20 +9,29 @@ import com.example.jhapcham.activity.UserActivityService;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.product.ProductRepository;
+import com.example.jhapcham.product.ProductStatus;
 import com.example.jhapcham.product.ProductVariant;
 import com.example.jhapcham.product.ProductVariantRepository;
 import com.example.jhapcham.seller.SellerProfile;
 import com.example.jhapcham.seller.SellerProfileRepository;
+import com.example.jhapcham.payment.Payment;
+import com.example.jhapcham.payment.PaymentRepository;
+import com.example.jhapcham.payment.PaymentState;
+import com.example.jhapcham.user.model.Role;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import com.example.jhapcham.promocode.PromoCodeService;
+import com.example.jhapcham.promocode.PromoCodeService.DiscountResult;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -30,6 +39,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class OrderService {
+    private static final SecureRandom DELIVERY_OTP_RANDOM = new SecureRandom();
+    private static final int DELIVERY_OTP_EXPIRY_MINUTES = 10;
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -37,8 +48,8 @@ public class OrderService {
     private final UserRepository userRepository;
     private final CartItemRepository cartItemRepository;
     private final ProductVariantRepository productVariantRepository;
-    private final SellerProfileRepository sellerProfileRepository;
     private final UserActivityService userActivityService;
+    private final PaymentRepository paymentRepository;
 
     // Injected specialized services
     private final OrderStockService orderStockService;
@@ -48,7 +59,7 @@ public class OrderService {
     private final com.example.jhapcham.notification.EmailService emailService;
     private final com.example.jhapcham.promocode.PromoCodeService promoCodeService;
     private final com.example.jhapcham.loyalty.LoyaltyService loyaltyService;
-    private final com.example.jhapcham.notification.SmsService smsService;
+    private final ObjectProvider<com.example.jhapcham.delivery.ShipmentService> shipmentServiceProvider;
 
     // =========================
     // PREVIEW ORDER
@@ -56,25 +67,32 @@ public class OrderService {
     @Transactional
     public OrderPreviewDTO previewOrder(CheckoutRequestDTO dto) {
         validateItems(dto);
+        validateCouponUser(dto.getCouponCode(), dto.getUserId());
 
         // Group items by Seller to simulate the split
         Map<Long, List<CheckoutItemDTO>> itemsBySeller = groupItemsBySeller(dto.getItems());
 
         BigDecimal totalItemsCost = BigDecimal.ZERO;
         BigDecimal totalShipping = BigDecimal.ZERO;
-        BigDecimal totalDiscount = BigDecimal.ZERO;
         BigDecimal totalGrand = BigDecimal.ZERO;
         List<OrderItemResponseDTO> allItemResponses = new ArrayList<>();
 
         for (List<CheckoutItemDTO> sellerItems : itemsBySeller.values()) {
-            CheckoutComputationResult data = computeForItems(sellerItems, dto.getShippingLocation(),
-                    dto.getCouponCode());
+            CheckoutComputationResult data = computeForItems(sellerItems, dto.getShippingLocation(), null, null);
 
             totalItemsCost = totalItemsCost.add(data.itemsTotal);
             totalShipping = totalShipping.add(data.shippingFee);
-            totalDiscount = totalDiscount.add(data.discountTotal);
             totalGrand = totalGrand.add(data.grandTotal);
             allItemResponses.addAll(data.itemResponses);
+        }
+
+        BigDecimal totalDiscount = BigDecimal.ZERO;
+        if (dto.getCouponCode() != null && !dto.getCouponCode().isBlank()) {
+            totalDiscount = promoCodeService.calculateDiscount(dto.getCouponCode(), dto.getItems(), dto.getUserId()).getAmount();
+            totalGrand = totalGrand.subtract(totalDiscount);
+            if (totalGrand.compareTo(BigDecimal.ZERO) < 0) {
+                totalGrand = BigDecimal.ZERO;
+            }
         }
 
         return OrderPreviewDTO.builder()
@@ -99,6 +117,14 @@ public class OrderService {
         User user = dto.getUserId() != null
                 ? userRepository.findById(dto.getUserId()).orElse(null)
                 : null;
+        validateCouponUser(dto.getCouponCode(), user != null ? user.getId() : null);
+        String idempotencyKey = normalizeIdempotencyKey(dto.getIdempotencyKey());
+        List<Order> existingOrders = findExistingIdempotentOrders(user, dto.getEmail(), idempotencyKey);
+        if (!existingOrders.isEmpty()) {
+            return existingOrders.stream()
+                    .map(order -> toSummaryDTO(order, mapItems(order)))
+                    .toList();
+        }
 
         PaymentMethod paymentMethod = parsePaymentMethod(dto.getPaymentMethod());
 
@@ -108,15 +134,49 @@ public class OrderService {
         List<OrderSummaryDTO> summaries = new ArrayList<>();
         boolean anyPromoApplied = false;
 
+        // 1. Calculate the overall computation for all items to get global totals (especially for coupons)
+        CheckoutComputationResult globalData = computeForItems(dto.getItems(), dto.getShippingLocation(),
+                dto.getCouponCode(), user != null ? user.getId() : null);
+        BigDecimal totalItemsSum = globalData.itemsTotal;
+        BigDecimal globalDiscount = globalData.discountTotal;
+        if (globalDiscount.compareTo(BigDecimal.ZERO) > 0) {
+            anyPromoApplied = true;
+        }
+
+        // 2. Iterate through each seller's group and create sub-orders
         for (Map.Entry<Long, List<CheckoutItemDTO>> entry : itemsBySeller.entrySet()) {
             List<CheckoutItemDTO> sellerItems = entry.getValue();
 
-            // Calculate for this specific seller's order
-            CheckoutComputationResult data = computeForItems(sellerItems, dto.getShippingLocation(),
-                    dto.getCouponCode());
-            if (data.discountTotal.compareTo(BigDecimal.ZERO) > 0) {
-                anyPromoApplied = true;
+            // Calculate base values for this specific seller's order
+            CheckoutComputationResult sellerBaseData = computeForItems(sellerItems, dto.getShippingLocation(), null, null);
+
+            // Smart discount distribution: SELLER_ONLY vs GLOBAL
+            PromoCodeService.DiscountResult dr = promoCodeService.calculateDiscount(dto.getCouponCode(), dto.getItems(),
+                    user != null ? user.getId() : null);
+            BigDecimal sellerDiscount = BigDecimal.ZERO;
+
+            if (dr.getAmount().compareTo(BigDecimal.ZERO) > 0) {
+                if (dr.getApplicableSellerId() != null) {
+                    // This is a SELLER_ONLY coupon. Only apply to the owner seller's sub-order.
+                    if (dr.getApplicableSellerId().equals(entry.getKey())) {
+                        sellerDiscount = dr.getAmount();
+                    }
+                } else {
+                    // This is a GLOBAL coupon. Distribute proportionally across all sellers.
+                    if (totalItemsSum.compareTo(BigDecimal.ZERO) > 0) {
+                        sellerDiscount = dr.getAmount().multiply(sellerBaseData.itemsTotal)
+                                .divide(totalItemsSum, 2, RoundingMode.HALF_UP);
+                    }
+                }
             }
+
+            // Recalculate Grand Total for this seller: Items + Shipping + VAT - Distributed Discount
+            BigDecimal sellerGrandTotal = sellerBaseData.itemsTotal
+                    .add(sellerBaseData.shippingFee)
+                    .add(sellerBaseData.vatAmount)
+                    .subtract(sellerDiscount);
+
+            if (sellerGrandTotal.compareTo(BigDecimal.ZERO) < 0) sellerGrandTotal = BigDecimal.ZERO;
 
             Order order = Order.builder()
                     .user(user)
@@ -125,17 +185,20 @@ public class OrderService {
                     .customerEmail(dto.getEmail())
                     .shippingAddress(dto.getAddress())
                     .shippingLocation(dto.getShippingLocation())
-                    .customerAlternativePhone(dto.getAlternativePhone()) // NEW
-                    .deliveryTimePreference(dto.getDeliveryTimePreference()) // NEW
-                    .orderNote(dto.getOrderNote()) // NEW
+                    .customerAlternativePhone(dto.getAlternativePhone())
+                    .deliveryTimePreference(dto.getDeliveryTimePreference())
+                    .orderNote(dto.getOrderNote())
                     .paymentMethod(paymentMethod)
-                    .status(OrderStatus.NEW)
-                    .itemsTotal(data.itemsTotal)
-                    .shippingFee(data.shippingFee)
-                    .vatAmount(data.vatAmount)
-                    .discountTotal(data.discountTotal)
-                    .grandTotal(data.grandTotal)
+                    .status(paymentMethod == PaymentMethod.COD ? OrderStatus.COD_PENDING : OrderStatus.DRAFT)
+                    .paymentStatus(initialPaymentStatus(paymentMethod))
+                    .itemsTotal(sellerBaseData.itemsTotal)
+                    .shippingFee(sellerBaseData.shippingFee)
+                    .vatAmount(sellerBaseData.vatAmount)
+                    .discountTotal(sellerDiscount) // DISTRIBUTED DISCOUNT
+                    .grandTotal(sellerGrandTotal)
                     .createdAt(LocalDateTime.now())
+                    .appliedCoupon(dto.getCouponCode())
+                    .idempotencyKey(buildOrderIdempotencyKey(idempotencyKey, entry.getKey()))
                     // Initialize accounting fields to ZERO
                     .sellerGrossAmount(BigDecimal.ZERO)
                     .sellerShippingCharge(BigDecimal.ZERO)
@@ -144,23 +207,26 @@ public class OrderService {
                     .build();
 
             orderRepository.save(order);
-            // NOW initialize accounting since items are not yet there, BUT WAIT...
-            // the order items are added below. We must call this AFTER the loop.
 
-            for (OrderItemResponseDTO r : data.itemResponses) {
-                Product product = data.productById.get(r.getProductId());
+            LocalDateTime paymentNow = LocalDateTime.now();
+            Payment payment = Payment.builder()
+                    .order(order)
+                    .method(paymentMethod)
+                    .state(paymentMethod == PaymentMethod.COD ? PaymentState.PENDING : PaymentState.INITIATED)
+                    .amount(order.getGrandTotal())
+                    .initiatedAt(paymentMethod == PaymentMethod.COD ? null : paymentNow)
+                    .createdAt(paymentNow)
+                    .updatedAt(paymentNow)
+                    .build();
+            paymentRepository.save(payment);
 
-                // Resolve variant (must be present in new system)
+            for (OrderItemResponseDTO r : sellerBaseData.itemResponses) {
+                Product product = sellerBaseData.productById.get(r.getProductId());
+
+                // Resolve variant
                 ProductVariant variant = r.getVariantId() != null
                         ? productVariantRepository.findById(r.getVariantId()).orElse(null)
                         : null;
-
-                // Deduct stock from variant (variant-first, strict)
-                if (variant != null) {
-                    orderStockService.deductStock(variant, r.getQuantity());
-                } else {
-                    log.warn("No variant for order item productId={}. Skipping variant stock deduction.", r.getProductId());
-                }
 
                 BigDecimal itemVat = r.getLineTotal().multiply(new BigDecimal("0.13")).setScale(2, RoundingMode.HALF_UP);
 
@@ -197,8 +263,9 @@ public class OrderService {
                 }
             }
 
-            // Mark stock as deducted so restoration is only done if this flag is true
-            orderStockService.markStockDeducted(order);
+            if (paymentMethod == PaymentMethod.COD) {
+                orderStockService.deductStockForOrder(order);
+            }
             
             // Now that all items are added, initialize accounting
             orderAccountingService.initializeAccounting(order);
@@ -207,37 +274,12 @@ public class OrderService {
             summaries.add(toSummaryDTO(order, mapItems(order)));
             log.info("Order {} placed successfully for customer {}", order.getId(), dto.getFullName());
 
-            // 1. Notify Customer of Order Confirmation
-            emailService.sendOrderConfirmationToCustomer(order.getCustomerEmail(), order.getCustomerName(), order.getId(), order.getGrandTotal());
-
-            // 2. Notify Seller of New Order
-            if (!order.getItems().isEmpty()) {
-                OrderItem firstItem = order.getItems().get(0);
-                if (firstItem.getProduct() != null && firstItem.getProduct().getSellerProfile() != null) {
-                    SellerProfile seller = firstItem.getProduct().getSellerProfile();
-                    emailService.sendNewOrderAlertToSeller(
-                        seller.getUser().getEmail(), 
-                        seller.getUser().getFullName(), 
-                        order.getId(), 
-                        order.getGrandTotal()
-                    );
-                }
-            }
-
-            // Send order confirmation SMS
-            if (user != null && user.getContactNumber() != null) {
-                try {
-                    smsService.sendOrderConfirmationSms(user, user.getContactNumber(),
-                            String.valueOf(order.getId()), "");
-                } catch (Exception e) {
-                    log.error("Failed to send order confirmation SMS for order {}", order.getId(), e);
-                }
-            }
+            sendPlacementNotifications(order, user);
         }
 
         // Increment promo usage if it was applied effectively to at least one sub-order
         if (anyPromoApplied && dto.getCouponCode() != null && !dto.getCouponCode().isEmpty()) {
-            promoCodeService.incrementUsage(dto.getCouponCode());
+            promoCodeService.incrementUsage(dto.getCouponCode(), user != null ? user.getId() : null);
         }
 
         return summaries;
@@ -268,12 +310,13 @@ public class OrderService {
         checkout.setPhone(dto.getPhone());
         checkout.setEmail(dto.getEmail());
         checkout.setAddress(dto.getAddress());
-        checkout.setAlternativePhone(dto.getAlternativePhone()); // NEW
-        checkout.setDeliveryTimePreference(dto.getDeliveryTimePreference()); // NEW
-        checkout.setOrderNote(dto.getOrderNote()); // NEW
+        checkout.setAlternativePhone(dto.getAlternativePhone());
+        checkout.setDeliveryTimePreference(dto.getDeliveryTimePreference());
+        checkout.setOrderNote(dto.getOrderNote());
         checkout.setShippingLocation(dto.getShippingLocation());
         checkout.setPaymentMethod(dto.getPaymentMethod());
-        checkout.setCouponCode(dto.getCouponCode()); // Pass the coupon code
+        checkout.setCouponCode(dto.getCouponCode());
+        checkout.setIdempotencyKey(dto.getIdempotencyKey());
         checkout.setItems(checkoutItems);
 
         List<OrderSummaryDTO> summaries = placeOrder(checkout);
@@ -288,37 +331,7 @@ public class OrderService {
 
     @Transactional
     public OrderSummaryDTO sellerProcessOrder(Long orderId, Long sellerId) {
-        Order order = getOrderOrFail(orderId);
-        if (!sellerOwns(order, sellerId)) {
-            throw new AuthorizationException("You do not have permission to process this order");
-        }
-
-        orderStatusService.validateTransition(order.getStatus(), OrderStatus.PROCESSING);
-        order.setStatus(OrderStatus.PROCESSING);
-
-        orderRepository.save(order);
-        log.info("Seller {} moved order {} to PROCESSING", sellerId, orderId);
-
-        // Send Status Update Email to Customer
-        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "PROCESSING");
-
-        // Notify Customer
-        try {
-            notificationService.createNotification(
-                    order.getUser(),
-                    "Order Update: Processing",
-                    "Your order #" + order.getId() + " is now being processed by the merchant.",
-                    com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
-                    order.getId());
-        } catch (
-
-        Exception e) {
-            log.error("Failed to notify customer of order processing", e);
-        }
-
-        return
-
-        toSummaryDTO(order, mapItems(order));
+        return updateSellerOwnedOrderStatus(orderId, sellerId, OrderStatus.PROCESSING, "Seller moved order to processing");
     }
 
     @Transactional
@@ -328,30 +341,9 @@ public class OrderService {
             throw new AuthorizationException("You do not have permission to assign branches to this order");
         }
 
-        orderStatusService.validateTransition(order.getStatus(), OrderStatus.SHIPPED_TO_BRANCH);
-
         order.setAssignedBranch(DeliveryBranch.fromString(dto.getBranch()));
-        order.setStatus(OrderStatus.SHIPPED_TO_BRANCH);
-
-        orderRepository.save(order);
-        log.info("Seller {} assigned branch {} to order {}", sellerId, dto.getBranch(), orderId);
-
-        // Send Status Update Email to Customer
-        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "SHIPPED_TO_BRANCH");
-
-        // Notify Customer
-        try {
-            notificationService.createNotification(
-                    order.getUser(),
-                    "Order Update: Shipped to Branch",
-                    "Your order #" + order.getId() + " has been shipped to the " + dto.getBranch() + " branch.",
-                    com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
-                    order.getId());
-        } catch (Exception e) {
-            log.error("Failed to notify customer of branch assignment", e);
-        }
-
-        return toSummaryDTO(order, mapItems(order));
+        return applyOrderStatusChange(order, OrderStatus.PACKED,
+                "Seller assigned branch " + dto.getBranch() + " and prepared shipment");
     }
 
     @Transactional
@@ -367,40 +359,8 @@ public class OrderService {
             throw new BusinessValidationException("Branch mismatch for this order");
         }
 
-        if (next == OrderStatus.DELIVERED) {
-            throw new BusinessValidationException("Direct status update to DELIVERED is not allowed. Use OTP verification instead.");
-        }
-
-        orderStatusService.validateTransition(order.getStatus(), next);
-        order.setStatus(next);
-
-        if (next == OrderStatus.OUT_FOR_DELIVERY) {
-            String otp = String.format("%06d", new Random().nextInt(999999));
-            order.setDeliveryOtp(otp);
-            order.setDeliveryOtpExpiry(LocalDateTime.now().plusHours(24));
-            emailService.sendDeliveryOtpEmail(order.getCustomerEmail(), order.getCustomerName(), otp);
-            log.info("OTP generated and sent for order {}", orderId);
-        }
-
-        orderRepository.save(order);
-        log.info("Branch {} updated order {} status to {}", branchRaw, orderId, nextStatusRaw);
-
-        // Send Status Update Email to Customer
-        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), nextStatusRaw);
-
-        // Notify Customer
-        try {
-            notificationService.createNotification(
-                    order.getUser(),
-                    "Order Update: " + nextStatusRaw,
-                    "The status of your order #" + order.getId() + " has been updated to: " + nextStatusRaw + ".",
-                    com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
-                    order.getId());
-        } catch (Exception e) {
-            log.error("Failed to notify customer of branch status update", e);
-        }
-
-        return toSummaryDTO(order, mapItems(order));
+        return applyOrderStatusChange(order, next,
+                "Branch " + branchRaw + " updated order to " + nextStatusRaw);
     }
 
     @Transactional
@@ -412,8 +372,8 @@ public class OrderService {
             throw new BusinessValidationException("Branch mismatch for this order");
         }
 
-        if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
-            throw new BusinessValidationException("Order is not out for delivery");
+        if (order.getStatus() != OrderStatus.SHIPPED) {
+            throw new BusinessValidationException("Order is not in shipped state");
         }
 
         if (order.getDeliveryOtp() == null || !order.getDeliveryOtp().equals(otp)) {
@@ -425,24 +385,20 @@ public class OrderService {
         }
 
         // OTP verified successfully
-        orderStatusService.validateTransition(order.getStatus(), OrderStatus.DELIVERED);
-        order.setStatus(OrderStatus.DELIVERED);
-        order.setDeliveredAt(LocalDateTime.now());
         order.setDeliveredBranch(branch);
-        orderAccountingService.finalizeSellerAccounting(order);
-
+        applyOrderStatusChange(order, OrderStatus.DELIVERED,
+                "Delivery OTP verified successfully");
         orderRepository.save(order);
         log.info("Order {} delivered successfully with OTP verification", orderId);
 
         // Send Final Status Update Email
         emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "DELIVERED");
 
-        // Award loyalty points to the customer
+        // Award loyalty points
         if (order.getUser() != null) {
             try {
                 Long orderTotal = order.getGrandTotal() != null ? order.getGrandTotal().longValue() : 0L;
                 loyaltyService.addPointsForOrder(order.getUser().getId(), orderTotal);
-                log.info("Loyalty points awarded to user {} for order {}", order.getUser().getId(), orderId);
             } catch (Exception e) {
                 log.error("Failed to award loyalty points for order {}", orderId, e);
             }
@@ -471,23 +427,22 @@ public class OrderService {
             throw new BusinessValidationException("Branch mismatch for this order");
         }
 
-        if (order.getStatus() != OrderStatus.OUT_FOR_DELIVERY) {
-            throw new BusinessValidationException("Order is not out for delivery");
+        if (order.getStatus() != OrderStatus.SHIPPED) {
+            throw new BusinessValidationException("Order is not in shipped state");
         }
 
-        if (order.getDeliveryOtpResendCount() >= 3) {
+        if (order.getDeliveryOtpResendCount() >= 5) {
             throw new BusinessValidationException("Maximum OTP resend attempts exceeded");
         }
 
-        String otp = String.format("%06d", new Random().nextInt(999999));
-        order.setDeliveryOtp(otp);
-        order.setDeliveryOtpExpiry(LocalDateTime.now().plusHours(24));
+        issueDeliveryOtp(order);
         order.setDeliveryOtpResendCount(order.getDeliveryOtpResendCount() + 1);
 
-        emailService.sendDeliveryOtpEmail(order.getCustomerEmail(), order.getCustomerName(), otp);
+        emailService.sendDeliveryOtpEmail(order.getCustomerEmail(), order.getCustomerName(), order.getDeliveryOtp());
         orderRepository.save(order);
         log.info("Resent delivery OTP for order {}", orderId);
     }
+
 
     @Transactional
     public OrderSummaryDTO sellerExpressDispatch(Long orderId, Long sellerId, AssignBranchDTO dto) {
@@ -497,30 +452,14 @@ public class OrderService {
         }
 
         DeliveryBranch branch = DeliveryBranch.fromString(dto.getBranch());
-        
-        // Step 1: Assign Branch
-        orderStatusService.validateTransition(order.getStatus(), OrderStatus.SHIPPED_TO_BRANCH);
-        order.setStatus(OrderStatus.SHIPPED_TO_BRANCH);
         order.setAssignedBranch(branch);
 
-        // Step 2: Immediate Out for Delivery
-        orderStatusService.validateTransition(order.getStatus(), OrderStatus.OUT_FOR_DELIVERY);
-        order.setStatus(OrderStatus.OUT_FOR_DELIVERY);
-
-        // Step 3: Generate OTP
-        String otp = String.format("%06d", new Random().nextInt(999999));
-        order.setDeliveryOtp(otp);
-        order.setDeliveryOtpExpiry(LocalDateTime.now().plusHours(24));
+        issueDeliveryOtp(order);
         
-        emailService.sendDeliveryOtpEmail(order.getCustomerEmail(), order.getCustomerName(), otp);
+        emailService.sendDeliveryOtpEmail(order.getCustomerEmail(), order.getCustomerName(), order.getDeliveryOtp());
         
-        orderRepository.save(order);
-        log.info("Seller {} performed EXPRESS DISPATCH for order {} through branch {}", sellerId, orderId, branch);
-
-        // Notify Customer
-        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "OUT_FOR_DELIVERY");
-
-        return toSummaryDTO(order, mapItems(order));
+        return applyOrderStatusChange(order, OrderStatus.SHIPPED,
+                "Seller performed express dispatch through branch " + branch);
     }
 
     @Transactional
@@ -534,18 +473,11 @@ public class OrderService {
             throw new BusinessValidationException("Cannot cancel order in status: " + order.getStatus());
         }
 
-        order.setStatus(OrderStatus.CANCELED);
-        orderAccountingService.cancelAccounting(order);
-        // Use specialized stock service
-        orderStockService.restoreStock(order);
+        OrderSummaryDTO summary = applyOrderStatusChange(order, OrderStatus.CANCELLED,
+                "Shipment cancelled after merchant cancellation");
 
-        orderRepository.save(order);
-        log.info("Seller {} cancelled order {}", sellerId, orderId);
-
-        // Notify Customer via Email
         emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "CANCELED_BY_MERCHANT");
 
-        // Notify Customer
         try {
             notificationService.createNotification(
                     order.getUser(),
@@ -557,7 +489,7 @@ public class OrderService {
             log.error("Failed to notify customer of order cancellation", e);
         }
 
-        return toSummaryDTO(order, mapItems(order));
+        return summary;
     }
 
     @Transactional
@@ -571,48 +503,50 @@ public class OrderService {
             throw new BusinessValidationException("Order cannot be canceled now (Status: " + order.getStatus() + ")");
         }
 
-        order.setStatus(OrderStatus.CANCELED);
-        orderAccountingService.cancelAccounting(order);
-        // Use specialized stock service
-        orderStockService.restoreStock(order);
+        return applyOrderStatusChange(order, OrderStatus.CANCELLED,
+                "Shipment cancelled after customer cancellation");
+    }
 
+    @Transactional
+    public OrderSummaryDTO retryPayment(Long orderId, User actor) {
+        Order order = getOrderOrFail(orderId);
+        assertOrderAccess(order, actor);
+
+        if (order.getStatus() != OrderStatus.DRAFT) {
+            throw new BusinessValidationException("Only draft orders can be retried for payment");
+        }
+        if (order.getPaymentStatus() == PaymentStatus.PAID) {
+            throw new BusinessValidationException("Order is already paid");
+        }
+        if (order.getPaymentMethod() != PaymentMethod.ESEWA) {
+            throw new BusinessValidationException("Retry is only supported for eSewa payments");
+        }
+
+        order.setPaymentStatus(PaymentStatus.PAYMENT_INITIATED);
+        order.setPaymentInitiatedAt(LocalDateTime.now());
         orderRepository.save(order);
-        log.info("Customer {} cancelled order {}", userId, orderId);
+
         return toSummaryDTO(order, mapItems(order));
     }
 
     @Transactional
     public OrderSummaryDTO guestCancelOrder(Long orderId) {
-        Order order = getOrderOrFail(orderId);
-        if (order.getUser() != null) {
-            throw new AuthorizationException("This is not a guest order");
-        }
-
-        if (!orderStatusService.canCancel(order.getStatus())) {
-            throw new BusinessValidationException("Guest order cannot be canceled now");
-        }
-
-        order.setStatus(OrderStatus.CANCELED);
-        orderAccountingService.cancelAccounting(order);
-        orderStockService.restoreStock(order);
-
-        orderRepository.save(order);
-        log.info("Guest cancelled order {}", orderId);
-        return toSummaryDTO(order, mapItems(order));
+        throw new AuthorizationException("Guest order cancellation requires a secure verification flow");
     }
 
     // =========================
-    // FETCH (STAYS MOSTLY THE SAME)
+    // FETCH
     // =========================
     @Transactional(readOnly = true)
-    public OrderSummaryDTO getOrder(Long orderId) {
+    public OrderSummaryDTO getOrder(Long orderId, User actor) {
         Order order = getOrderOrFail(orderId);
+        assertOrderAccess(order, actor);
         return toSummaryDTO(order, mapItems(order));
     }
 
     public List<OrderSummaryDTO> getOrdersForUser(Long userId) {
         List<Order> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
-        return orders.stream().map(o -> toSummaryDTO(o, mapItems(o))).collect(Collectors.toList());
+        return orders.stream().map(o -> toSummaryDTO(o, mapItems(o))).toList();
     }
 
     public List<OrderListItemDTO> getOrdersForUserSimple(Long userId) {
@@ -623,18 +557,19 @@ public class OrderService {
                 .grandTotal(o.getGrandTotal())
                 .itemsTotal(o.getItemsTotal())
                 .paymentMethod(o.getPaymentMethod())
+                .paymentStatus(o.getPaymentStatus())
                 .paymentReference(o.getPaymentReference())
+                .deliveryStatus(o.getShipment() != null ? o.getShipment().getStatus() : null)
                 .discountTotal(o.getDiscountTotal())
                 .totalItems(o.getItems().size())
                 .createdAt(o.getCreatedAt())
-                .build()).collect(Collectors.toList());
+                .appliedCoupon(o.getAppliedCoupon())
+                .build()).toList();
     }
 
     @Transactional(readOnly = true)
     public List<OrderListItemDTO> getOrdersForSeller(Long sellerUserId) {
-        log.info("Fetching orders for sellerUserId: {}", sellerUserId);
         List<Order> orders = orderRepository.findOrdersBySeller(sellerUserId);
-        log.info("Found {} orders for seller", orders.size());
 
         return orders.stream().map(o -> {
             List<OrderItem> sellerItems = o.getItems().stream()
@@ -644,20 +579,10 @@ public class OrderService {
                             i.getProduct().getSellerProfile().getUser().getId().equals(sellerUserId))
                     .collect(Collectors.toList());
 
-            log.info("Order {}: found {} items for this seller", o.getId(), sellerItems.size());
-
             OrderItem firstItem = sellerItems.isEmpty() ? (!o.getItems().isEmpty() ? o.getItems().get(0) : null)
                     : sellerItems.get(0);
 
-            String image = null;
-            if (firstItem != null) {
-                image = firstItem.getImagePathSnapshot();
-                log.info("  Item {}: Snapshot image: {}", firstItem.getId(), image);
-                if (image == null && firstItem.getProduct() != null && !firstItem.getProduct().getImages().isEmpty()) {
-                    image = firstItem.getProduct().getImages().get(0).getImagePath();
-                    log.info("  Item {}: Fallback product image: {}", firstItem.getId(), image);
-                }
-            }
+            String image = resolveProductImage(firstItem);
 
             return OrderListItemDTO.builder()
                     .orderId(o.getId())
@@ -674,11 +599,14 @@ public class OrderService {
                     .deliveredBranch(o.getDeliveredBranch())
                     .assignedBranch(o.getAssignedBranch())
                     .paymentMethod(o.getPaymentMethod())
+                    .paymentStatus(o.getPaymentStatus())
                     .paymentReference(o.getPaymentReference())
+                    .deliveryStatus(o.getShipment() != null ? o.getShipment().getStatus() : null)
                     .createdAt(o.getCreatedAt())
+                    .appliedCoupon(o.getAppliedCoupon())
                     .customerName(o.getCustomerName())
                     .customerPhone(o.getCustomerPhone())
-                    .customerId(o.getUser() != null ? o.getUser().getId() : null) // NEW
+                    .customerId(o.getUser() != null ? o.getUser().getId() : null)
                     .orderNote(o.getOrderNote())
                     .deliveryTimePreference(o.getDeliveryTimePreference())
                     .productNames(sellerItems.stream()
@@ -687,7 +615,7 @@ public class OrderService {
                     .productImage(image)
                     .customerProfileImagePath(o.getUser() != null ? o.getUser().getProfileImagePath() : null)
                     .build();
-        }).collect(Collectors.toList());
+        }).toList();
     }
 
     // =========================
@@ -702,8 +630,7 @@ public class OrderService {
         Map<Long, List<CheckoutItemDTO>> grouped = new HashMap<>();
         for (CheckoutItemDTO item : items) {
             Product p = productMap.get(item.getProductId());
-            if (p == null)
-                throw new ResourceNotFoundException("Product not found: " + item.getProductId());
+            if (p == null) throw new ResourceNotFoundException("Product not found: " + item.getProductId());
             Long sellerUserId = p.getSellerProfile().getUser().getId();
             grouped.computeIfAbsent(sellerUserId, k -> new ArrayList<>()).add(item);
         }
@@ -712,43 +639,40 @@ public class OrderService {
 
     private CheckoutComputationResult computeForItems(List<CheckoutItemDTO> items, String shippingLocation,
             String couponCode) {
-        Map<Long, Integer> quantityMap = items.stream()
-                .collect(Collectors.toMap(CheckoutItemDTO::getProductId, CheckoutItemDTO::getQuantity, Integer::sum));
-        List<Product> products = productRepository.findAllById(quantityMap.keySet());
+        return computeForItems(items, shippingLocation, couponCode, null);
+    }
 
-        if (products.size() != quantityMap.size())
-            throw new ResourceNotFoundException("One or more products not found");
+    private CheckoutComputationResult computeForItems(List<CheckoutItemDTO> items, String shippingLocation,
+            String couponCode, Long userId) {
+        Set<Long> productIds = items.stream().map(CheckoutItemDTO::getProductId).collect(Collectors.toSet());
+        List<Product> products = productRepository.findAllById(productIds);
+        Map<Long, Product> productMap = products.stream().collect(Collectors.toMap(Product::getId, p -> p));
 
         BigDecimal itemsTotal = BigDecimal.ZERO;
         List<OrderItemResponseDTO> responses = new ArrayList<>();
-        Map<Long, Product> productMap = products.stream().collect(Collectors.toMap(Product::getId, p -> p));
 
         for (CheckoutItemDTO itemDto : items) {
             Product p = productMap.get(itemDto.getProductId());
             if (p == null) continue;
 
-            // Resolve variant for price and attributes
-            ProductVariant variant = itemDto.getVariantId() != null
-                    ? productVariantRepository.findById(itemDto.getVariantId()).orElse(null)
-                    : null;
+            ProductVariant variant = null;
+            if (itemDto.getVariantId() != null) {
+                variant = productVariantRepository.findById(itemDto.getVariantId()).orElse(null);
+            }
 
-            int qty = itemDto.getQuantity();
+            validateProductAndVariantForCheckout(p, variant, itemDto.getQuantity());
+
             BigDecimal basePrice = resolveEffectiveUnitPrice(p);
-            BigDecimal unitPrice = (variant != null)
-                    ? variant.getEffectivePrice(basePrice)
-                    : basePrice;
-
-            BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal unitPrice = (variant != null) ? variant.getEffectivePrice(basePrice) : basePrice;
+            BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(itemDto.getQuantity())).setScale(2, RoundingMode.HALF_UP);
             itemsTotal = itemsTotal.add(lineTotal);
 
-            // Build dynamic attributes map from variant
             java.util.Map<String, String> attrMap = new java.util.LinkedHashMap<>();
             String variantLabel = null;
             if (variant != null) {
                 variantLabel = variant.getVariantLabel();
                 variant.getAttributeValues().forEach(vav ->
-                    attrMap.put(vav.getAttributeValue().getAttribute().getName(),
-                                vav.getAttributeValue().getValue()));
+                    attrMap.put(vav.getAttributeValue().getAttribute().getName(), vav.getAttributeValue().getValue()));
             }
 
             responses.add(OrderItemResponseDTO.builder()
@@ -758,7 +682,7 @@ public class OrderService {
                     .name(p.getName())
                     .brand(p.getBrand())
                     .imagePath(p.getImages().isEmpty() ? null : p.getImages().get(0).getImagePath())
-                    .quantity(qty)
+                    .quantity(itemDto.getQuantity())
                     .unitPrice(unitPrice)
                     .lineTotal(lineTotal)
                     .variantAttributes(attrMap)
@@ -768,21 +692,15 @@ public class OrderService {
                     .build());
         }
 
-        // Use specialized accounting service for shipping
         BigDecimal shippingFee = orderAccountingService.calculateShippingFee(products, itemsTotal, shippingLocation);
-
-        // Calculate Promo Discount
         BigDecimal discountTotal = BigDecimal.ZERO;
         if (couponCode != null && !couponCode.isEmpty()) {
-            discountTotal = promoCodeService.calculateDiscount(couponCode, items);
+            discountTotal = promoCodeService.calculateDiscount(couponCode, items, userId).getAmount();
         }
 
-        // Calculate VAT (13%) on itemsTotal
         BigDecimal vatAmount = itemsTotal.multiply(new BigDecimal("0.13")).setScale(2, RoundingMode.HALF_UP);
-        
         BigDecimal grandTotal = itemsTotal.add(shippingFee).add(vatAmount).subtract(discountTotal);
-        if (grandTotal.compareTo(BigDecimal.ZERO) < 0)
-            grandTotal = BigDecimal.ZERO;
+        if (grandTotal.compareTo(BigDecimal.ZERO) < 0) grandTotal = BigDecimal.ZERO;
 
         CheckoutComputationResult r = new CheckoutComputationResult();
         r.itemsTotal = itemsTotal;
@@ -799,105 +717,9 @@ public class OrderService {
     // HELPERS
     // =========================
 
-    private List<OrderItemResponseDTO> mapItems(Order order) {
-        return order.getItems().stream().map(this::toItemResponse).collect(Collectors.toList());
-    }
-
-    private OrderItemResponseDTO toItemResponse(OrderItem i) {
-        // Parse variantAttributesSnapshot JSON back to map
-        java.util.Map<String, String> attrMap = new java.util.LinkedHashMap<>();
-        if (i.getVariantAttributesSnapshot() != null && !i.getVariantAttributesSnapshot().isBlank()) {
-            try {
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                attrMap = mapper.readValue(i.getVariantAttributesSnapshot(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
-            } catch (Exception e) {
-                log.error("Failed to parse variant attributes snapshot for OrderItem {}", i.getId(), e);
-            }
-        }
-
-        String variantLabel = i.getVariant() != null ? i.getVariant().getVariantLabel() : null;
-
-        return OrderItemResponseDTO.builder()
-                .id(i.getId())
-                .productId(i.getProductIdSnapshot())
-                .variantId(i.getVariant() != null ? i.getVariant().getId() : null)
-                .sku(i.getVariantSkuSnapshot())
-                .name(i.getProductNameSnapshot())
-                .brand(i.getBrandSnapshot())
-                .imagePath(i.getImagePathSnapshot() != null ? i.getImagePathSnapshot()
-                        : (i.getProduct() != null && !i.getProduct().getImages().isEmpty()
-                                ? i.getProduct().getImages().get(0).getImagePath()
-                                : null))
-                .quantity(i.getQuantity())
-                .unitPrice(i.getUnitPrice())
-                .lineTotal(i.getLineTotal())
-                .variantAttributes(attrMap)
-                .variantLabel(variantLabel)
-                .manufactureDate(i.getManufactureDateSnapshot())
-                .expiryDate(i.getExpiryDateSnapshot())
-                .description(i.getProductDescriptionSnapshot())
-                .specification(i.getSpecificationSnapshot())
-                .features(i.getFeaturesSnapshot())
-                .sellerStoreName(i.getProduct() != null && i.getProduct().getSellerProfile() != null
-                        ? i.getProduct().getSellerProfile().getStoreName() : null)
-                .commissionRate(orderAccountingService.getCommissionRate(
-                        i.getProduct() != null ? i.getProduct().getCategory() : "Others"))
-                .build();
-    }
-
-    private OrderSummaryDTO toSummaryDTO(Order o, List<OrderItemResponseDTO> items) {
-        OrderSummaryDTO.OrderSummaryDTOBuilder builder = OrderSummaryDTO.builder()
-                .orderId(o.getId())
-                .customerId(o.getUser() != null ? o.getUser().getId() : null)
-                .status(o.getStatus())
-                .customerName(o.getCustomerName())
-                .customerPhone(o.getCustomerPhone())
-                .customerEmail(o.getCustomerEmail())
-                .shippingAddress(o.getShippingAddress())
-                .shippingLocation(o.getShippingLocation())
-                .customerAlternativePhone(o.getCustomerAlternativePhone())
-                .deliveryTimePreference(o.getDeliveryTimePreference())
-                .orderNote(o.getOrderNote())
-                .paymentMethod(o.getPaymentMethod())
-                .paymentReference(o.getPaymentReference())
-                .itemsTotal(o.getItemsTotal())
-                .shippingFee(o.getShippingFee())
-                .vatAmount(o.getVatAmount())
-                .discountTotal(o.getDiscountTotal())
-                .grandTotal(o.getGrandTotal())
-                .createdAt(o.getCreatedAt())
-                .items(items)
-                .customerProfileImagePath(o.getUser() != null ? o.getUser().getProfileImagePath() : null)
-                .sellerGrossAmount(o.getSellerGrossAmount())
-                .sellerShippingCharge(o.getSellerShippingCharge())
-                .sellerNetAmount(o.getSellerNetAmount())
-                .marketplaceCommission(o.getMarketplaceCommission())
-                .deliveredBranch(o.getDeliveredBranch());
-
-        // Populate Seller Info from items (assuming all items in one Order belong to the same seller)
-        if (items != null && !items.isEmpty()) {
-            OrderItemResponseDTO firstItemDto = items.get(0);
-            builder.sellerStoreName(firstItemDto.getSellerStoreName());
-            
-            // Still try to get more details from original entity if possible
-            if (o.getItems() != null && !o.getItems().isEmpty()) {
-                OrderItem firstItem = o.getItems().get(0);
-                 if (firstItem.getProduct() != null && firstItem.getProduct().getSellerProfile() != null) {
-                    SellerProfile sellerProfile = firstItem.getProduct().getSellerProfile();
-                    builder.sellerId(sellerProfile.getUser().getId())
-                           .sellerFullName(sellerProfile.getUser().getFullName())
-                           .sellerEmail(sellerProfile.getUser().getEmail())
-                           .sellerLogoPath(sellerProfile.getLogoImagePath());
-                }
-            }
-        }
-
-        return builder.build();
-    }
 
     private BigDecimal resolveEffectiveUnitPrice(Product p) {
-        if (Boolean.TRUE.equals(p.getOnSale()) && p.getSalePrice() != null)
-            return p.getSalePrice();
+        if (Boolean.TRUE.equals(p.getOnSale()) && p.getSalePrice() != null) return p.getSalePrice();
         return p.getPrice();
     }
 
@@ -905,9 +727,111 @@ public class OrderService {
         return orderRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Order not found"));
     }
 
+    private void assertOrderAccess(Order order, User actor) {
+        if (actor.getRole() == Role.ADMIN) return;
+        if (order.getUser() != null && order.getUser().getId().equals(actor.getId())) return;
+        if (actor.getRole() == Role.SELLER && order.getItems().stream()
+                .anyMatch(it -> it.getProduct() != null && it.getProduct().getSellerProfile() != null && it.getProduct().getSellerProfile().getUser().getId().equals(actor.getId()))) return;
+        throw new AuthorizationException("Access denied");
+    }
+
     private boolean sellerOwns(Order order, Long sellerId) {
-        return order.getItems().stream()
-                .allMatch(it -> it.getProduct().getSellerProfile().getUser().getId().equals(sellerId));
+        return order.getItems().stream().allMatch(it -> it.getProduct().getSellerProfile().getUser().getId().equals(sellerId));
+    }
+
+    @Transactional
+    public OrderSummaryDTO updateSellerOrderStatus(Long orderId, OrderStatus status, User actor) {
+        Order order = getOrderOrFail(orderId);
+        if (actor.getRole() != Role.ADMIN) {
+            if (actor.getRole() != Role.SELLER || !sellerOwns(order, actor.getId())) throw new AuthorizationException("Access denied");
+        }
+        return applyOrderStatusChange(order, status, "Status updated to " + status);
+    }
+
+    @Transactional
+    public OrderSummaryDTO applySystemOrderStatusChange(Order order, OrderStatus status, String note) {
+        return applyOrderStatusChange(order, status, note);
+    }
+
+    private OrderSummaryDTO updateSellerOwnedOrderStatus(Long orderId, Long sellerId, OrderStatus nextStatus, String note) {
+        Order order = getOrderOrFail(orderId);
+        if (!sellerOwns(order, sellerId)) throw new AuthorizationException("Access denied");
+        return applyOrderStatusChange(order, nextStatus, note);
+    }
+
+    private OrderSummaryDTO applyOrderStatusChange(Order order, OrderStatus nextStatus, String note) {
+        if (nextStatus == null) throw new BusinessValidationException("Status required");
+        orderStatusService.validateTransition(order.getStatus(), nextStatus);
+        order.setStatus(nextStatus);
+        if (nextStatus == OrderStatus.DELIVERED) {
+            order.setDeliveredAt(LocalDateTime.now());
+            orderAccountingService.finalizeDeliveredOrder(order);
+        } else if (nextStatus == OrderStatus.CANCELLED || nextStatus == OrderStatus.FAILED) {
+            applyCancelledOrFailedSideEffects(order, nextStatus);
+        } else if (nextStatus == OrderStatus.RETURNED) {
+            applyReturnedSideEffects(order);
+        }
+        orderRepository.save(order);
+        synchronizeDeliveryShipment(order, nextStatus, note);
+        sendOrderStatusNotifications(order, nextStatus, note);
+        return toSummaryDTO(order, mapItems(order));
+    }
+
+    private void synchronizeDeliveryShipment(Order order, OrderStatus nextStatus, String note) {
+        if (!EnumSet.of(
+                OrderStatus.PACKED,
+                OrderStatus.SHIPPED,
+                OrderStatus.OUT_FOR_DELIVERY,
+                OrderStatus.CANCELLED,
+                OrderStatus.FAILED,
+                OrderStatus.RETURNED).contains(nextStatus)) {
+            return;
+        }
+
+        try {
+            shipmentServiceProvider.getObject().syncShipmentForOrderStatus(order, note);
+        } catch (Exception ex) {
+            log.error("Failed to synchronize shipment for order {} after status {}", order.getId(), nextStatus, ex);
+            throw new BusinessValidationException("Order status changed, but courier shipment could not be synchronized. Please try again.");
+        }
+    }
+
+    private void applyCancelledOrFailedSideEffects(Order order, OrderStatus nextStatus) {
+        orderStockService.restoreStock(order);
+        orderAccountingService.cancelAccounting(order);
+
+        if (order.getPaymentMethod() == PaymentMethod.COD) {
+            order.setPaymentStatus(nextStatus == OrderStatus.FAILED ? PaymentStatus.COD_FAILED : PaymentStatus.CANCELLED);
+            return;
+        }
+
+        if (order.getPaymentStatus() == PaymentStatus.PAID) {
+            order.setRefundPending(true);
+            order.setPaymentStatus(PaymentStatus.REFUND_PENDING);
+        } else {
+            order.setPaymentStatus(nextStatus == OrderStatus.FAILED ? PaymentStatus.FAILED : PaymentStatus.CANCELLED);
+        }
+    }
+
+    private void applyReturnedSideEffects(Order order) {
+        orderStockService.restoreStock(order);
+        orderAccountingService.cancelAccounting(order);
+
+        if (order.getPaymentMethod() != PaymentMethod.COD && order.getPaymentStatus() == PaymentStatus.PAID) {
+            order.setRefundPending(true);
+            order.setPaymentStatus(PaymentStatus.REFUND_PENDING);
+        } else if (order.getPaymentMethod() == PaymentMethod.COD && order.getPaymentStatus() != PaymentStatus.COD_REMITTED) {
+            order.setPaymentStatus(PaymentStatus.COD_FAILED);
+        }
+    }
+
+    private void sendOrderStatusNotifications(Order order, OrderStatus status, String note) {
+        try {
+            emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), status.name());
+            notificationService.createNotification(order.getUser(), "Order Update", "Order #" + order.getId() + " is " + status.name(), com.example.jhapcham.notification.NotificationType.ORDER_UPDATE, order.getId());
+        } catch (Exception e) {
+            log.error("Notification failed", e);
+        }
     }
 
     private String estimateDelivery(String zone) {
@@ -915,27 +839,105 @@ public class OrderService {
     }
 
     private PaymentMethod parsePaymentMethod(String raw) {
-        try {
-            return PaymentMethod.valueOf(raw.toUpperCase());
-        } catch (Exception e) {
-            return PaymentMethod.COD; // Fallback
+        try { return PaymentMethod.valueOf(raw.toUpperCase()); } catch (Exception e) { return PaymentMethod.COD; }
+    }
+
+    private PaymentStatus initialPaymentStatus(PaymentMethod pm) {
+        return pm == PaymentMethod.COD ? PaymentStatus.PENDING_COD : PaymentStatus.REQUIRES_PAYMENT;
+    }
+
+    private void sendPlacementNotifications(Order order, User user) {
+        emailService.sendOrderConfirmationToCustomer(order.getCustomerEmail(), order.getCustomerName(), order.getId(), order.getGrandTotal());
+        if (!order.getItems().isEmpty()) {
+            OrderItem first = order.getItems().get(0);
+            if (first.getProduct() != null) {
+                SellerProfile s = first.getProduct().getSellerProfile();
+                emailService.sendNewOrderAlertToSeller(s.getUser().getEmail(), s.getUser().getFullName(), order.getId(), order.getGrandTotal());
+            }
         }
     }
 
     private void validateItems(CheckoutRequestDTO dto) {
-        if (dto.getItems() == null || dto.getItems().isEmpty())
-            throw new BusinessValidationException("No items in order");
+        if (dto.getItems() == null || dto.getItems().isEmpty()) throw new BusinessValidationException("Items required");
+    }
+
+    private void validateProductAndVariantForCheckout(Product p, ProductVariant v, int q) {
+        if (q <= 0) throw new BusinessValidationException("Quantity must be greater than zero");
+        if (p.getStatus() != ProductStatus.ACTIVE) throw new BusinessValidationException("Product not active");
+        boolean hasVariants = Boolean.TRUE.equals(p.getHasVariants()) ||
+                (p.getVariants() != null && p.getVariants().stream().anyMatch(var -> Boolean.TRUE.equals(var.getActive())));
+        if (hasVariants && v == null) {
+            throw new BusinessValidationException("A variant must be selected for product: " + p.getName());
+        }
+        if (!hasVariants && v != null) {
+            throw new BusinessValidationException("This product does not have variants: " + p.getName());
+        }
+        if (v != null) {
+            if (v.getProduct() == null || !v.getProduct().getId().equals(p.getId())) {
+                throw new BusinessValidationException("Selected variant does not belong to product: " + p.getName());
+            }
+            if (!Boolean.TRUE.equals(v.getActive())) {
+                throw new BusinessValidationException("Selected variant is not active: " + v.getVariantLabel());
+            }
+            if (v.getStockQuantity() < q) throw new BusinessValidationException("Out of stock: " + v.getVariantLabel());
+        } else {
+            if (p.getStockQuantity() < q) throw new BusinessValidationException("Out of stock: " + p.getName());
+        }
     }
 
     private void validateCustomerFields(CheckoutRequestDTO dto) {
-        if (dto.getFullName() == null || dto.getFullName().isBlank())
-            throw new BusinessValidationException("Customer name is required");
-        if (dto.getPhone() == null || dto.getPhone().isBlank())
-            throw new BusinessValidationException("Customer phone is required");
-        if (dto.getEmail() == null || dto.getEmail().isBlank())
-            throw new BusinessValidationException("Customer email is required");
-        if (dto.getAddress() == null || dto.getAddress().isBlank())
-            throw new BusinessValidationException("Shipping address is required");
+        if (dto.getFullName() == null || dto.getEmail() == null || dto.getPhone() == null || dto.getAddress() == null)
+            throw new BusinessValidationException("Customer details required");
+    }
+
+    private void validateCouponUser(String couponCode, Long userId) {
+        if (couponCode != null && !couponCode.isBlank() && userId == null) {
+            throw new BusinessValidationException("Login is required to use coupons");
+        }
+    }
+
+    private String normalizeIdempotencyKey(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String trimmed = raw.trim();
+        if (trimmed.length() > 120) {
+            throw new BusinessValidationException("Idempotency key is too long");
+        }
+        return trimmed;
+    }
+
+    private String buildOrderIdempotencyKey(String baseKey, Long sellerUserId) {
+        if (baseKey == null) {
+            return null;
+        }
+        return baseKey + "#seller:" + sellerUserId;
+    }
+
+    private List<Order> findExistingIdempotentOrders(User user, String email, String idempotencyKey) {
+        if (idempotencyKey == null) return List.of();
+        String prefix = idempotencyKey + "#seller:";
+        if (user != null) {
+            List<Order> prefixed = orderRepository.findByUserIdAndIdempotencyKeyStartingWithOrderByCreatedAtAsc(
+                    user.getId(), prefix);
+            if (!prefixed.isEmpty()) {
+                return prefixed;
+            }
+            return orderRepository.findByUserIdAndIdempotencyKeyOrderByCreatedAtAsc(user.getId(), idempotencyKey);
+        }
+        if (email != null && !email.isBlank()) {
+            List<Order> prefixed = orderRepository.findByCustomerEmailIgnoreCaseAndIdempotencyKeyStartingWithOrderByCreatedAtAsc(
+                    email.trim(), prefix);
+            if (!prefixed.isEmpty()) {
+                return prefixed;
+            }
+            return orderRepository.findByCustomerEmailIgnoreCaseAndIdempotencyKeyOrderByCreatedAtAsc(email.trim(),
+                    idempotencyKey);
+        }
+        return List.of();
+    }
+
+    private void issueDeliveryOtp(Order order) {
+        order.setDeliveryOtp(String.format("%06d", DELIVERY_OTP_RANDOM.nextInt(1_000_000)));
+        order.setDeliveryOtpExpiry(LocalDateTime.now().plusMinutes(DELIVERY_OTP_EXPIRY_MINUTES));
     }
 
     private static class CheckoutComputationResult {
@@ -948,15 +950,126 @@ public class OrderService {
         Map<Long, Product> productById;
     }
 
-    /** Converts a dynamic attributes map to a compact JSON string snapshot. */
     private String buildAttrSnapshot(java.util.Map<String, String> attrs) {
         if (attrs == null || attrs.isEmpty()) return null;
-        StringBuilder sb = new StringBuilder("{");
-        attrs.forEach((k, v) -> {
-            if (sb.length() > 1) sb.append(',');
-            sb.append('"').append(k).append('"').append(':').append('"').append(v).append('"');
-        });
-        sb.append('}');
-        return sb.toString();
+        try { return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(attrs); } catch (Exception e) { return null; }
+    }
+
+    private OrderSummaryDTO toSummaryDTO(Order o, List<OrderItemResponseDTO> itemDTOs) {
+        // Find seller info from the first item
+        String sellerStore = "Platform Order";
+        String sellerFull = "Jhapcham Admin";
+        String sellerEmail = "admin@jhapcham.com";
+        String sellerLogo = "";
+
+        if (!o.getItems().isEmpty()) {
+            OrderItem first = o.getItems().get(0);
+            if (first.getProduct() != null && first.getProduct().getSellerProfile() != null) {
+                SellerProfile s = first.getProduct().getSellerProfile();
+                sellerStore = s.getStoreName();
+                sellerFull = s.getUser().getFullName();
+                sellerEmail = s.getUser().getEmail();
+                sellerLogo = s.getLogoImagePath();
+            }
+        }
+
+        return OrderSummaryDTO.builder()
+                .orderId(o.getId())
+                .customerId(o.getUser() != null ? o.getUser().getId() : null)
+                .status(o.getStatus())
+                .customerName(o.getCustomerName())
+                .customerEmail(o.getCustomerEmail())
+                .customerPhone(o.getCustomerPhone())
+                .shippingAddress(o.getShippingAddress())
+                .shippingLocation(o.getShippingLocation())
+                .customerAlternativePhone(o.getCustomerAlternativePhone())
+                .deliveryTimePreference(o.getDeliveryTimePreference())
+                .orderNote(o.getOrderNote())
+                .itemsTotal(o.getItemsTotal())
+                .shippingFee(o.getShippingFee())
+                .vatAmount(o.getVatAmount())
+                .discountTotal(o.getDiscountTotal())
+                .grandTotal(o.getGrandTotal())
+                .paymentMethod(o.getPaymentMethod())
+                .paymentStatus(o.getPaymentStatus())
+                .paymentReference(o.getPaymentReference())
+                .trackingId(o.getShipment() != null ? o.getShipment().getTrackingId() : null)
+                .deliveryStatus(o.getShipment() != null ? o.getShipment().getStatus() : null)
+                .items(itemDTOs)
+                .appliedCoupon(o.getAppliedCoupon())
+                .sellerStoreName(sellerStore)
+                .sellerFullName(sellerFull)
+                .sellerEmail(sellerEmail)
+                .sellerLogoPath(sellerLogo)
+                .createdAt(o.getCreatedAt())
+                .deliveredAt(o.getDeliveredAt())
+                .sellerGrossAmount(o.getSellerGrossAmount())
+                .sellerShippingCharge(o.getSellerShippingCharge())
+                .sellerNetAmount(o.getSellerNetAmount())
+                .marketplaceCommission(o.getMarketplaceCommission())
+                .deliveredBranch(o.getDeliveredBranch())
+                .build();
+    }
+
+    private List<OrderItemResponseDTO> mapItems(Order order) {
+        return order.getItems().stream()
+                .map(this::toResponseDTO)
+                .toList();
+    }
+
+    private OrderItemResponseDTO toResponseDTO(OrderItem i) {
+        java.util.Map<String, String> attrMap = new java.util.LinkedHashMap<>();
+        if (i.getVariantAttributesSnapshot() != null && !i.getVariantAttributesSnapshot().isBlank()) {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                attrMap = mapper.readValue(i.getVariantAttributesSnapshot(),
+                        new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, String>>() {});
+            } catch (Exception e) {
+                log.error("Failed to parse variant attributes snapshot", e);
+            }
+        }
+
+        return OrderItemResponseDTO.builder()
+                .id(i.getId())
+                .productId(i.getProductIdSnapshot())
+                .variantId(i.getVariant() != null ? i.getVariant().getId() : null)
+                .sku(i.getVariantSkuSnapshot())
+                .name(i.getProductNameSnapshot())
+                .brand(i.getBrandSnapshot())
+                .imagePath(resolveProductImage(i))
+                .quantity(i.getQuantity())
+                .unitPrice(i.getUnitPrice())
+                .lineTotal(i.getLineTotal())
+                .variantAttributes(attrMap)
+                .variantLabel(i.getVariant() != null ? i.getVariant().getVariantLabel() : null)
+                .manufactureDate(i.getManufactureDateSnapshot())
+                .expiryDate(i.getExpiryDateSnapshot())
+                .description(i.getProductDescriptionSnapshot())
+                .specification(i.getSpecificationSnapshot())
+                .features(i.getFeaturesSnapshot())
+                .sellerStoreName(i.getProduct() != null && i.getProduct().getSellerProfile() != null ? i.getProduct().getSellerProfile().getStoreName() : null)
+                .commissionRate(orderAccountingService.getCommissionRate(i.getProduct() != null ? i.getProduct().getCategory() : "Others"))
+                .build();
+    }
+
+    private OrderListItemDTO toListItemDTO(Order o) {
+        return OrderListItemDTO.builder()
+                .orderId(o.getId())
+                .customerName(o.getCustomerName())
+                .grandTotal(o.getGrandTotal())
+                .status(o.getStatus())
+                .paymentStatus(o.getPaymentStatus())
+                .createdAt(o.getCreatedAt())
+                .appliedCoupon(o.getAppliedCoupon())
+                .build();
+    }
+
+    private String resolveProductImage(OrderItem item) {
+        if (item == null) return null;
+        if (item.getImagePathSnapshot() != null) return item.getImagePathSnapshot();
+        if (item.getProduct() != null && !item.getProduct().getImages().isEmpty()) {
+            return item.getProduct().getImages().get(0).getImagePath();
+        }
+        return null;
     }
 }

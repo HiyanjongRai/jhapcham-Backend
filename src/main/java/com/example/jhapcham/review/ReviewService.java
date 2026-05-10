@@ -42,6 +42,7 @@ public class ReviewService {
         // 2. Verify product exists
         Product product = productRepository.findById(Objects.requireNonNull(productId, "Product ID cannot be null"))
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        validateRating(rating);
 
         // 3. Verify purchase and delivery
         boolean hasPurchased = orderItemRepository.hasUserPurchasedProduct(userId, productId);
@@ -53,11 +54,7 @@ public class ReviewService {
         // per user?)
         // Let's allow multiple or block? Usually one review per product.
         if (reviewRepository.existsByUserIdAndProductId(userId, productId)) {
-            // For now, maybe allow updating? Or throw?
-            // As per request "new controller to write a review", simple add.
-            // We can check if we want to block dupes. Let's block for now to be safe.
-            // throw new RuntimeException("You have already reviewed this product.");
-            // Actually, commented out to be flexible unless requested.
+            throw new BusinessValidationException("You have already reviewed this product.");
         }
 
         // 5. Handle image
@@ -85,6 +82,30 @@ public class ReviewService {
         return mapToDTO(review);
     }
 
+    @Transactional
+    public ReviewResponseDTO updateReview(Long reviewId, Long userId, Integer rating, String comment,
+            MultipartFile image) {
+        Review review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new ResourceNotFoundException("Review not found"));
+
+        if (!review.getUser().getId().equals(userId)) {
+            throw new BusinessValidationException("You can only update your own reviews.");
+        }
+        validateRating(rating);
+
+        review.setRating(rating);
+        review.setComment(comment);
+
+        if (image != null && !image.isEmpty()) {
+            String filename = "review_" + userId + "_" + review.getProduct().getId() + "_" + System.currentTimeMillis();
+            String imagePath = fileStorageService.save(image, REVIEW_IMAGE_DIR, filename);
+            review.setImagePath(imagePath);
+        }
+
+        review = reviewRepository.save(review);
+        return mapToDTO(review);
+    }
+
     @Transactional(readOnly = true)
     public List<ReviewResponseDTO> getReviewsByProduct(Long productId) {
         return reviewRepository.findByProductId(productId).stream()
@@ -109,7 +130,15 @@ public class ReviewService {
                 .rating(r.getRating())
                 .comment(r.getComment())
                 .imagePath(r.getImagePath())
+                .productImage(r.getProduct().getImages() != null && !r.getProduct().getImages().isEmpty()
+                    ? r.getProduct().getImages().get(0).getImagePath() : null)
                 .createdAt(r.getCreatedAt())
                 .build();
+    }
+
+    private void validateRating(Integer rating) {
+        if (rating == null || rating < 1 || rating > 5) {
+            throw new BusinessValidationException("Rating must be between 1 and 5");
+        }
     }
 }

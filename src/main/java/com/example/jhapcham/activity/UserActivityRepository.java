@@ -11,6 +11,8 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, Long
 
     List<UserActivity> findByUserId(Long userId);
 
+    List<UserActivity> findTop10000ByOrderByTimestampDesc();
+
     List<UserActivity> findByUserIdAndProductIdAndActivityType(Long userId, Long productId,
             ActivityType activityType);
 

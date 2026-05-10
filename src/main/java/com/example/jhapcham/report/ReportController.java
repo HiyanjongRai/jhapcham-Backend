@@ -23,6 +23,7 @@ public class ReportController {
     private final ReportService reportService;
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     @PostMapping
     public ResponseEntity<?> createReport(
@@ -107,9 +108,9 @@ public class ReportController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> getReport(@PathVariable Long id) {
+    public ResponseEntity<?> getReport(@PathVariable Long id, @AuthenticationPrincipal UserDetails userDetails) {
         try {
-            return ResponseEntity.ok(reportService.getReport(id));
+            return ResponseEntity.ok(reportService.getReport(id, currentUserService.requireUser(userDetails)));
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
         }

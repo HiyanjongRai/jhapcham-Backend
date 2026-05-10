@@ -2,6 +2,8 @@ package com.example.jhapcham.activity;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -14,13 +16,19 @@ public class UserActivityController {
 
     private final UserActivityService userActivityService;
     private final RecommendationService recommendationService;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     @GetMapping("/{userId}")
-    public ResponseEntity<List<UserActivityResponseDTO>> getUserActivities(@PathVariable Long userId) {
+    public ResponseEntity<List<UserActivityResponseDTO>> getUserActivities(
+            @PathVariable Long userId,
+            Authentication authentication) {
+        com.example.jhapcham.user.model.User actor = currentUserService.requireUser(authentication);
+        currentUserService.requireSelfOrAdmin(actor, userId);
         return ResponseEntity.ok(userActivityService.getUserActivitiesWithProductNames(userId));
     }
 
     @GetMapping("/ibcf-data")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<Map<String, Object>>> getIBCFData() {
         return ResponseEntity.ok(userActivityService.getInteractionsForIBCF());
     }
@@ -28,7 +36,10 @@ public class UserActivityController {
     @GetMapping("/recommendations/{userId}")
     public ResponseEntity<List<com.example.jhapcham.product.ProductResponseDTO>> getRecommendations(
             @PathVariable Long userId,
-            @RequestParam(defaultValue = "10") int limit) {
+            @RequestParam(defaultValue = "10") int limit,
+            Authentication authentication) {
+        com.example.jhapcham.user.model.User actor = currentUserService.requireUser(authentication);
+        currentUserService.requireSelfOrAdmin(actor, userId);
         return ResponseEntity.ok(recommendationService.getRecommendations(userId, limit));
     }
 
@@ -40,6 +51,7 @@ public class UserActivityController {
     }
 
     @GetMapping("/test")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> testIBCF(
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) Long productId) {
@@ -72,6 +84,7 @@ public class UserActivityController {
     }
 
     @PostMapping("/sync")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<String> syncActivities() {
         userActivityService.syncActivitiesFromExistingData();
         return ResponseEntity.ok("Activities synchronized successfully");
@@ -82,7 +95,10 @@ public class UserActivityController {
             @RequestParam Long userId,
             @RequestParam Long productId,
             @RequestParam ActivityType type,
-            @RequestParam(required = false) String details) {
+            @RequestParam(required = false) String details,
+            Authentication authentication) {
+        com.example.jhapcham.user.model.User actor = currentUserService.requireUser(authentication);
+        currentUserService.requireSelfOrAdmin(actor, userId);
         userActivityService.recordActivity(userId, productId, type, details);
         return ResponseEntity.ok().build();
     }

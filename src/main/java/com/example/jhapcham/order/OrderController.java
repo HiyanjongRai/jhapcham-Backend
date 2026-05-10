@@ -3,6 +3,7 @@ package com.example.jhapcham.order;
 import com.example.jhapcham.Error.ErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -11,10 +12,14 @@ import org.springframework.web.bind.annotation.*;
 public class OrderController {
 
     private final OrderService orderService;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     @PostMapping("/preview")
-    public ResponseEntity<?> preview(@RequestBody CheckoutRequestDTO dto) {
+    public ResponseEntity<?> preview(@RequestBody CheckoutRequestDTO dto, Authentication authentication) {
         try {
+            if (dto.getUserId() != null) {
+                currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), dto.getUserId());
+            }
             return ResponseEntity.ok(orderService.previewOrder(dto));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -24,8 +29,9 @@ public class OrderController {
     }
 
     @PostMapping("/cart")
-    public ResponseEntity<?> placeFromCart(@RequestBody CartCheckoutRequestDTO dto) {
+    public ResponseEntity<?> placeFromCart(@RequestBody CartCheckoutRequestDTO dto, Authentication authentication) {
         try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), dto.getUserId());
             return ResponseEntity.ok(orderService.placeOrderFromCart(dto));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -35,8 +41,11 @@ public class OrderController {
     }
 
     @PostMapping
-    public ResponseEntity<?> place(@RequestBody CheckoutRequestDTO dto) {
+    public ResponseEntity<?> place(@RequestBody CheckoutRequestDTO dto, Authentication authentication) {
         try {
+            if (dto.getUserId() != null) {
+                currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), dto.getUserId());
+            }
             return ResponseEntity.ok(orderService.placeOrder(dto));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -45,10 +54,21 @@ public class OrderController {
         }
     }
 
-    @GetMapping("/{orderId}")
-    public ResponseEntity<?> getOrder(@PathVariable Long orderId) {
+    @PostMapping("/{orderId}/retry-payment")
+    public ResponseEntity<?> retryPayment(@PathVariable Long orderId, Authentication authentication) {
         try {
-            return ResponseEntity.ok(orderService.getOrder(orderId));
+            return ResponseEntity.ok(orderService.retryPayment(orderId, currentUserService.requireUser(authentication)));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Retry failed: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/{orderId}")
+    public ResponseEntity<?> getOrder(@PathVariable Long orderId, Authentication authentication) {
+        try {
+            return ResponseEntity.ok(orderService.getOrder(orderId, currentUserService.requireUser(authentication)));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
         } catch (Exception e) {
@@ -56,9 +76,28 @@ public class OrderController {
         }
     }
 
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<?> getUserOrders(@PathVariable Long userId) {
+    @PutMapping("/{orderId}/status")
+    public ResponseEntity<?> updateOrderStatus(
+            @PathVariable Long orderId,
+            @RequestBody OrderStatusUpdateRequest request,
+            Authentication authentication) {
         try {
+            return ResponseEntity.ok(
+                    orderService.updateSellerOrderStatus(
+                            orderId,
+                            request.getStatus(),
+                            currentUserService.requireUser(authentication)));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Status update failed: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/user/{userId}")
+    public ResponseEntity<?> getUserOrders(@PathVariable Long userId, Authentication authentication) {
+        try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
             return ResponseEntity.ok(orderService.getOrdersForUser(userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -68,8 +107,9 @@ public class OrderController {
     }
 
     @GetMapping("/user/{userId}/list")
-    public ResponseEntity<?> getUserOrdersSimple(@PathVariable Long userId) {
+    public ResponseEntity<?> getUserOrdersSimple(@PathVariable Long userId, Authentication authentication) {
         try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
             return ResponseEntity.ok(orderService.getOrdersForUserSimple(userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -79,8 +119,9 @@ public class OrderController {
     }
 
     @GetMapping("/seller/{sellerId}")
-    public ResponseEntity<?> getSellerOrders(@PathVariable Long sellerId) {
+    public ResponseEntity<?> getSellerOrders(@PathVariable Long sellerId, Authentication authentication) {
         try {
+            currentUserService.requireSellerSelfOrAdmin(currentUserService.requireUser(authentication), sellerId);
             return ResponseEntity.ok(orderService.getOrdersForSeller(sellerId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -93,8 +134,10 @@ public class OrderController {
     public ResponseEntity<?> assignBranch(
             @PathVariable Long sellerId,
             @PathVariable Long orderId,
-            @RequestBody AssignBranchDTO dto) {
+            @RequestBody AssignBranchDTO dto,
+            Authentication authentication) {
         try {
+            currentUserService.requireSellerSelfOrAdmin(currentUserService.requireUser(authentication), sellerId);
             return ResponseEntity.ok(orderService.sellerAssignBranch(orderId, sellerId, dto));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -107,8 +150,10 @@ public class OrderController {
     public ResponseEntity<?> expressDispatch(
             @PathVariable Long sellerId,
             @PathVariable Long orderId,
-            @RequestBody AssignBranchDTO dto) {
+            @RequestBody AssignBranchDTO dto,
+            Authentication authentication) {
         try {
+            currentUserService.requireSellerSelfOrAdmin(currentUserService.requireUser(authentication), sellerId);
             return ResponseEntity.ok(orderService.sellerExpressDispatch(orderId, sellerId, dto));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -121,7 +166,9 @@ public class OrderController {
     public ResponseEntity<?> branchUpdateStatus(
             @PathVariable Long orderId,
             @RequestParam DeliveryBranch branch,
-            @RequestParam OrderStatus nextStatus) {
+            @RequestParam OrderStatus nextStatus,
+            Authentication authentication) {
+        currentUserService.requireAdmin(currentUserService.requireUser(authentication));
         return ResponseEntity.ok(
                 orderService.branchUpdateStatus(orderId, branch.name(), nextStatus.name()));
     }
@@ -129,8 +176,10 @@ public class OrderController {
     @PutMapping("/user/{userId}/cancel/{orderId}")
     public ResponseEntity<?> customerCancel(
             @PathVariable Long userId,
-            @PathVariable Long orderId) {
+            @PathVariable Long orderId,
+            Authentication authentication) {
         try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
             return ResponseEntity.ok(orderService.customerCancelOrder(orderId, userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -153,8 +202,10 @@ public class OrderController {
     @PutMapping("/seller/{sellerId}/process/{orderId}")
     public ResponseEntity<?> processOrder(
             @PathVariable Long sellerId,
-            @PathVariable Long orderId) {
+            @PathVariable Long orderId,
+            Authentication authentication) {
         try {
+            currentUserService.requireSellerSelfOrAdmin(currentUserService.requireUser(authentication), sellerId);
             return ResponseEntity.ok(orderService.sellerProcessOrder(orderId, sellerId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -166,8 +217,10 @@ public class OrderController {
     @PutMapping("/seller/{sellerId}/cancel/{orderId}")
     public ResponseEntity<?> sellerCancel(
             @PathVariable Long sellerId,
-            @PathVariable Long orderId) {
+            @PathVariable Long orderId,
+            Authentication authentication) {
         try {
+            currentUserService.requireSellerSelfOrAdmin(currentUserService.requireUser(authentication), sellerId);
             return ResponseEntity.ok(orderService.sellerCancelOrder(orderId, sellerId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -180,8 +233,10 @@ public class OrderController {
     public ResponseEntity<?> verifyDeliveryOtp(
             @PathVariable Long orderId,
             @RequestParam DeliveryBranch branch,
-            @RequestParam String otp) {
+            @RequestParam String otp,
+            Authentication authentication) {
         try {
+            currentUserService.requireAdmin(currentUserService.requireUser(authentication));
             return ResponseEntity.ok(orderService.verifyDeliveryOtp(orderId, branch.name(), otp));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
@@ -193,8 +248,10 @@ public class OrderController {
     @PostMapping("/branch/{orderId}/resend-otp")
     public ResponseEntity<?> resendDeliveryOtp(
             @PathVariable Long orderId,
-            @RequestParam DeliveryBranch branch) {
+            @RequestParam DeliveryBranch branch,
+            Authentication authentication) {
         try {
+            currentUserService.requireAdmin(currentUserService.requireUser(authentication));
             orderService.resendDeliveryOtp(orderId, branch.name());
             return ResponseEntity.ok("OTP resent successfully");
         } catch (RuntimeException e) {

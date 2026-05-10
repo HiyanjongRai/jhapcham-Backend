@@ -1,6 +1,9 @@
 package com.example.jhapcham.order;
 
+import com.example.jhapcham.delivery.Shipment;
+import com.example.jhapcham.payment.Payment;
 import com.example.jhapcham.user.model.User;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -12,12 +15,19 @@ import java.util.List;
 import java.util.Set;
 
 @Entity
-@Table(name = "orders")
+@Table(
+        name = "orders",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_orders_user_idempotency", columnNames = {"user_id", "idempotency_key"}),
+                @UniqueConstraint(name = "uk_orders_email_idempotency", columnNames = {"customer_email", "idempotency_key"})
+        }
+)
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+// Trivial change for re-compilation
 public class Order {
 
     @Id
@@ -57,18 +67,23 @@ public class Order {
     @Column(nullable = false)
     private PaymentMethod paymentMethod;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 255)
+    @Builder.Default
+    private PaymentStatus paymentStatus = PaymentStatus.PENDING;
+
+
     private String paymentReference;
 
-    // eSewa transaction identifier (e.g. orderId_timestamp) for verification
-    private String esewaTransactionUuid;
-
-
-
-
+    @OneToOne(mappedBy = "order", fetch = FetchType.LAZY)
+    @JsonIgnore
+    private Payment payment;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private OrderStatus status;
+    @Column(nullable = false, length = 255)
+    @Builder.Default
+    private OrderStatus status = OrderStatus.PENDING;
+
 
     @Column(nullable = false)
     private BigDecimal itemsTotal;
@@ -88,11 +103,24 @@ public class Order {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(length = 100)
+    private String appliedCoupon;
+
+    @Column(length = 120)
+    private String idempotencyKey;
+
+    private LocalDateTime paymentInitiatedAt;
+
+    private LocalDateTime paidAt;
+
     private LocalDateTime deliveredAt;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<OrderItem> items = new ArrayList<>();
+
+    @OneToOne(mappedBy = "order", fetch = FetchType.LAZY)
+    private Shipment shipment;
 
     public void addItem(OrderItem item) {
         if (items == null) {
@@ -122,18 +150,19 @@ public class Order {
     @Enumerated(EnumType.STRING)
     private DeliveryBranch deliveredBranch;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "boolean default false")
     @Builder.Default
     private boolean sellerAccounted = false;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, columnDefinition = "varchar(255) default 'PENDING'")
+    @Column(nullable = false, length = 255)
     @Builder.Default
     private CommissionStatus commissionStatus = CommissionStatus.PENDING;
 
+
     // Tracks whether stock was deducted for this order.
     // Prevents double-restoration if cancel is called multiple times.
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "boolean default false")
     @Builder.Default
     private boolean stockDeducted = false;
 
@@ -156,5 +185,10 @@ public class Order {
     private boolean commissionReminderSent = false;
 
     private LocalDateTime lastFineCalculationDate;
+
+    // Set to true when a prepaid order is returned. Signals payment service to refund customer.
+    @Column(nullable = false, columnDefinition = "boolean DEFAULT false")
+    @Builder.Default
+    private boolean refundPending = false;
 
 }

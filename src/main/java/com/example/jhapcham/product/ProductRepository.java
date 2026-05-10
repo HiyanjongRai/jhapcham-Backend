@@ -18,6 +18,14 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     List<Product> findByStatus(ProductStatus status);
 
+    List<Product> findByIdInAndStatus(List<Long> ids, ProductStatus status);
+
+    Optional<Product> findBySlug(String slug);
+
+    boolean existsBySlug(String slug);
+
+    boolean existsBySlugAndIdNot(String slug, Long id);
+
     Long countBySellerProfile(SellerProfile sellerProfile);
 
     Long countBySellerProfileAndStatus(SellerProfile sellerProfile, ProductStatus status);

@@ -6,6 +6,7 @@ import com.example.jhapcham.notification.NotificationService;
 import com.example.jhapcham.order.Order;
 import com.example.jhapcham.order.OrderRepository;
 import com.example.jhapcham.order.OrderStatus;
+import com.example.jhapcham.order.PaymentStatus;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -66,8 +67,10 @@ public class RefundService {
 
         if (refundedItems >= totalItems) {
             order.setStatus(OrderStatus.REFUNDED);
-        } else if (refundedItems > 0) {
-            order.setStatus(OrderStatus.PARTIALLY_REFUNDED);
+            order.setPaymentStatus(PaymentStatus.REFUNDED);
+        } else if (refundedItems > 0 && order.getPaymentStatus() != PaymentStatus.REFUNDED) {
+            order.setRefundPending(true);
+            order.setPaymentStatus(PaymentStatus.REFUND_PENDING);
         }
         orderRepository.save(order);
     }

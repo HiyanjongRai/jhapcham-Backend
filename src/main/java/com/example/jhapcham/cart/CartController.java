@@ -3,6 +3,7 @@ package com.example.jhapcham.cart;
 import com.example.jhapcham.Error.ErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -10,13 +11,16 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class CartController {
     private final CartService cartService;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     @PostMapping("/{userId}/add/{productId}")
     public ResponseEntity<?> addToCart(
             @PathVariable Long userId,
             @PathVariable Long productId,
-            @RequestBody AddToCartRequestDTO dto) {
+            @RequestBody AddToCartRequestDTO dto,
+            Authentication authentication) {
         try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
             CartResponseDTO cart = cartService.addToCart(userId, productId, dto);
 
             return ResponseEntity.ok(cart);
@@ -38,8 +42,10 @@ public class CartController {
     public ResponseEntity<?> updateQuantity(
             @PathVariable Long userId,
             @PathVariable Long cartItemId,
-            @RequestParam Integer qty) {
+            @RequestParam Integer qty,
+            Authentication authentication) {
         try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
             CartResponseDTO cart = cartService.updateQuantity(userId, cartItemId, qty);
             return ResponseEntity.ok(cart);
         } catch (RuntimeException e) {
@@ -50,8 +56,9 @@ public class CartController {
     }
 
     @GetMapping("/{userId}")
-    public ResponseEntity<?> getCart(@PathVariable Long userId) {
+    public ResponseEntity<?> getCart(@PathVariable Long userId, Authentication authentication) {
         try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
             CartResponseDTO cart = cartService.getCart(userId);
             return ResponseEntity.ok(cart);
         } catch (RuntimeException e) {

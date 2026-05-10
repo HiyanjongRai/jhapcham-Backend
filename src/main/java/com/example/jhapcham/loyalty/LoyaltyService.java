@@ -42,6 +42,9 @@ public class LoyaltyService {
 
     @Transactional
     public void addPointsForOrder(Long userId, Long orderTotal) {
+        if (orderTotal == null || orderTotal <= 0) {
+            return;
+        }
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
@@ -50,6 +53,9 @@ public class LoyaltyService {
 
         // Calculate points: 1 point per Rs. 100
         Long pointsToAdd = orderTotal / 100;
+        if (pointsToAdd <= 0) {
+            return;
+        }
 
         loyalty.addPoints(pointsToAdd);
         loyaltyPointsRepository.save(loyalty);

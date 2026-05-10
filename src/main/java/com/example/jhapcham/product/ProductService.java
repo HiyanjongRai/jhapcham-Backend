@@ -26,16 +26,18 @@ import com.example.jhapcham.user.model.Role;
 import com.example.jhapcham.user.model.Status;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -82,10 +84,22 @@ public class ProductService {
 
         LocalDate mfg = parseDate(dto.manufactureDate());
         LocalDate exp = parseDate(dto.expiryDate());
+        validateProductPayload(
+                dto.name(),
+                dto.price(),
+                dto.stockQuantity(),
+                dto.warrantyMonths(),
+                mfg,
+                exp,
+                dto.hasVariants(),
+                dto.insideValleyShipping(),
+                dto.outsideValleyShipping(),
+                dto.freeShipping());
 
         Product product = Product.builder()
                 .sellerProfile(profile)
                 .name(dto.name())
+                .slug(generateUniqueSlug(dto.name(), null))
                 .shortDescription(dto.shortDescription())
                 .description(dto.description())
                 .category(dto.category())
@@ -95,13 +109,19 @@ public class ProductService {
                 .features(dto.features())
                 .colorOptions(dto.colorOptions())
                 .price(dto.price())
-                .stockQuantity(0) // Start with 0, will be summed from variants
+                .stockQuantity(Boolean.TRUE.equals(dto.hasVariants()) ? 0 : (dto.stockQuantity() != null ? dto.stockQuantity() : 0))
                 .warrantyMonths(dto.warrantyMonths())
                 .manufactureDate(mfg)
                 .expiryDate(exp)
                 .onSale(false)
                 .status(ProductStatus.ACTIVE)
+                .hasVariants(Boolean.TRUE.equals(dto.hasVariants()))
                 .build();
+
+        // 🛡️ Integrity Check: Variant products MUST have variant data
+        if (Boolean.TRUE.equals(product.getHasVariants()) && (dto.variantsJson() == null || dto.variantsJson().isBlank() || dto.variantsJson().equals("[]"))) {
+            throw new BusinessValidationException("Products with variants must include variant data.");
+        }
 
         if (product.getCategory() != null && !product.getCategory().isBlank()) {
             ensureCategoryExists(product.getCategory());
@@ -146,16 +166,35 @@ public class ProductService {
 
     // ===================== UPDATE PRODUCT =====================
     @Transactional
-    public ProductResponseDTO updateProduct(Long productId, ProductUpdateRequestDTO dto) {
+    public ProductResponseDTO updateProduct(Long requesterId, Long productId, ProductUpdateRequestDTO dto) {
 
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
         SellerProfile profile = product.getSellerProfile();
+        ensureProductOwnerOrAdmin(requesterId, product);
+
+        LocalDate manufactureDate = dto.manufactureDate() != null ? parseDate(dto.manufactureDate()) : product.getManufactureDate();
+        LocalDate expiryDate = dto.expiryDate() != null ? parseDate(dto.expiryDate()) : product.getExpiryDate();
+        Boolean hasVariants = dto.hasVariants() != null ? dto.hasVariants() : product.getHasVariants();
+        BigDecimal price = dto.price() != null ? dto.price() : product.getPrice();
+        Integer stockQuantity = dto.stockQuantity() != null ? dto.stockQuantity() : product.getStockQuantity();
+        Integer warrantyMonths = dto.warrantyMonths() != null ? dto.warrantyMonths() : product.getWarrantyMonths();
+        Double insideShipping = dto.insideValleyShipping() != null ? dto.insideValleyShipping() : product.getInsideValleyShipping();
+        Double outsideShipping = dto.outsideValleyShipping() != null ? dto.outsideValleyShipping() : product.getOutsideValleyShipping();
+        Boolean freeShipping = dto.freeShipping() != null ? dto.freeShipping() : product.getFreeShipping();
+        String name = dto.name() != null ? dto.name() : product.getName();
+        validateProductPayload(name, price, stockQuantity, warrantyMonths, manufactureDate, expiryDate,
+                hasVariants, insideShipping, outsideShipping, freeShipping);
+        if (Boolean.TRUE.equals(hasVariants) && dto.stockQuantity() != null) {
+            throw new BusinessValidationException("Variant products must be stocked through their variants only");
+        }
 
         // basic fields
-        if (dto.name() != null)
+        if (dto.name() != null) {
             product.setName(dto.name());
+            product.setSlug(generateUniqueSlug(dto.name(), product.getId()));
+        }
         if (dto.shortDescription() != null)
             product.setShortDescription(dto.shortDescription());
         if (dto.description() != null)
@@ -174,13 +213,25 @@ public class ProductService {
             product.setColorOptions(dto.colorOptions());
         if (dto.price() != null)
             product.setPrice(dto.price());
-        // Ignore dto.stockQuantity() - it's derived from variants
+        if (dto.stockQuantity() != null)
+            product.setStockQuantity(dto.stockQuantity());
         if (dto.warrantyMonths() != null)
             product.setWarrantyMonths(dto.warrantyMonths());
         if (dto.manufactureDate() != null)
-            product.setManufactureDate(parseDate(dto.manufactureDate()));
+            product.setManufactureDate(manufactureDate);
         if (dto.expiryDate() != null)
-            product.setExpiryDate(parseDate(dto.expiryDate()));
+            product.setExpiryDate(expiryDate);
+        if (dto.hasVariants() != null)
+            product.setHasVariants(dto.hasVariants());
+
+        // 🛡️ Integrity Check: Variant products MUST have variant data
+        if (Boolean.TRUE.equals(product.getHasVariants()) && (dto.variantsJson() == null || dto.variantsJson().isBlank() || dto.variantsJson().equals("[]"))) {
+            // Check if it already has active variants in DB
+            List<ProductVariant> existingActive = productVariantRepository.findByProductAndActive(product, true);
+            if (existingActive.isEmpty()) {
+                throw new BusinessValidationException("Products with variants must include variant data.");
+            }
+        }
 
         if (product.getCategory() != null && !product.getCategory().isBlank()) {
             ensureCategoryExists(product.getCategory());
@@ -359,6 +410,18 @@ public class ProductService {
         Product p = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
 
+        return toDetail(p);
+    }
+
+    public ProductDetailDTO getProductDetailBySlug(String slug) {
+        Product p = productRepository.findBySlug(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+
+        return toDetail(p);
+    }
+
+    private ProductDetailDTO toDetail(Product p) {
+
         SellerProfile profile = p.getSellerProfile();
         User seller = profile.getUser();
 
@@ -383,6 +446,7 @@ public class ProductService {
                 .sellerProfileId(profile.getId())
                 .sellerUserId(seller.getId())
                 .name(p.getName())
+                .slug(p.getSlug())
                 .shortDescription(p.getShortDescription())
                 .description(p.getDescription())
                 .category(p.getCategory())
@@ -426,6 +490,7 @@ public class ProductService {
                         .map(v -> variantService.toDTO(v, effectiveBasePrice))
                         .toList())
                 .attributeOptions(buildAttributeOptions(p))
+                .hasVariants(Boolean.TRUE.equals(p.getHasVariants()))
                 .build();
 
     }
@@ -457,11 +522,24 @@ public class ProductService {
     }
 
     // ===================== LIST ALL =====================
+    @Transactional(readOnly = true)
     public List<ProductResponseDTO> listAllActiveProducts() {
         return productRepository.findByStatus(ProductStatus.ACTIVE)
                 .stream().map(this::toResponse).toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<ProductResponseDTO> listActiveProductsByIds(List<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return List.of();
+        }
+        return productRepository.findByIdInAndStatus(productIds, ProductStatus.ACTIVE)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<ProductResponseDTO> listProductsForSeller(Long sellerUserId) {
 
         User seller = userRepository.findById(sellerUserId)
@@ -474,7 +552,6 @@ public class ProductService {
                 .stream().map(this::toResponse).toList();
     }
 
-    // DTO response creator
     private ProductResponseDTO toResponse(Product p) {
         String saleLabel = buildSaleLabel(p);
 
@@ -484,11 +561,23 @@ public class ProductService {
 
         long views = productViewRepository.countByProduct(p);
 
+        // ⚡ Architecture Fix: Ensure list view has accurate variant data
+        boolean effectivelyHasVariants = Boolean.TRUE.equals(p.getHasVariants()) || (p.getVariants() != null && !p.getVariants().isEmpty());
+
+        List<ProductVariant> activeVariants = effectivelyHasVariants
+            ? p.getVariants().stream().filter(v -> Boolean.TRUE.equals(v.getActive())).toList()
+            : List.of();
+
+        Integer displayStock = effectivelyHasVariants && !activeVariants.isEmpty()
+            ? activeVariants.stream().mapToInt(v -> v.getStockQuantity() != null ? v.getStockQuantity() : 0).sum()
+            : (p.getStockQuantity() != null ? p.getStockQuantity() : 0);
+
         return ProductResponseDTO.builder()
                 .id(p.getId())
                 .sellerProfileId(p.getSellerProfile().getId())
                 .sellerUserId(p.getSellerProfile().getUser().getId())
                 .name(p.getName())
+                .slug(p.getSlug())
                 .shortDescription(p.getShortDescription())
                 .description(p.getDescription())
                 .category(p.getCategory())
@@ -507,7 +596,7 @@ public class ProductService {
                 .insideValleyShipping(p.getInsideValleyShipping())
                 .outsideValleyShipping(p.getOutsideValleyShipping())
                 .sellerFreeShippingMinOrder(p.getSellerFreeShippingMinOrder())
-                .stockQuantity(p.getStockQuantity())
+                .stockQuantity(displayStock)
                 .warrantyMonths(p.getWarrantyMonths())
                 .manufactureDate(p.getManufactureDate())
                 .expiryDate(p.getExpiryDate())
@@ -523,14 +612,69 @@ public class ProductService {
                 .logoImagePath(p.getSellerProfile().getLogoImagePath())
                 .profileImagePath(p.getSellerProfile().getUser().getProfileImagePath())
                 .saleEndTime(p.getSaleEndTime())
-                .hasVariants(!p.getVariants().isEmpty())
+                .hasVariants(effectivelyHasVariants)
+                .minPrice(calculateMinPrice(p))
+                .maxPrice(calculateMaxPrice(p))
                 .build();
+    }
+
+    private BigDecimal calculateMinPrice(Product p) {
+        if (!Boolean.TRUE.equals(p.getHasVariants()) || p.getVariants() == null || p.getVariants().isEmpty()) {
+            return resolveEffectiveUnitPrice(p);
+        }
+        return p.getVariants().stream()
+                .filter(v -> Boolean.TRUE.equals(v.getActive()))
+                .map(v -> v.getEffectivePrice(resolveEffectiveUnitPrice(p)))
+                .min(BigDecimal::compareTo)
+                .orElse(resolveEffectiveUnitPrice(p));
+    }
+
+    private BigDecimal calculateMaxPrice(Product p) {
+        if (!Boolean.TRUE.equals(p.getHasVariants()) || p.getVariants() == null || p.getVariants().isEmpty()) {
+            return resolveEffectiveUnitPrice(p);
+        }
+        return p.getVariants().stream()
+                .filter(v -> Boolean.TRUE.equals(v.getActive()))
+                .map(v -> v.getEffectivePrice(resolveEffectiveUnitPrice(p)))
+                .max(BigDecimal::compareTo)
+                .orElse(resolveEffectiveUnitPrice(p));
     }
 
     private LocalDate parseDate(String v) {
         if (v == null || v.isBlank())
             return null;
         return LocalDate.parse(v);
+    }
+
+    private String generateUniqueSlug(String name, Long currentProductId) {
+        String base = Normalizer.normalize(name == null ? "product" : name, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("^-+|-+$", "");
+        if (base.isBlank()) {
+            base = "product";
+        }
+        if (base.length() > 100) {
+            base = base.substring(0, 100).replaceAll("-+$", "");
+        }
+
+        String slug = base;
+        int suffix = 2;
+        while (slugExists(slug, currentProductId)) {
+            String ending = "-" + suffix++;
+            String prefix = base.length() + ending.length() > 120
+                    ? base.substring(0, 120 - ending.length()).replaceAll("-+$", "")
+                    : base;
+            slug = prefix + ending;
+        }
+        return slug;
+    }
+
+    private boolean slugExists(String slug, Long currentProductId) {
+        return currentProductId == null
+                ? productRepository.existsBySlug(slug)
+                : productRepository.existsBySlugAndIdNot(slug, currentProductId);
     }
 
     /**
@@ -550,7 +694,7 @@ public class ProductService {
                         .build();
                 
                 List<ProductDetailDTO.AttributeOptionDTO> options = grouped.computeIfAbsent(attrName, k -> new java.util.ArrayList<>());
-                if (options.stream().noneMatch(o -> o.getId().equals(option.getId()))) {
+                if (options.stream().noneMatch(o -> o.getValue().equalsIgnoreCase(option.getValue()))) {
                     options.add(option);
                 }
             })
@@ -562,6 +706,7 @@ public class ProductService {
         return productViewRepository.countViewsByProduct();
     }
 
+    @Transactional(readOnly = true)
     public List<ProductResponseDTO> listActiveProductsForSeller(Long sellerUserId) {
 
         User seller = userRepository.findById(sellerUserId)
@@ -587,13 +732,15 @@ public class ProductService {
             throw new AuthorizationException("You do not have permission to delete this product");
         }
 
-        boolean activeOrderExists = orderRepository.existsByItemsProductAndStatusNot(product, OrderStatus.CANCELED);
+        List<OrderItem> orderItems = orderItemRepository.findByProduct(product);
+        if (!orderItems.isEmpty()) {
+            throw new BusinessValidationException("Cannot hard delete a product that has been ordered. Mark it inactive instead.");
+        }
 
+        boolean activeOrderExists = orderRepository.existsByItemsProductAndStatusNot(product, OrderStatus.CANCELLED);
         if (activeOrderExists) {
             throw new BusinessValidationException("Cannot delete product with active orders");
         }
-
-        List<OrderItem> orderItems = orderItemRepository.findByProduct(product);
         orderItemRepository.deleteAll(orderItems);
 
         List<CartItem> cartItems = cartItemRepository.findAllByProduct(product);
@@ -696,11 +843,29 @@ public class ProductService {
     }
 
     @Transactional
-    public void updateProductStatus(Long productId, ProductStatus status) {
+    public void updateProductStatus(Long requesterId, Long productId, ProductStatus status) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        if (requesterId != null) {
+            ensureProductOwnerOrAdmin(requesterId, product);
+        }
         product.setStatus(status);
         productRepository.save(product);
+    }
+
+    private void ensureProductOwnerOrAdmin(Long requesterId, Product product) {
+        User actor = userRepository.findById(requesterId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (actor.getRole() == Role.ADMIN) {
+            return;
+        }
+        if (actor.getRole() != Role.SELLER) {
+            throw new AuthorizationException("Only the owning seller or admin can modify this product");
+        }
+        if (product.getSellerProfile() == null || product.getSellerProfile().getUser() == null
+                || !product.getSellerProfile().getUser().getId().equals(requesterId)) {
+            throw new AuthorizationException("You do not have permission to modify this product");
+        }
     }
 
     public List<String> getAllCategories() {
@@ -725,5 +890,40 @@ public class ProductService {
             return p.getSalePrice();
         }
         return p.getPrice();
+    }
+
+    private void validateProductPayload(String name,
+                                        BigDecimal price,
+                                        Integer stockQuantity,
+                                        Integer warrantyMonths,
+                                        LocalDate manufactureDate,
+                                        LocalDate expiryDate,
+                                        Boolean hasVariants,
+                                        Double insideShipping,
+                                        Double outsideShipping,
+                                        Boolean freeShipping) {
+        if (name == null || name.isBlank()) {
+            throw new BusinessValidationException("Product name is required");
+        }
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessValidationException("Product price must be greater than zero");
+        }
+        if (!Boolean.TRUE.equals(hasVariants) && stockQuantity != null && stockQuantity < 0) {
+            throw new BusinessValidationException("Product stock cannot be negative");
+        }
+        if (warrantyMonths != null && warrantyMonths < 0) {
+            throw new BusinessValidationException("Warranty months cannot be negative");
+        }
+        if (manufactureDate != null && expiryDate != null && expiryDate.isBefore(manufactureDate)) {
+            throw new BusinessValidationException("Expiry date cannot be before manufacture date");
+        }
+        if (!Boolean.TRUE.equals(freeShipping)) {
+            if (insideShipping != null && insideShipping < 0) {
+                throw new BusinessValidationException("Inside-valley shipping cannot be negative");
+            }
+            if (outsideShipping != null && outsideShipping < 0) {
+                throw new BusinessValidationException("Outside-valley shipping cannot be negative");
+            }
+        }
     }
 }

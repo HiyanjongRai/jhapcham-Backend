@@ -33,6 +33,10 @@ public class Product {
     @Size(max = 1000)
     private String name;
 
+    @Column(unique = true, length = 120)
+    @Size(max = 120)
+    private String slug;
+
     @Column(length = 3000)
     @Size(max = 3000)
     private String shortDescription;
@@ -77,7 +81,7 @@ public class Product {
 
     private LocalDate manufactureDate;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "boolean default false")
     @Builder.Default
     private Boolean onSale = false;
 
@@ -112,5 +116,9 @@ public class Product {
 
     private java.time.LocalDateTime saleEndTime;
     private String saleLabel;
+
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean hasVariants = false;
 
 }

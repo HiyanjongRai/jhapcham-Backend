@@ -2,6 +2,7 @@ package com.example.jhapcham.user.model;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -13,14 +14,18 @@ import java.util.Map;
 public class AddressController {
 
     private final UserAddressRepository addressRepository;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     @GetMapping("/{userId}")
-    public ResponseEntity<List<UserAddress>> getAddresses(@PathVariable Long userId) {
+    public ResponseEntity<List<UserAddress>> getAddresses(@PathVariable Long userId, Authentication authentication) {
+        currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
         return ResponseEntity.ok(addressRepository.findByUserIdOrderByIsDefaultDesc(userId));
     }
 
     @PostMapping("/{userId}")
-    public ResponseEntity<UserAddress> addAddress(@PathVariable Long userId, @RequestBody Map<String, Object> body) {
+    public ResponseEntity<UserAddress> addAddress(@PathVariable Long userId, @RequestBody Map<String, Object> body,
+            Authentication authentication) {
+        currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
         UserAddress address = UserAddress.builder()
                 .userId(userId)
                 .label((String) body.getOrDefault("label", "Home"))
@@ -52,9 +57,11 @@ public class AddressController {
     }
 
     @PutMapping("/{addressId}")
-    public ResponseEntity<UserAddress> updateAddress(@PathVariable Long addressId, @RequestBody Map<String, Object> body) {
+    public ResponseEntity<UserAddress> updateAddress(@PathVariable Long addressId, @RequestBody Map<String, Object> body,
+            Authentication authentication) {
         UserAddress address = addressRepository.findById(addressId)
                 .orElseThrow(() -> new RuntimeException("Address not found"));
+        currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), address.getUserId());
 
         if (body.containsKey("label")) address.setLabel((String) body.get("label"));
         if (body.containsKey("receiverName")) address.setReceiverName((String) body.get("receiverName"));
@@ -86,7 +93,10 @@ public class AddressController {
     }
 
     @DeleteMapping("/{addressId}")
-    public ResponseEntity<Void> deleteAddress(@PathVariable Long addressId) {
+    public ResponseEntity<Void> deleteAddress(@PathVariable Long addressId, Authentication authentication) {
+        UserAddress address = addressRepository.findById(addressId)
+                .orElseThrow(() -> new RuntimeException("Address not found"));
+        currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), address.getUserId());
         addressRepository.deleteById(addressId);
         return ResponseEntity.ok().build();
     }

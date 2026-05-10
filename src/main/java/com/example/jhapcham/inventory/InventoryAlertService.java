@@ -7,6 +7,8 @@ import com.example.jhapcham.notification.NotificationType;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.seller.SellerProfile;
 import com.example.jhapcham.seller.SellerProfileRepository;
+import com.example.jhapcham.user.model.Role;
+import com.example.jhapcham.user.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -122,9 +124,12 @@ public class InventoryAlertService {
                 .toList();
     }
 
-    public InventoryAlertDTO getAlert(Long alertId) {
+    public InventoryAlertDTO getAlert(Long alertId, User actor) {
         InventoryAlert alert = alertRepository.findById(alertId)
                 .orElseThrow(() -> new ResourceNotFoundException("Alert not found"));
+        if (actor.getRole() != Role.ADMIN && !alert.getSeller().getUser().getId().equals(actor.getId())) {
+            throw new RuntimeException("Unauthorized: You can't view this alert");
+        }
         return toDTO(alert);
     }
 

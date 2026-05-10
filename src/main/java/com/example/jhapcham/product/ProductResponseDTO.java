@@ -16,6 +16,7 @@ public class ProductResponseDTO {
     private Long sellerUserId;
 
     private String name;
+    private String slug;
     private String shortDescription;
     private String description;
     private String category;
@@ -56,5 +57,8 @@ public class ProductResponseDTO {
     private String logoImagePath;
     private String profileImagePath;
     private java.time.LocalDateTime saleEndTime;
+    @com.fasterxml.jackson.annotation.JsonProperty("hasVariants")
     private boolean hasVariants;
+    private BigDecimal minPrice;
+    private BigDecimal maxPrice;
 }

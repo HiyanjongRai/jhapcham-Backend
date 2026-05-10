@@ -1,11 +1,11 @@
 package com.example.jhapcham.dispute;
 
 import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -20,21 +20,14 @@ import java.util.Map;
 public class DisputeController {
 
     private final DisputeService disputeService;
-    private final UserRepository userRepository;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     @PostMapping("/initiate")
     public ResponseEntity<?> initiateDispute(
             @RequestBody Map<String, Object> body,
             Authentication authentication) {
         try {
-            if (authentication == null || authentication.getName().equals("anonymousUser")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Please login to initiate a dispute"));
-            }
-            String principal = authentication.getName();
-            User user = userRepository.findByUsername(principal)
-                    .or(() -> userRepository.findByEmail(principal))
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            User user = currentUserService.requireUser(authentication);
 
             Long orderId = Long.parseLong(body.get("orderId").toString());
             String title = (String) body.get("title");
@@ -56,14 +49,7 @@ public class DisputeController {
             @RequestParam(value = "description", required = false) String description,
             Authentication authentication) {
         try {
-            if (authentication == null || authentication.getName().equals("anonymousUser")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Please login"));
-            }
-            String principal = authentication.getName();
-            User user = userRepository.findByUsername(principal)
-                    .or(() -> userRepository.findByEmail(principal))
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            User user = currentUserService.requireUser(authentication);
 
             disputeService.uploadEvidence(disputeId, user.getId(), file, description);
             return ResponseEntity.ok(Map.of("message", "Evidence uploaded successfully"));
@@ -77,14 +63,7 @@ public class DisputeController {
     @GetMapping("/my-disputes")
     public ResponseEntity<?> getMyDisputes(Authentication authentication) {
         try {
-            if (authentication == null || authentication.getName().equals("anonymousUser")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Please login"));
-            }
-            String principal = authentication.getName();
-            User user = userRepository.findByUsername(principal)
-                    .or(() -> userRepository.findByEmail(principal))
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            User user = currentUserService.requireUser(authentication);
 
             List<DisputeResponseDTO> disputes = disputeService.getUserDisputes(user.getId());
             return ResponseEntity.ok(disputes);
@@ -96,9 +75,9 @@ public class DisputeController {
     }
 
     @GetMapping("/{disputeId}")
-    public ResponseEntity<?> getDispute(@PathVariable Long disputeId) {
+    public ResponseEntity<?> getDispute(@PathVariable Long disputeId, Authentication authentication) {
         try {
-            DisputeResponseDTO dispute = disputeService.getDispute(disputeId);
+            DisputeResponseDTO dispute = disputeService.getDispute(disputeId, currentUserService.requireUser(authentication));
             return ResponseEntity.ok(dispute);
         } catch (Exception e) {
             log.error("Error fetching dispute: {}", e.getMessage());
@@ -109,6 +88,7 @@ public class DisputeController {
 
     // Admin endpoints
     @GetMapping("/admin/pending")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> getPendingDisputes() {
         try {
             List<DisputeResponseDTO> disputes = disputeService.getPendingDisputes();
@@ -121,6 +101,7 @@ public class DisputeController {
     }
 
     @PostMapping("/admin/{disputeId}/resolve")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> resolveDispute(
             @PathVariable Long disputeId,
             @RequestBody Map<String, String> body) {

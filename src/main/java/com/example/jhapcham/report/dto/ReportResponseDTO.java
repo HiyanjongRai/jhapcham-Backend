@@ -14,10 +14,16 @@ public class ReportResponseDTO {
     private Long id;
     private Long orderId;
     private Long orderItemId;
+    private Long reportedEntityId;
+    private String reportedEntityName;
+    private String reportedEntityImage;
+    private String type;
     private String productName;
     private String productImage;
     private Long customerId;
     private String customerName;
+    private Long reporterId;
+    private String reporterName;
     private Long sellerId;
     private String storeName;
     private ReportReason reason;

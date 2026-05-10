@@ -1,12 +1,19 @@
 package com.example.jhapcham.order;
 
 public enum OrderStatus {
-    NEW,
+    DRAFT,
+    PENDING,
+    COD_PENDING,
+    CONFIRMED,
+    CONFIRMED_BY_CALL,
     PROCESSING,
-    SHIPPED_TO_BRANCH,
+    PACKED,
+    SHIPPED,
     OUT_FOR_DELIVERY,
     DELIVERED,
-    CANCELED,
+    CANCELLED,
+    RETURN_REQUESTED,
+    RETURNED,
     REFUNDED,
-    PARTIALLY_REFUNDED
+    FAILED
 }

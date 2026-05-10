@@ -6,6 +6,7 @@ import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.order.*;
 import com.example.jhapcham.refund.*;
 import com.example.jhapcham.report.dto.*;
+import com.example.jhapcham.user.model.Role;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -193,9 +194,14 @@ public class ReportService {
                 .map(this::mapToDTO).collect(Collectors.toList());
     }
 
-    public ReportResponseDTO getReport(Long id) {
+    public ReportResponseDTO getReport(Long id, User actor) {
         Report report = reportRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
+        if (actor.getRole() != Role.ADMIN
+                && !report.getCustomer().getId().equals(actor.getId())
+                && !report.getSeller().getId().equals(actor.getId())) {
+            throw new AuthorizationException("You do not have permission to view this report");
+        }
         return mapToDTO(report);
     }
 
@@ -204,10 +210,16 @@ public class ReportService {
                 .id(report.getId())
                 .orderId(report.getOrder().getId())
                 .orderItemId(report.getOrderItem().getId())
+                .reportedEntityId(report.getReportedEntityId())
+                .reportedEntityName(report.getReportedEntityName())
+                .reportedEntityImage(report.getReportedEntityImage())
+                .type(report.getType() != null ? report.getType().name() : null)
                 .productName(report.getOrderItem().getProductNameSnapshot())
                 .productImage(report.getOrderItem().getImagePathSnapshot())
                 .customerId(report.getCustomer().getId())
                 .customerName(report.getCustomer().getFullName())
+                .reporterId(report.getReporter() != null ? report.getReporter().getId() : report.getCustomer().getId())
+                .reporterName(report.getReporter() != null ? report.getReporter().getFullName() : report.getCustomer().getFullName())
                 .sellerId(report.getSeller().getId())
                 .storeName(report.getOrderItem().getProduct().getSellerProfile().getStoreName())
                 .reason(report.getReason())

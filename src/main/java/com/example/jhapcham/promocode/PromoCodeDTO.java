@@ -23,6 +23,7 @@ public class PromoCodeDTO {
     private LocalDateTime startDate;
     private LocalDateTime endDate;
     private Integer usageLimit;
+    private Integer perUserUsageLimit;
     private Integer usedCount;
     private Boolean isActive;
     // Helper for validation response

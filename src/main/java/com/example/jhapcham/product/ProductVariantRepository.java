@@ -11,9 +11,17 @@ import java.util.Optional;
 @Repository
 public interface ProductVariantRepository extends JpaRepository<ProductVariant, Long> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT v FROM ProductVariant v WHERE v.id = :id")
+    Optional<ProductVariant> findByIdForUpdate(@Param("id") Long id);
+
     List<ProductVariant> findByProduct(Product product);
+    
+    @Query("SELECT COUNT(v) > 0 FROM ProductVariant v WHERE v.product.id = :productId AND v.active = true")
+    boolean existsActiveByProductId(@Param("productId") Long productId);
 
     List<ProductVariant> findByProductAndActive(Product product, Boolean active);
+    boolean existsByProductAndActive(Product product, Boolean active);
 
     Optional<ProductVariant> findBySku(String sku);
 

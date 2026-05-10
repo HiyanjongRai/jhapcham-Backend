@@ -14,6 +14,14 @@ public record ProductCreateRequestDTO(
                 String features,
                 String colorOptions,
                 BigDecimal price,
+
+                // Sale Fields
+                Boolean onSale,
+                BigDecimal discountPrice,
+                BigDecimal salePercentage,
+                String saleEndTime,
+                String saleLabel,
+
                 Integer stockQuantity,
                 Integer warrantyMonths,
                 String manufactureDate,
@@ -23,5 +31,6 @@ public record ProductCreateRequestDTO(
                 Double insideValleyShipping,
                 Double outsideValleyShipping,
                 Double sellerFreeShippingMinOrder,
+                Boolean hasVariants,
                 String variantsJson) {
 }

@@ -3,16 +3,27 @@ package com.example.jhapcham.common;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Locale;
+import java.util.Set;
 
 @Service
+@Slf4j
 public class FileStorageService {
 
     private final Path root;
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp", "gif", "pdf");
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+            "application/pdf");
 
     public FileStorageService(
             @Value("${file.upload.dir:H:/Project/Ecomm/jhapcham/uploads}") String uploadDir
@@ -20,7 +31,7 @@ public class FileStorageService {
         this.root = Path.of(uploadDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(this.root);
-            System.out.println("[FileStorage] Root dir = " + this.root);
+            log.info("File upload root initialized at {}", this.root);
         } catch (Exception e) {
             throw new RuntimeException("Cannot create upload root: " + this.root, e);
         }
@@ -42,12 +53,16 @@ public class FileStorageService {
 
         try {
             Path dir = this.root.resolve(subdir).normalize();
+            if (!dir.startsWith(this.root)) {
+                throw new RuntimeException("Invalid upload directory");
+            }
             Files.createDirectories(dir);
 
             String original = file.getOriginalFilename();
             if (original == null || original.isBlank()) {
                 original = "file.bin";
             }
+            validateFile(file, original);
 
             fileName = fileName.replaceAll("[\\\\/:*?\"<>|]", "_");
 
@@ -57,7 +72,10 @@ public class FileStorageService {
             }
 
             Path target = dir.resolve(fileName).normalize();
-            System.out.println("[FileStorage] Writing -> " + target);
+            if (!target.startsWith(dir)) {
+                throw new RuntimeException("Invalid upload path");
+            }
+            log.debug("Writing uploaded file to {}", target);
 
             try (InputStream in = file.getInputStream()) {
                 Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
@@ -67,6 +85,23 @@ public class FileStorageService {
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to store file: " + e.getMessage(), e);
+        }
+    }
+
+    private void validateFile(MultipartFile file, String original) {
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
+            throw new RuntimeException("Unsupported file type");
+        }
+
+        int dot = original.lastIndexOf('.');
+        if (dot < 0 || dot == original.length() - 1) {
+            throw new RuntimeException("File extension is required");
+        }
+
+        String extension = original.substring(dot + 1).toLowerCase(Locale.ROOT);
+        if (!ALLOWED_EXTENSIONS.contains(extension)) {
+            throw new RuntimeException("Unsupported file extension");
         }
     }
 

@@ -1,5 +1,6 @@
 package com.example.jhapcham.campaign;
 
+import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.product.Product;
 import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.seller.SellerProfile;
@@ -26,15 +27,15 @@ public class CampaignService {
     public CampaignResponseDTO createCampaign(CampaignCreateRequestDTO dto) {
         // Validate campaign dates
         if (dto.getStartTime() == null || dto.getEndTime() == null) {
-            throw new RuntimeException("Campaign start time and end time are required");
+            throw new BusinessValidationException("Campaign start time and end time are required");
         }
 
         if (dto.getEndTime().isBefore(dto.getStartTime())) {
-            throw new RuntimeException("Campaign end time must be after start time");
+            throw new BusinessValidationException("Campaign end time must be after start time");
         }
 
         if (dto.getStartTime().isBefore(LocalDateTime.now())) {
-            throw new RuntimeException("Campaign start time cannot be in the past");
+            throw new BusinessValidationException("Campaign start time cannot be in the past");
         }
 
         String imagePath = null;
@@ -103,6 +104,16 @@ public class CampaignService {
         Campaign campaign = campaignRepository.findById(dto.getCampaignId())
                 .orElseThrow(() -> new RuntimeException("Campaign not found"));
 
+        if (campaign.getStatus() != CampaignStatus.UPCOMING && campaign.getStatus() != CampaignStatus.ACTIVE) {
+            throw new BusinessValidationException("Only upcoming or active campaigns can accept seller products");
+        }
+        if (campaign.getEndTime() != null && campaign.getEndTime().isBefore(LocalDateTime.now())) {
+            throw new BusinessValidationException("Campaign has already ended");
+        }
+        if (dto.getProducts() == null || dto.getProducts().isEmpty()) {
+            throw new BusinessValidationException("At least one product is required to join a campaign");
+        }
+
         if (!sellerCampaignRepository.existsByCampaignIdAndSellerId(campaign.getId(), seller.getId())) {
             SellerCampaign sellerCampaign = SellerCampaign.builder()
                     .campaign(campaign)
@@ -125,6 +136,18 @@ public class CampaignService {
             if (product.getStockQuantity() < 10) {
                 throw new RuntimeException(
                         "Product " + product.getName() + " must have at least 10 stock to join a campaign.");
+            }
+            if (productDto.getSalePrice() == null || productDto.getSalePrice().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+                throw new BusinessValidationException("Campaign sale price must be greater than zero");
+            }
+            if (productDto.getSalePrice().compareTo(product.getPrice()) >= 0) {
+                throw new BusinessValidationException("Campaign sale price must be lower than product price");
+            }
+            if (productDto.getStockLimit() == null || productDto.getStockLimit() <= 0) {
+                throw new BusinessValidationException("Campaign stock limit must be greater than zero");
+            }
+            if (productDto.getStockLimit() > product.getStockQuantity()) {
+                throw new BusinessValidationException("Campaign stock limit cannot exceed available product stock");
             }
 
             if (campaignProductRepository.existsByCampaignIdAndProductId(campaign.getId(), product.getId())) {

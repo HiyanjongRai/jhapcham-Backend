@@ -16,10 +16,12 @@ public interface CartItemRepository extends JpaRepository<CartItem, Long> {
 
     Optional<CartItem> findByUserAndProduct(User user, Product product);
 
-    /** Find existing cart item for the same user + same variant */
-    @Query("SELECT c FROM CartItem c WHERE c.user = :user AND c.variant = :variant")
-    Optional<CartItem> findByUserAndVariant(
+    /** Find existing cart item for the same user + product + variant */
+    @Query("SELECT c FROM CartItem c WHERE c.user = :user AND c.product = :product AND " +
+           "((:variant IS NULL AND c.variant IS NULL) OR (c.variant = :variant))")
+    Optional<CartItem> findByUserAndProductAndVariant(
         @Param("user") User user,
+        @Param("product") Product product,
         @Param("variant") ProductVariant variant
     );
 

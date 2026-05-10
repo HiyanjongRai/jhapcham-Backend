@@ -1,5 +1,6 @@
 package com.example.jhapcham.notification;
 
+import com.example.jhapcham.Error.AuthorizationException;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -9,8 +10,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Objects;
-import org.springframework.jdbc.core.JdbcTemplate;
-import jakarta.annotation.PostConstruct;
 
 @Service
 @RequiredArgsConstructor
@@ -18,17 +17,6 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
-    private final JdbcTemplate jdbcTemplate;
-
-    @PostConstruct
-    public void init() {
-        try {
-            jdbcTemplate.execute("ALTER TABLE notifications DROP CONSTRAINT notifications_type_check");
-            System.out.println("[DB Migrator] Dropped notifications_type_check safely.");
-        } catch (Exception e) {
-            System.out.println("[DB Migrator] Constraint not found or already dropped.");
-        }
-    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void createNotification(User user, String title, String message, NotificationType type,
@@ -50,9 +38,12 @@ public class NotificationService {
     }
 
     @Transactional
-    public void markAsRead(Long notificationId) {
+    public void markAsRead(Long notificationId, User actor) {
         notificationRepository.findById(Objects.requireNonNull(notificationId, "Notification ID cannot be null"))
                 .ifPresent(n -> {
+                    if (!n.getUser().getId().equals(actor.getId())) {
+                        throw new AuthorizationException("You do not have permission to modify this notification");
+                    }
                     n.setIsRead(true);
                     notificationRepository.save(n);
                 });

@@ -27,4 +27,6 @@ public class CheckoutRequestDTO {
 
     private String couponCode; // NEW
 
+    private String idempotencyKey;
+
 }

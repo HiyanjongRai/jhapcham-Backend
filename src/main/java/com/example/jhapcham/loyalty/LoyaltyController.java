@@ -1,7 +1,6 @@
 package com.example.jhapcham.loyalty;
 
 import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -18,19 +17,12 @@ import java.util.Map;
 public class LoyaltyController {
 
     private final LoyaltyService loyaltyService;
-    private final UserRepository userRepository;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     @GetMapping("/my-points")
     public ResponseEntity<?> getMyLoyaltyPoints(Authentication authentication) {
         try {
-            if (authentication == null || authentication.getName().equals("anonymousUser")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Please login to view loyalty points"));
-            }
-            String principal = authentication.getName();
-            User user = userRepository.findByUsername(principal)
-                    .or(() -> userRepository.findByEmail(principal))
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            User user = currentUserService.requireUser(authentication);
 
             LoyaltyPointsDTO points = loyaltyService.getUserLoyaltyPoints(user.getId());
             return ResponseEntity.ok(points);
@@ -46,14 +38,7 @@ public class LoyaltyController {
             @RequestBody Map<String, Long> body,
             Authentication authentication) {
         try {
-            if (authentication == null || authentication.getName().equals("anonymousUser")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Please login to redeem points"));
-            }
-            String principal = authentication.getName();
-            User user = userRepository.findByUsername(principal)
-                    .or(() -> userRepository.findByEmail(principal))
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            User user = currentUserService.requireUser(authentication);
 
             Long pointsToRedeem = body.get("points");
 

@@ -26,7 +26,10 @@ public class OrderSummaryDTO {
     private String orderNote; // NEW
 
     private PaymentMethod paymentMethod;
+    private PaymentStatus paymentStatus;
     private String paymentReference;
+    private String trackingId;
+    private com.example.jhapcham.delivery.DeliveryStatus deliveryStatus;
 
     private BigDecimal itemsTotal;
     private BigDecimal shippingFee;
@@ -35,6 +38,8 @@ public class OrderSummaryDTO {
     private BigDecimal grandTotal;
 
     private LocalDateTime createdAt;
+    private LocalDateTime deliveredAt;
+    private String appliedCoupon;
 
     private List<OrderItemResponseDTO> items;
 

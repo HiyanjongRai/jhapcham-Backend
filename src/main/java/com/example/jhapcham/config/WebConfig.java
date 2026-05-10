@@ -24,10 +24,6 @@ public class WebConfig implements WebMvcConfigurer {
 
                 String baseDir = "file:H:/Project/Ecomm/Jhapcham1/jhapcham-Backend/uploads/";
 
-                // single generic handler for everything stored by FileStorageService
-                registry.addResourceHandler("/uploads/**")
-                                .addResourceLocations(baseDir);
-
                 // Mapping "product-images" request path to the actual "products" folder on disk
                 registry.addResourceHandler("/product-images/**")
                                 .addResourceLocations(baseDir + "product-images/");
@@ -44,11 +40,11 @@ public class WebConfig implements WebMvcConfigurer {
                 registry.addResourceHandler("/seller_logos/**")
                                 .addResourceLocations(baseDir + "seller_logos/");
 
-                registry.addResourceHandler("/seller_docs/**")
-                                .addResourceLocations(baseDir + "seller_docs/");
-
                 registry.addResourceHandler("/campaign-images/**")
                                 .addResourceLocations(baseDir + "campaign-images/");
+
+                registry.addResourceHandler("/banners/**")
+                                .addResourceLocations(baseDir + "banners/");
         }
 
 }

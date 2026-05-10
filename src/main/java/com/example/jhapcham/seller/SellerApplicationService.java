@@ -9,6 +9,7 @@ import com.example.jhapcham.user.model.Status;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -18,6 +19,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SellerApplicationService {
 
     private final SellerApplicationRepository applicationRepo;
@@ -37,7 +39,7 @@ public class SellerApplicationService {
         User seller = userRepo.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Seller user not found"));
 
-        if (seller.getRole() != Role.SELLER) {
+        if (seller.getRole() != Role.SELLER && seller.getRole() != Role.CUSTOMER) {
             throw new RoleBasedAccessException("Only sellers can submit applications");
         }
 
@@ -73,6 +75,13 @@ public class SellerApplicationService {
         app.setStatus(ApplicationStatus.PENDING);
         app.setSubmittedAt(LocalDateTime.now());
         app.setReviewNote(null); // Clear previous rejection reason
+
+        // If user was a CUSTOMER, promote them to SELLER status PENDING
+        if (seller.getRole() == Role.CUSTOMER) {
+            seller.setRole(Role.SELLER);
+            seller.setStatus(Status.PENDING);
+            userRepo.save(seller);
+        }
 
         return applicationRepo.save(app);
     }
@@ -131,7 +140,7 @@ public class SellerApplicationService {
                     com.example.jhapcham.notification.NotificationType.SYSTEM_ALERT,
                     app.getId());
         } catch (Exception e) {
-            System.err.println("Failed to send approval notification: " + e.getMessage());
+            log.warn("Failed to send approval notification: {}", e.getMessage());
         }
 
         return applicationRepo.save(app);
@@ -155,7 +164,7 @@ public class SellerApplicationService {
                     com.example.jhapcham.notification.NotificationType.REPORT_ALERT,
                     app.getId());
         } catch (Exception e) {
-            System.err.println("Failed to send rejection notification: " + e.getMessage());
+            log.warn("Failed to send rejection notification: {}", e.getMessage());
         }
 
         return applicationRepo.save(app);

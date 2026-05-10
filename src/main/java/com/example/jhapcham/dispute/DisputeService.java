@@ -1,11 +1,13 @@
 package com.example.jhapcham.dispute;
 
+import com.example.jhapcham.Error.AuthorizationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.notification.EmailService;
 import com.example.jhapcham.notification.NotificationService;
 import com.example.jhapcham.notification.NotificationType;
 import com.example.jhapcham.order.Order;
 import com.example.jhapcham.order.OrderRepository;
+import com.example.jhapcham.user.model.Role;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +41,16 @@ public class DisputeService {
 
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+
+        boolean buyerOwnsOrder = order.getUser() != null && order.getUser().getId().equals(userId);
+        boolean sellerOwnsOrder = order.getItems().stream()
+                .anyMatch(item -> item.getProduct() != null
+                        && item.getProduct().getSellerProfile() != null
+                        && item.getProduct().getSellerProfile().getUser() != null
+                        && item.getProduct().getSellerProfile().getUser().getId().equals(userId));
+        if (!buyerOwnsOrder && !sellerOwnsOrder) {
+            throw new AuthorizationException("You are not a party to this order");
+        }
 
         // Find the other party (seller if initiator is buyer, or buyer if initiator is seller)
         User otherParty = order.getItems().get(0).getProduct().getSellerProfile().getUser();
@@ -168,9 +180,14 @@ public class DisputeService {
                 .toList();
     }
 
-    public DisputeResponseDTO getDispute(Long disputeId) {
+    public DisputeResponseDTO getDispute(Long disputeId, User actor) {
         Dispute dispute = disputeRepository.findById(disputeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dispute not found"));
+        if (actor.getRole() != Role.ADMIN
+                && !dispute.getInitiatedByUser().getId().equals(actor.getId())
+                && !dispute.getOtherPartyUser().getId().equals(actor.getId())) {
+            throw new AuthorizationException("You do not have permission to view this dispute");
+        }
         return toResponseDTO(dispute);
     }
 

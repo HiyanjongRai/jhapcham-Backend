@@ -91,6 +91,9 @@ public class User {
         @Column(name = "reset_otp", length = 6)
         private String resetOtp;
 
+        @Column(name = "reset_otp_hash", length = 64)
+        private String resetOtpHash;
+
         @Column(name = "reset_otp_expiry")
         private LocalDateTime resetOtpExpiry;
 

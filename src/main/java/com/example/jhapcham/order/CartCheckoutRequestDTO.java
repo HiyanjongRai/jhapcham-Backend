@@ -23,4 +23,6 @@ public class CartCheckoutRequestDTO {
 
     private String couponCode; // Add this
 
+    private String idempotencyKey;
+
 }

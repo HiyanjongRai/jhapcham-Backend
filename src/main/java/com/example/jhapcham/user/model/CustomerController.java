@@ -3,6 +3,7 @@ package com.example.jhapcham.user.model;
 import com.example.jhapcham.Error.ErrorResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 public class CustomerController {
 
     private final AuthService authService;
+    private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     /**
      * Update Customer Profile
@@ -20,8 +22,10 @@ public class CustomerController {
     @PutMapping("/{userId}")
     public ResponseEntity<?> updateCustomerProfile(
             @PathVariable Long userId,
-            @ModelAttribute UserProfileUpdateRequestDTO dto) {
+            @ModelAttribute UserProfileUpdateRequestDTO dto,
+            Authentication authentication) {
         try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
             // Optional: Verify user is a customer
             // User user = userRepository.findById(userId).orElseThrow(...);
             // if (user.getRole() != Role.CUSTOMER) ...
