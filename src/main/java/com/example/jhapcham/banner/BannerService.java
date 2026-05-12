@@ -123,9 +123,6 @@ public class BannerService {
     }
 
     private void validateUpsertRequest(BannerUpsertRequestDTO dto, boolean isUpdate) {
-        if (!isUpdate && (dto.getTitle() == null || dto.getTitle().isBlank())) {
-            throw new BusinessValidationException("Banner title is required.");
-        }
         if (!isUpdate && dto.getBannerType() == null) {
             throw new BusinessValidationException("Banner type is required.");
         }
@@ -141,12 +138,13 @@ public class BannerService {
     }
 
     private void applyBannerFields(Banner banner, BannerUpsertRequestDTO dto, boolean isUpdate) {
-        if (!isBlank(dto.getTitle())) banner.setTitle(dto.getTitle());
+        if (dto.getTitle() != null) banner.setTitle(dto.getTitle().trim());
+        else if (!isUpdate && banner.getTitle() == null) banner.setTitle("");
         if (dto.getSubtitle() != null) banner.setSubtitle(dto.getSubtitle());
         if (dto.getDescription() != null) banner.setDescription(dto.getDescription());
-        if (dto.getDiscountText() != null) banner.setDiscountText(dto.getDiscountText());
-        if (!isBlank(dto.getButtonText())) banner.setButtonText(dto.getButtonText());
-        if (!isBlank(dto.getButtonLink())) banner.setButtonLink(dto.getButtonLink());
+        if (dto.getDiscountText() != null) banner.setDiscountText(dto.getDiscountText().trim());
+        if (dto.getButtonText() != null) banner.setButtonText(dto.getButtonText().trim());
+        if (dto.getButtonLink() != null) banner.setButtonLink(dto.getButtonLink().trim());
         if (!isBlank(dto.getBackgroundColor())) banner.setBackgroundColor(dto.getBackgroundColor());
         if (!isBlank(dto.getTextColor())) banner.setTextColor(dto.getTextColor());
         if (dto.getBannerType() != null) banner.setBannerType(dto.getBannerType());

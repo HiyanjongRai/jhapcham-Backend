@@ -40,6 +40,25 @@ public class EsewaPaymentController {
         ));
     }
 
+    @PostMapping("/commission/signature")
+    public ResponseEntity<?> getCommissionSignature(@RequestBody Map<String, Object> request, Authentication authentication) {
+        String amount = String.valueOf(request.get("amount"));
+        String transactionUuid = String.valueOf(request.get("transactionUuid"));
+        List<Long> orderIds = extractOrderIds(request.get("orderIds"));
+
+        esewaPaymentService.prepareCommissionPayment(orderIds, amount, transactionUuid,
+                currentUserService.requireUser(authentication));
+        
+        log.info("Generating eSewa commission signature for amount={} and uuid={}", amount, transactionUuid);
+        String signature = esewaPaymentService.generateSignature(amount, transactionUuid);
+        
+        return ResponseEntity.ok(Map.of(
+            "signature", signature,
+            "productCode", esewaProperties.getProductCode(),
+            "paymentUrl", esewaProperties.getPaymentUrl()
+        ));
+    }
+
     @PostMapping("/verify")
     public ResponseEntity<?> verifyPayment(@RequestBody Map<String, String> request, Authentication authentication) {
         String data = request.get("data");

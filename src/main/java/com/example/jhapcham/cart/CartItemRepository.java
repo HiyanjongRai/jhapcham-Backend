@@ -28,4 +28,6 @@ public interface CartItemRepository extends JpaRepository<CartItem, Long> {
     List<CartItem> findAllByProduct(Product product);
 
     List<CartItem> findAllByVariant(ProductVariant variant);
+
+    void deleteByProduct(Product product);
 }

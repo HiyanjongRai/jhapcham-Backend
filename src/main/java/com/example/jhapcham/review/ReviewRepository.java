@@ -1,5 +1,6 @@
 package com.example.jhapcham.review;
 
+import com.example.jhapcham.product.Product;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
@@ -15,4 +16,6 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     @org.springframework.data.jpa.repository.Query("SELECT COUNT(r) FROM Review r WHERE r.product.id = :productId")
     Integer countByProductId(@org.springframework.data.repository.query.Param("productId") Long productId);
+
+    void deleteByProduct(Product product);
 }

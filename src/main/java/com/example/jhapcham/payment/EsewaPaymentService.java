@@ -2,7 +2,9 @@ package com.example.jhapcham.payment;
 
 import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
+import com.example.jhapcham.order.CommissionStatus;
 import com.example.jhapcham.order.Order;
+import com.example.jhapcham.order.OrderAccountingService;
 import com.example.jhapcham.order.OrderRepository;
 import com.example.jhapcham.order.OrderStatus;
 import com.example.jhapcham.order.OrderStockService;
@@ -40,6 +42,7 @@ public class EsewaPaymentService {
     private final PaymentRepository paymentRepository;
     private final PaymentEventRepository paymentEventRepository;
     private final OrderStockService orderStockService;
+    private final OrderAccountingService orderAccountingService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -127,6 +130,63 @@ public class EsewaPaymentService {
                 "orderIds", orderIds,
                 "amount", actualTotal.toPlainString());
     }
+    @Transactional
+    public Map<String, Object> prepareCommissionPayment(List<Long> orderIds, String totalAmount, String transactionUuid, User actor) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            throw new BusinessValidationException("At least one order is required for commission payment");
+        }
+        if (transactionUuid == null || transactionUuid.isBlank()) {
+            throw new BusinessValidationException("Transaction UUID is required");
+        }
+
+        BigDecimal expectedTotal = normalizeAmount(totalAmount);
+        List<Order> orders = orderRepository.findAllById(orderIds);
+        if (orders.size() != orderIds.size()) {
+            throw new ResourceNotFoundException("One or more orders were not found");
+        }
+
+        // Verify ownership (the actor must be the seller of these orders)
+        for (Order order : orders) {
+             boolean belongsToSeller = order.getItems().stream()
+                        .anyMatch(i -> i.getProduct() != null && i.getProduct().getSellerProfile() != null && 
+                                       i.getProduct().getSellerProfile().getUser().getId().equals(actor.getId()));
+             if (!belongsToSeller) {
+                 throw new BusinessValidationException("You do not have permission to pay commission for order #" + order.getId());
+             }
+             if (order.getCommissionStatus() == CommissionStatus.PAID) {
+                 throw new BusinessValidationException("Commission for order #" + order.getId() + " is already paid");
+             }
+        }
+
+        BigDecimal actualTotal = BigDecimal.ZERO;
+        for (Order order : orders) {
+            BigDecimal commission = order.getMarketplaceCommission() != null ? order.getMarketplaceCommission() : BigDecimal.ZERO;
+            actualTotal = actualTotal.add(commission).add(calculateCurrentFine(order));
+        }
+        actualTotal = actualTotal.setScale(2, RoundingMode.HALF_UP);
+
+        if (actualTotal.compareTo(expectedTotal) != 0) {
+             throw new BusinessValidationException("Commission payment amount does not match calculated total");
+        }
+
+        return Map.of(
+                "transactionUuid", transactionUuid,
+                "orderIds", orderIds,
+                "amount", actualTotal.toPlainString());
+    }
+
+    private BigDecimal calculateCurrentFine(Order order) {
+        BigDecimal fine = BigDecimal.ZERO;
+        LocalDateTime now = LocalDateTime.now();
+        if (order.getCommissionDueDate() != null && now.isAfter(order.getCommissionDueDate())) {
+            long daysLate = java.time.Duration.between(order.getCommissionDueDate(), now).toDays();
+            long weeksLate = daysLate / 7;
+            double multiplier = 0.10 + (weeksLate * 0.05);
+            fine = order.getMarketplaceCommission().multiply(BigDecimal.valueOf(multiplier))
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
+        return fine;
+    }
 
     @Transactional
     public Map<String, Object> processSuccess(String data) {
@@ -158,6 +218,11 @@ public class EsewaPaymentService {
             if (orders.size() != orderIds.size()) {
                 throw new ResourceNotFoundException("One or more paid orders were not found");
             }
+
+            if (transactionUuid.startsWith("COMM-")) {
+                 return processCommissionSuccess(payload, orders, decodedJson);
+            }
+
             assertPaymentOwnership(orders, actor);
 
             Payment firstPayment = paymentRepository.findByOrder(orders.get(0)).orElse(null);
@@ -260,6 +325,40 @@ public class EsewaPaymentService {
             log.error("Error processing eSewa success callback", e);
             throw new BusinessValidationException("Payment verification failed");
         }
+    }
+    @Transactional
+    public Map<String, Object> processCommissionSuccess(Map<String, String> payload, List<Order> orders, String decodedJson) {
+        if (!verifyResponseSignature(payload)) {
+            throw new BusinessValidationException("Invalid eSewa response signature for commission");
+        }
+
+        String refId = firstNonBlank(payload.get("transaction_code"), payload.get("ref_id"));
+        BigDecimal paidAmount = normalizeAmount(payload.get("total_amount"));
+
+        BigDecimal expectedTotal = BigDecimal.ZERO;
+        for (Order order : orders) {
+            BigDecimal commission = order.getMarketplaceCommission() != null ? order.getMarketplaceCommission() : BigDecimal.ZERO;
+            expectedTotal = expectedTotal.add(commission).add(calculateCurrentFine(order));
+        }
+        expectedTotal = expectedTotal.setScale(2, RoundingMode.HALF_UP);
+
+        if (expectedTotal.compareTo(paidAmount) != 0) {
+            throw new BusinessValidationException("eSewa paid commission amount mismatch");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        for (Order order : orders) {
+            order.setCommissionPaymentReference(refId);
+            order.setCommissionPaidAt(now);
+            orderAccountingService.markCommissionAsPaid(order);
+            orderRepository.save(order);
+            log.info("Commission for order {} successfully paid via eSewa transaction {}", order.getId(), refId);
+        }
+
+        return Map.of(
+                "message", "Commission payment verified successfully",
+                "orderIds", orders.stream().map(Order::getId).toList(),
+                "referenceId", refId != null ? refId : "");
     }
 
     @Transactional
@@ -391,7 +490,12 @@ public class EsewaPaymentService {
             return ids;
         }
 
-        String[] parts = transactionUuid.split("-");
+        String workUuid = transactionUuid;
+        if (workUuid.startsWith("COMM-")) {
+            workUuid = workUuid.substring(5);
+        }
+
+        String[] parts = workUuid.split("-");
         if (parts.length < 2) {
             return ids;
         }

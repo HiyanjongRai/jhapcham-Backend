@@ -185,6 +185,9 @@ public class Order {
     private boolean commissionReminderSent = false;
 
     private LocalDateTime lastFineCalculationDate;
+    
+    private String commissionPaymentReference;
+    private LocalDateTime commissionPaidAt;
 
     // Set to true when a prepaid order is returned. Signals payment service to refund customer.
     @Column(nullable = false, columnDefinition = "boolean DEFAULT false")

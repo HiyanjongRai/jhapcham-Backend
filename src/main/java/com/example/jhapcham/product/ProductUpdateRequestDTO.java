@@ -33,5 +33,6 @@ public record ProductUpdateRequestDTO(
                 Double outsideValleyShipping,
                 Double sellerFreeShippingMinOrder,
                 Boolean hasVariants,
-                String variantsJson) {
+                String variantsJson,
+                java.util.List<Long> removeImageIds) {
 }

@@ -26,7 +26,7 @@ public class FileStorageService {
             "application/pdf");
 
     public FileStorageService(
-            @Value("${file.upload.dir:H:/Project/Ecomm/jhapcham/uploads}") String uploadDir
+            @Value("${file.upload.dir:H:/Project/Ecomm/Jhapcham1/jhapcham-Backend/uploads}") String uploadDir
     ) {
         this.root = Path.of(uploadDir).toAbsolutePath().normalize();
         try {
@@ -39,10 +39,6 @@ public class FileStorageService {
 
     /**
      * Save under {root}/{subdir}/{fileName}
-     * Example for seller docs
-     * root = H:/Project/Ecomm/jhapcham/uploads
-     * subdir = seller_docs
-     * final path = H:/Project/Ecomm/jhapcham/uploads/seller_docs/fileName
      *
      * @return relative path like seller_docs/fileName for storing in DB
      */
@@ -104,6 +100,4 @@ public class FileStorageService {
             throw new RuntimeException("Unsupported file extension");
         }
     }
-
-
 }

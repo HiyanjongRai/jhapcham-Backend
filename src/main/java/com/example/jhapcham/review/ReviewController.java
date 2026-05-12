@@ -55,4 +55,12 @@ public class ReviewController {
         currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
         return ResponseEntity.ok(reviewService.getReviewsByUser(userId));
     }
+
+    // Delete a review
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteReview(@PathVariable Long id, Authentication authentication) {
+        com.example.jhapcham.user.model.User user = currentUserService.requireUser(authentication);
+        reviewService.deleteReview(id, user.getId());
+        return ResponseEntity.noContent().build();
+    }
 }
