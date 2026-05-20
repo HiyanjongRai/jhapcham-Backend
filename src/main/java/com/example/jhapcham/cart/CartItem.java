@@ -7,7 +7,11 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "cart_items")
+@Table(name = "cart_items", indexes = {
+        @Index(name = "idx_cart_items_user", columnList = "user_id"),
+        @Index(name = "idx_cart_items_product", columnList = "product_id"),
+        @Index(name = "idx_cart_items_user_product_variant", columnList = "user_id,product_id,variant_id")
+})
 @Getter
 @Setter
 @NoArgsConstructor

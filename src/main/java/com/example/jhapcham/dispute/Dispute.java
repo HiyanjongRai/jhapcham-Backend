@@ -22,6 +22,9 @@ public class Dispute {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "custom_report_id", unique = true)
+    private String reportId;
+
     @ManyToOne(optional = false)
     @JoinColumn(name = "order_id")
     private Order order;

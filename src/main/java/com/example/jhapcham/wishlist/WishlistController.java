@@ -35,13 +35,11 @@ public class WishlistController {
         return ResponseEntity.ok().build();
     }
 
-    @GetMapping("/{userId}")
+    @GetMapping("/user/{userId}")
     public ResponseEntity<?> getWishlist(@PathVariable Long userId, Authentication authentication) {
         currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
         return ResponseEntity.ok(wishlistService.getWishlist(userId));
     }
-
-    @GetMapping("/{userId}/check/{productId}")
     public ResponseEntity<?> isInWishlist(
             @PathVariable Long userId,
             @PathVariable Long productId,

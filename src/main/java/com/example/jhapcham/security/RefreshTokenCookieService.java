@@ -7,6 +7,7 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.Locale;
 
 @Service
 public class RefreshTokenCookieService {
@@ -53,13 +54,24 @@ public class RefreshTokenCookieService {
     }
 
     public void ensureTrustedOrigin(HttpServletRequest request) {
-        if (request == null || jwtProperties.getAllowedOrigins() == null || jwtProperties.getAllowedOrigins().isEmpty()) {
-            return;
+        if (request == null) {
+            throw new IllegalArgumentException("Request is required");
+        }
+        if (jwtProperties.getAllowedOrigins() == null || jwtProperties.getAllowedOrigins().isEmpty()) {
+            throw new IllegalArgumentException("Trusted origins are not configured");
+        }
+
+        String fetchSite = request.getHeader("Sec-Fetch-Site");
+        if (fetchSite != null) {
+            String normalizedFetchSite = fetchSite.trim().toLowerCase(Locale.ROOT);
+            if ("cross-site".equals(normalizedFetchSite)) {
+                throw new IllegalArgumentException("Cross-site auth request rejected");
+            }
         }
 
         String origin = request.getHeader(HttpHeaders.ORIGIN);
         if (origin == null || origin.isBlank()) {
-            return;
+            throw new IllegalArgumentException("Origin header is required");
         }
 
         boolean trusted = jwtProperties.getAllowedOrigins().stream()

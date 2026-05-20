@@ -12,6 +12,7 @@ import java.util.List;
 public class OrderSummaryDTO {
 
     private Long orderId;
+    private String customOrderId;  // e.g. JHC-20260520-0001
     private Long customerId; // NEW
     private OrderStatus status;
 
@@ -47,6 +48,14 @@ public class OrderSummaryDTO {
     BigDecimal sellerShippingCharge;
     BigDecimal sellerNetAmount;
     BigDecimal marketplaceCommission;
+    BigDecimal sellerPromoDiscountAmount;
+    BigDecimal platformSponsoredDiscountAmount;
+    BigDecimal inputVatAmount;
+    BigDecimal outputVatAmount;
+    BigDecimal vatPayableAmount;
+    BigDecimal grossProfitAmount;
+    BigDecimal netProfitAmount;
+    BigDecimal finalSellerEarnings;
     DeliveryBranch deliveredBranch;
 
 

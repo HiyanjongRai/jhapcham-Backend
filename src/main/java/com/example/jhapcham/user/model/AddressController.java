@@ -16,7 +16,7 @@ public class AddressController {
     private final UserAddressRepository addressRepository;
     private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
-    @GetMapping("/{userId}")
+    @GetMapping("/user/{userId}")
     public ResponseEntity<List<UserAddress>> getAddresses(@PathVariable Long userId, Authentication authentication) {
         currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
         return ResponseEntity.ok(addressRepository.findByUserIdOrderByIsDefaultDesc(userId));

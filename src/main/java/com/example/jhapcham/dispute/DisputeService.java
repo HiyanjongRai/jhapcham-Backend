@@ -7,6 +7,7 @@ import com.example.jhapcham.notification.NotificationService;
 import com.example.jhapcham.notification.NotificationType;
 import com.example.jhapcham.order.Order;
 import com.example.jhapcham.order.OrderRepository;
+import com.example.jhapcham.order.OrderStatus;
 import com.example.jhapcham.user.model.Role;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
@@ -18,7 +19,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -52,7 +52,14 @@ public class DisputeService {
             throw new AuthorizationException("You are not a party to this order");
         }
 
-        // Find the other party (seller if initiator is buyer, or buyer if initiator is seller)
+        if (order.getStatus() != OrderStatus.DELIVERED) {
+            throw new RuntimeException("Disputes/reports can only be filed for DELIVERED orders.");
+        }
+
+        if (disputeRepository.findByOrder(order).isPresent()) {
+            throw new RuntimeException("A dispute has already been filed for this order.");
+        }
+
         User otherParty = order.getItems().get(0).getProduct().getSellerProfile().getUser();
         if (otherParty.getId().equals(userId)) {
             otherParty = order.getUser();
@@ -61,25 +68,20 @@ public class DisputeService {
             }
         }
 
-        // Check if dispute already exists
-        disputeRepository.findByOrder(order)
-                .ifPresent(d -> {
-                    throw new RuntimeException("Dispute already exists for this order");
-                });
-
+     
         Dispute dispute = Dispute.builder()
+                .reportId(generateReportId())
                 .order(order)
                 .initiatedByUser(initiator)
                 .otherPartyUser(otherParty)
                 .title(title)
                 .description(description)
-                .status(DisputeStatus.OPENED)
+                .status(DisputeStatus.WAITING_FOR_SELLER)
                 .build();
 
         Dispute saved = disputeRepository.save(dispute);
         log.info("Dispute initiated by user {} for order {}", userId, orderId);
 
-        // Notify both parties
         notificationService.createNotification(initiator, "Dispute Initiated",
                 "You've initiated a dispute for order #" + orderId,
                 NotificationType.SYSTEM_ALERT, saved.getId());
@@ -88,7 +90,6 @@ public class DisputeService {
                 "A dispute has been initiated against you for order #" + orderId,
                 NotificationType.SYSTEM_ALERT, saved.getId());
 
-        // Send emails
         emailService.sendDisputeInitiatedEmail(initiator.getEmail(), initiator.getFullName(), orderId);
         emailService.sendDisputeInitiatedEmail(otherParty.getEmail(), otherParty.getFullName(), orderId);
 
@@ -103,13 +104,11 @@ public class DisputeService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        // Verify user is part of the dispute
         if (!dispute.getInitiatedByUser().getId().equals(userId) && !dispute.getOtherPartyUser().getId().equals(userId)) {
             throw new RuntimeException("Unauthorized: You're not part of this dispute");
         }
 
         String fileName = "dispute_" + disputeId + "_" + System.currentTimeMillis() + "_" + file.getOriginalFilename();
-        // Store file to disk via FileStorageService
         String filePath = fileStorageService.save(file, "dispute_evidence", fileName);
         if (filePath == null) {
             throw new RuntimeException("Failed to save evidence file");
@@ -127,8 +126,7 @@ public class DisputeService {
         evidenceRepository.save(evidence);
         log.info("Evidence uploaded for dispute {} by user {}", disputeId, userId);
 
-        // Update dispute status if needed
-        if (dispute.getStatus() == DisputeStatus.OPENED) {
+        if (dispute.getStatus() == DisputeStatus.OPENED || dispute.getStatus() == DisputeStatus.WAITING_FOR_SELLER) {
             dispute.setStatus(DisputeStatus.UNDER_REVIEW);
             disputeRepository.save(dispute);
         }
@@ -147,7 +145,6 @@ public class DisputeService {
         Dispute updated = disputeRepository.save(dispute);
         log.info("Dispute {} resolved", disputeId);
 
-        // Notify both parties
         notificationService.createNotification(dispute.getInitiatedByUser(), "Dispute Resolved",
                 "Your dispute for order #" + dispute.getOrder().getId() + " has been resolved. Resolution: " + resolution,
                 NotificationType.SYSTEM_ALERT, disputeId);
@@ -156,7 +153,6 @@ public class DisputeService {
                 "The dispute for order #" + dispute.getOrder().getId() + " has been resolved. Resolution: " + resolution,
                 NotificationType.SYSTEM_ALERT, disputeId);
 
-        // Send emails
         emailService.sendDisputeResolvedEmail(dispute.getInitiatedByUser().getEmail(), dispute.getInitiatedByUser().getFullName(), resolution);
         emailService.sendDisputeResolvedEmail(dispute.getOtherPartyUser().getEmail(), dispute.getOtherPartyUser().getFullName(), resolution);
 
@@ -191,6 +187,134 @@ public class DisputeService {
         return toResponseDTO(dispute);
     }
 
+    // ── GAP 2: NEW STATUS TRANSITION METHODS ──────────────────────────────────
+
+    @Transactional
+    public DisputeResponseDTO escalateDispute(Long disputeId, Long userId) {
+        Dispute dispute = disputeRepository.findById(disputeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Dispute not found"));
+        if (!dispute.getInitiatedByUser().getId().equals(userId)
+                && !dispute.getOtherPartyUser().getId().equals(userId)) {
+            throw new AuthorizationException("You are not a party to this dispute");
+        }
+        dispute.setStatus(DisputeStatus.ESCALATED);
+        Dispute updated = disputeRepository.save(dispute);
+        log.info("Dispute {} escalated to admin by user {}", disputeId, userId);
+        return toResponseDTO(updated);
+    }
+
+    @Transactional
+    public DisputeResponseDTO sellerRespond(Long disputeId, Long userId) {
+        Dispute dispute = disputeRepository.findById(disputeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Dispute not found"));
+        if (!dispute.getOtherPartyUser().getId().equals(userId)
+                && !dispute.getInitiatedByUser().getId().equals(userId)) {
+            throw new AuthorizationException("You are not a party to this dispute");
+        }
+        dispute.setStatus(DisputeStatus.WAITING_FOR_CUSTOMER);
+        Dispute updated = disputeRepository.save(dispute);
+        notificationService.createNotification(
+                dispute.getInitiatedByUser(),
+                "Seller Responded to Dispute",
+                "The seller has replied to your dispute for order #" + dispute.getOrder().getId() + ". Please review and respond.",
+                NotificationType.SYSTEM_ALERT, disputeId);
+        return toResponseDTO(updated);
+    }
+
+    @Transactional
+    public DisputeResponseDTO customerRespond(Long disputeId, Long userId) {
+        Dispute dispute = disputeRepository.findById(disputeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Dispute not found"));
+        if (!dispute.getInitiatedByUser().getId().equals(userId)
+                && !dispute.getOtherPartyUser().getId().equals(userId)) {
+            throw new AuthorizationException("You are not a party to this dispute");
+        }
+        dispute.setStatus(DisputeStatus.WAITING_FOR_SELLER);
+        Dispute updated = disputeRepository.save(dispute);
+        notificationService.createNotification(
+                dispute.getOtherPartyUser(),
+                "Customer Responded to Dispute",
+                "The customer has replied to dispute #" + disputeId + ". Please review and respond.",
+                NotificationType.SYSTEM_ALERT, disputeId);
+        return toResponseDTO(updated);
+    }
+
+    @Transactional
+    public DisputeResponseDTO sellerApprove(Long disputeId, Long userId) {
+        Dispute dispute = disputeRepository.findById(disputeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Dispute not found"));
+        if (!dispute.getOtherPartyUser().getId().equals(userId)) {
+            throw new AuthorizationException("You are not authorized to approve this dispute");
+        }
+        dispute.setStatus(DisputeStatus.RESOLVED);
+        dispute.setResolution("Seller approved refund request");
+        dispute.setResolvedAt(LocalDateTime.now());
+        Dispute updated = disputeRepository.save(dispute);
+        
+        notificationService.createNotification(dispute.getInitiatedByUser(), "Dispute Approved",
+                "The seller has approved your dispute/refund request for order #" + dispute.getOrder().getId(),
+                NotificationType.SYSTEM_ALERT, disputeId);
+        
+        return toResponseDTO(updated);
+    }
+
+    @Transactional
+    public DisputeResponseDTO sellerDecline(Long disputeId, Long userId) {
+        Dispute dispute = disputeRepository.findById(disputeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Dispute not found"));
+        if (!dispute.getOtherPartyUser().getId().equals(userId)) {
+            throw new AuthorizationException("You are not authorized to decline this dispute");
+        }
+        dispute.setStatus(DisputeStatus.CANCELLED);
+        dispute.setResolution("Seller declined dispute/refund request");
+        dispute.setResolvedAt(LocalDateTime.now());
+        Dispute updated = disputeRepository.save(dispute);
+        
+        notificationService.createNotification(dispute.getInitiatedByUser(), "Dispute Declined",
+                "The seller has declined your dispute request for order #" + dispute.getOrder().getId(),
+                NotificationType.SYSTEM_ALERT, disputeId);
+        
+        return toResponseDTO(updated);
+    }
+
+    /**
+     * GAP 3/Automation: Auto-escalate disputes where the seller has not responded within 3 days.
+     */
+    @Transactional
+    public void autoEscalateStaleDisputes() {
+        LocalDateTime threshold = LocalDateTime.now().minusDays(3);
+        List<Dispute> staleDisputes = disputeRepository.findAll().stream()
+                .filter(d -> d.getStatus() == DisputeStatus.WAITING_FOR_SELLER)
+                .filter(d -> d.getUpdatedAt() != null && d.getUpdatedAt().isBefore(threshold))
+                .toList();
+
+        for (Dispute dispute : staleDisputes) {
+            dispute.setStatus(DisputeStatus.ESCALATED);
+            dispute.setAdminNotes("Auto-escalated by system due to lack of seller response after 3 days.");
+            disputeRepository.save(dispute);
+
+            // Notify parties
+            notificationService.createNotification(
+                    dispute.getInitiatedByUser(),
+                    "Dispute Auto-Escalated",
+                    "Your dispute #" + dispute.getId() + " has been auto-escalated to admin due to lack of seller response.",
+                    NotificationType.SYSTEM_ALERT,
+                    dispute.getId()
+            );
+            if (dispute.getOtherPartyUser() != null) {
+                notificationService.createNotification(
+                        dispute.getOtherPartyUser(),
+                        "Dispute Auto-Escalated",
+                        "Dispute #" + dispute.getId() + " has been auto-escalated to admin due to lack of response within 3 days.",
+                        NotificationType.SYSTEM_ALERT,
+                        dispute.getId()
+                );
+            }
+        }
+    }
+
+    // ── PRIVATE HELPERS ────────────────────────────────────────────────────────
+
     private DisputeResponseDTO toResponseDTO(Dispute dispute) {
         List<String> evidenceFiles = evidenceRepository.findByDispute(dispute)
                 .stream()
@@ -199,8 +323,11 @@ public class DisputeService {
 
         return DisputeResponseDTO.builder()
                 .id(dispute.getId())
+                .reportId(dispute.getReportId())
                 .orderId(dispute.getOrder().getId())
+                .initiatedByUserId(dispute.getInitiatedByUser().getId())
                 .initiatedByUserName(dispute.getInitiatedByUser().getFullName())
+                .otherPartyUserId(dispute.getOtherPartyUser().getId())
                 .otherPartyUserName(dispute.getOtherPartyUser().getFullName())
                 .title(dispute.getTitle())
                 .description(dispute.getDescription())
@@ -212,5 +339,26 @@ public class DisputeService {
                 .updatedAt(dispute.getUpdatedAt())
                 .resolvedAt(dispute.getResolvedAt())
                 .build();
+    }
+
+    private String generateReportId() {
+        LocalDateTime startOfDay = LocalDateTime.now().with(java.time.LocalTime.MIN);
+        LocalDateTime endOfDay = LocalDateTime.now().with(java.time.LocalTime.MAX);
+        Dispute lastDispute = disputeRepository.findTopByCreatedAtBetweenOrderByIdDesc(startOfDay, endOfDay);
+        
+        int sequence = 1;
+        if (lastDispute != null && lastDispute.getReportId() != null) {
+            try {
+                String[] parts = lastDispute.getReportId().split("-");
+                if (parts.length == 3) {
+                    sequence = Integer.parseInt(parts[2]) + 1;
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse last dispute report ID, resetting sequence", e);
+            }
+        }
+        
+        String dateStr = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd").format(LocalDateTime.now());
+        return String.format("RPT-%s-%04d", dateStr, sequence);
     }
 }

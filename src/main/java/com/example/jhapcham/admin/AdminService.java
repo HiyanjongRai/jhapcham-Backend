@@ -41,6 +41,7 @@ public class AdminService {
     private final ProductService productService;
     private final ProductRepository productRepository;
     private final ReportService reportService;
+    private final com.example.jhapcham.report.ReportRepository reportRepository;
     private final UserRepository userRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final OrderRepository orderRepository;
@@ -63,43 +64,39 @@ public class AdminService {
     public PlatformAnalyticsDTO getPlatformAnalytics() {
         try {
             // Use count queries — no full entity fetching to avoid lazy-load issues
-            long totalUsers = userRepository.findByRole(Role.CUSTOMER).size();
+            long totalUsers = userRepository.countByRole(Role.CUSTOMER);
             long totalSellers = sellerProfileRepository.count();
             long totalProducts = productRepository.count();
             long totalOrders = orderRepository.count();
 
-            // For revenue, fetch only delivered orders (smaller dataset)
-            double totalRevenue = orderRepository.findAll().stream()
-                    .filter(o -> o.getStatus() == com.example.jhapcham.order.OrderStatus.DELIVERED)
-                    .mapToDouble(o -> o.getGrandTotal() != null ? o.getGrandTotal().doubleValue() : 0.0)
-                    .sum();
+            double totalRevenue = orderRepository
+                    .sumGrandTotalByStatus(com.example.jhapcham.order.OrderStatus.DELIVERED)
+                    .doubleValue();
 
-            double platformIncome = orderRepository.findAll().stream()
-                    .filter(o -> o.getCommissionStatus() == com.example.jhapcham.order.CommissionStatus.PAID)
-                    .mapToDouble(o -> o.getMarketplaceCommission() != null ? o.getMarketplaceCommission().doubleValue() : 0.0)
-                    .sum();
+            double platformIncome = orderRepository
+                    .sumMarketplaceCommissionByCommissionStatus(com.example.jhapcham.order.CommissionStatus.PAID)
+                    .doubleValue();
 
 
             long pendingApplications = sellerApplicationRepository.findByStatus(ApplicationStatus.PENDING).size();
 
-            long openReports = reportService.getAllReports().stream()
-                    .filter(r -> r.getStatus() == ReportStatus.OPEN || r.getStatus() == ReportStatus.SELLER_REJECTED)
-                    .count();
+            long openReports = reportRepository.countByStatusIn(java.util.List.of(ReportStatus.OPEN, ReportStatus.SELLER_REJECTED));
 
             long totalReviews = reviewRepository.count();
 
             // Trends for charts
             java.time.LocalDateTime thirtyDaysAgo = java.time.LocalDateTime.now().minusDays(30);
-            java.util.Map<String, Long> dailyOrders = orderRepository.findByCreatedAtAfter(thirtyDaysAgo).stream()
-                    .collect(Collectors.groupingBy(
-                            o -> o.getCreatedAt().toLocalDate().toString(),
-                            Collectors.counting()));
+            java.util.Map<String, Long> dailyOrders = orderRepository.countOrdersByDaySince(thirtyDaysAgo).stream()
+                    .collect(Collectors.toMap(
+                            row -> String.valueOf(row[0]),
+                            row -> ((Number) row[1]).longValue()));
 
             java.time.LocalDateTime twelveMonthsAgo = java.time.LocalDateTime.now().minusMonths(12).withDayOfMonth(1).withHour(0).withMinute(0);
-            java.util.Map<String, Double> monthlyRevenue = orderRepository.findByStatusAndCreatedAtAfter(com.example.jhapcham.order.OrderStatus.DELIVERED, twelveMonthsAgo).stream()
-                    .collect(Collectors.groupingBy(
-                            o -> o.getCreatedAt().getYear() + "-" + String.format("%02d", o.getCreatedAt().getMonthValue()),
-                            Collectors.summingDouble(o -> o.getGrandTotal() != null ? o.getGrandTotal().doubleValue() : 0.0)));
+            java.util.Map<String, Double> monthlyRevenue = orderRepository
+                    .sumRevenueByMonthSince(com.example.jhapcham.order.OrderStatus.DELIVERED, twelveMonthsAgo).stream()
+                    .collect(Collectors.toMap(
+                            row -> String.valueOf(row[0]),
+                            row -> ((Number) row[1]).doubleValue()));
 
             return PlatformAnalyticsDTO.builder()
                     .totalUsers(totalUsers)
@@ -302,6 +299,7 @@ public class AdminService {
 
         return com.example.jhapcham.order.OrderSummaryDTO.builder()
                 .orderId(o.getId())
+                .customOrderId(o.getCustomOrderId())
                 .customerId(o.getUser() != null ? o.getUser().getId() : null)
                 .status(o.getStatus())
                 .customerName(o.getCustomerName())
@@ -346,6 +344,10 @@ public class AdminService {
 
     public List<ProductResponseDTO> getAllProducts() {
         return productService.listAllProductsForAdmin();
+    }
+
+    public org.springframework.data.domain.Page<ProductResponseDTO> getAllProducts(org.springframework.data.domain.Pageable pageable) {
+        return productService.listAllProductsForAdmin(pageable);
     }
 
     public void setProductVisibility(Long productId, boolean visible) {
@@ -522,9 +524,7 @@ public class AdminService {
                 .map(this::mapToOrderSummary)
                 .collect(Collectors.toList());
 
-        List<ReportResponseDTO> reports = reportService.getAllReports().stream()
-                .filter(r -> r.getCustomerId() != null && r.getCustomerId().equals(userId))
-                .collect(Collectors.toList());
+        List<ReportResponseDTO> reports = reportService.getMyReports(userId);
 
         List<com.example.jhapcham.product.ProductResponseDTO> wishlist = wishlistService.getWishlist(userId);
 
@@ -558,8 +558,7 @@ public class AdminService {
 
     @Transactional(readOnly = true)
     public List<CommissionReportDTO> getCommissionReports() {
-        return orderRepository.findAll().stream()
-                .filter(o -> o.getStatus() == com.example.jhapcham.order.OrderStatus.DELIVERED)
+        return orderRepository.findByStatusOrderByCreatedAtDesc(com.example.jhapcham.order.OrderStatus.DELIVERED).stream()
                 .map(o -> {
                     String store = "Unknown";
                     String email = "N/A";
@@ -595,15 +594,18 @@ public class AdminService {
                         // If paid, use the static fine stored in the order (snapshot at payment time)
                         fine = o.getCommissionFineAmount() != null ? o.getCommissionFineAmount() : java.math.BigDecimal.ZERO;
                     }
-
+java.math.BigDecimal netSale = (o.getItemsTotal() != null ? o.getItemsTotal() : java.math.BigDecimal.ZERO)
+                .subtract(o.getDiscountTotal() != null ? o.getDiscountTotal() : java.math.BigDecimal.ZERO)
+                .subtract(o.getLoyaltyDiscountAmount() != null ? o.getLoyaltyDiscountAmount() : java.math.BigDecimal.ZERO);
                     return CommissionReportDTO.builder()
                         .orderId(o.getId())
+                        .customOrderId(o.getCustomOrderId())
                         .productName(o.getItems().isEmpty() ? "Order Sum" : (o.getItems().get(0).getProductNameSnapshot() != null ? o.getItems().get(0).getProductNameSnapshot() : "Product") + (o.getItems().size() > 1 ? "..." : ""))
                         .category(!o.getItems().isEmpty() && o.getItems().get(0).getProduct() != null ? o.getItems().get(0).getProduct().getCategory() : "Others")
                         .sellerStoreName(store)
                         .sellerEmail(email)
                         .sellerPhone(phone)
-                        .saleAmount(o.getGrandTotal() != null ? o.getGrandTotal() : java.math.BigDecimal.ZERO)
+                        .saleAmount(netSale)
                         .commissionRate(!o.getItems().isEmpty() && o.getItems().get(0).getCommissionPercentageSnapshot() != null ? o.getItems().get(0).getCommissionPercentageSnapshot() : Double.valueOf(10.0))
                         .commissionEarned(baseComm)
                         .fineAmount(fine)
@@ -612,6 +614,17 @@ public class AdminService {
                         .createdAt(o.getCreatedAt() != null ? o.getCreatedAt() : java.time.LocalDateTime.now())
                         .isOverdue(overdue)
                         .reminderSent(o.isCommissionReminderSent())
+                        .vatAmount(o.getVatAmount() != null ? o.getVatAmount() : java.math.BigDecimal.ZERO)
+                        .discountTotal(o.getDiscountTotal() != null ? o.getDiscountTotal() : java.math.BigDecimal.ZERO)
+                        .netAmount(o.getSellerNetAmount() != null ? o.getSellerNetAmount() : java.math.BigDecimal.ZERO)
+                        .sellerPromoDiscountAmount(o.getSellerPromoDiscountAmount() != null ? o.getSellerPromoDiscountAmount() : java.math.BigDecimal.ZERO)
+                        .platformSponsoredDiscountAmount(o.getPlatformSponsoredDiscountAmount() != null ? o.getPlatformSponsoredDiscountAmount() : java.math.BigDecimal.ZERO)
+                        .inputVatAmount(o.getInputVatAmount() != null ? o.getInputVatAmount() : java.math.BigDecimal.ZERO)
+                        .outputVatAmount(o.getOutputVatAmount() != null ? o.getOutputVatAmount() : java.math.BigDecimal.ZERO)
+                        .vatPayableAmount(o.getVatPayableAmount() != null ? o.getVatPayableAmount() : java.math.BigDecimal.ZERO)
+                        .grossProfitAmount(o.getGrossProfitAmount() != null ? o.getGrossProfitAmount() : java.math.BigDecimal.ZERO)
+                        .netProfitAmount(o.getNetProfitAmount() != null ? o.getNetProfitAmount() : java.math.BigDecimal.ZERO)
+                        .finalSellerEarnings(o.getFinalSellerEarnings() != null ? o.getFinalSellerEarnings() : java.math.BigDecimal.ZERO)
                         .build();
                 })
                 .sorted((a, b) -> {

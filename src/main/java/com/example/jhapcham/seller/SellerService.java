@@ -30,6 +30,7 @@ public class SellerService {
         private final OrderRepository orderRepository;
         private final OrderAccountingService orderAccountingService;
         private final FollowRepository followRepository;
+        private final FinanceService financeService;
 
         private static final String SELLER_LOGO_DIR = "seller_logos";
 
@@ -137,19 +138,36 @@ public class SellerService {
 
         public SellerIncomeDTO getSellerIncome(Long sellerUserId) {
 
-                User seller = userRepository.findById(sellerUserId)
-                                .orElseThrow(() -> new ResourceNotFoundException("Seller not found"));
+        // Fetch seller user and profile
+        User seller = userRepository.findById(sellerUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("Seller not found"));
 
-                SellerProfile profile = sellerProfileRepository.findByUser(seller)
-                                .orElseThrow(() -> new ResourceNotFoundException("Seller profile not found"));
+        // Calculate totals from delivered orders belonging to this seller
+        List<Order> deliveredOrders = orderRepository.findOrdersBySeller(sellerUserId).stream()
+                .filter(o -> o.getStatus() == OrderStatus.DELIVERED)
+                .collect(java.util.stream.Collectors.toList());
 
-                return new SellerIncomeDTO(
-                                profile.getId(),
-                                profile.getTotalIncome(),
-                                profile.getTotalShippingCost(),
-                                profile.getTotalCommission(),
-                                profile.getNetIncome());
-        }
+        java.math.BigDecimal totalIncome = deliveredOrders.stream()
+                .map(o -> o.getSellerNetAmount() != null ? o.getSellerNetAmount() : java.math.BigDecimal.ZERO)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+
+        java.math.BigDecimal totalShipping = deliveredOrders.stream()
+                .map(o -> o.getSellerShippingCharge() != null ? o.getSellerShippingCharge() : java.math.BigDecimal.ZERO)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+
+        java.math.BigDecimal totalCommission = deliveredOrders.stream()
+                .map(o -> o.getMarketplaceCommission() != null ? o.getMarketplaceCommission() : java.math.BigDecimal.ZERO)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+
+        java.math.BigDecimal netIncome = totalIncome.subtract(totalCommission).subtract(totalShipping);
+
+        return new SellerIncomeDTO(
+                seller.getId(),
+                totalIncome,
+                totalShipping,
+                totalCommission,
+                netIncome);
+    }
 
         // ----------------------------------------------------------
         // COMPREHENSIVE DASHBOARD STATISTICS
@@ -246,14 +264,44 @@ public class SellerService {
                                 .map(ProductSummaryDTO::from)
                                 .collect(java.util.stream.Collectors.toList());
 
-                return SellerDashboardStatsDTO.builder()
-                                // Income metrics (from SellerProfile accumulated values)
-                                .totalIncome(profile.getTotalIncome() != null ? profile.getTotalIncome() : BigDecimal.ZERO)
-                                .totalShippingCost(profile.getTotalShippingCost() != null ? profile.getTotalShippingCost() : BigDecimal.ZERO)
-                                .totalCommission(profile.getTotalCommission() != null ? profile.getTotalCommission() : BigDecimal.ZERO)
-                                .totalVatCollected(profile.getTotalVatCollected() != null ? profile.getTotalVatCollected() : BigDecimal.ZERO)
-                                .netIncome(profile.getNetIncome() != null ? profile.getNetIncome() : BigDecimal.ZERO)
+                // Compute totals from delivered orders for accurate revenue stats
+                List<Order> deliveredOrders = allOrders.stream()
+                        .filter(o -> o.getStatus() == OrderStatus.DELIVERED)
+                        .collect(java.util.stream.Collectors.toList());
 
+                BigDecimal totalIncome = deliveredOrders.stream()
+                        .map(o -> o.getSellerNetAmount() != null ? o.getSellerNetAmount() : java.math.BigDecimal.ZERO)
+                        .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                BigDecimal totalShipping = deliveredOrders.stream()
+                        .map(o -> o.getSellerShippingCharge() != null ? o.getSellerShippingCharge() : java.math.BigDecimal.ZERO)
+                        .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                BigDecimal totalCommission = deliveredOrders.stream()
+                        .map(o -> o.getMarketplaceCommission() != null ? o.getMarketplaceCommission() : java.math.BigDecimal.ZERO)
+                        .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                
+                BigDecimal grossSales = financeService.calculateGrossSales(deliveredOrders);
+                BigDecimal totalCost = financeService.calculateTotalCost(deliveredOrders, sellerUserId);
+                
+                // Net Revenue in FinanceService uses grossSales - totalCommission - totalVat - Promos.
+                // However, our totalIncome above handles the exact seller payout logic.
+                // We'll use the existing netIncome and add Finance metrics on top
+                BigDecimal netIncome = totalIncome.subtract(totalCommission).subtract(totalShipping);
+                BigDecimal netProfit = financeService.calculateNetProfit(netIncome, totalCost);
+                BigDecimal profitMargin = financeService.calculateProfitMargin(netProfit, netIncome);
+                BigDecimal averageOrderProfit = financeService.calculateAverageOrderProfit(netProfit, deliveredOrders.size());
+
+                // Build the DTO using builder pattern
+                SellerDashboardStatsDTO.SellerDashboardStatsDTOBuilder builder = SellerDashboardStatsDTO.builder()
+                                // Income metrics (from SellerProfile accumulated values)
+                                .totalIncome(totalIncome)
+                                .totalShippingCost(totalShipping)
+                                .totalCommission(totalCommission)
+                                .netIncome(netIncome)
+                                .totalVatCollected(profile.getTotalVatCollected() != null ? profile.getTotalVatCollected() : BigDecimal.ZERO)
+                                .totalCost(totalCost)
+                                .netProfit(netProfit)
+                                .profitMargin(profitMargin)
+                                .averageOrderProfit(averageOrderProfit)
                                 // Order counts
                                 .totalOrders((long) allOrders.size())
                                 .deliveredOrders(deliveredCount)
@@ -261,12 +309,10 @@ public class SellerService {
                                 .processingOrders(processingCount)
                                 .shippedOrders(shippedCount)
                                 .canceledOrders(canceledCount)
-
                                 // Product metrics
                                 .totalProducts(totalProducts)
                                 .activeProducts(activeProducts)
                                 .inactiveProducts(inactiveProducts)
-
                                 // Recent activity
                                 .last30DaysIncome(last30DaysIncome)
                                 .last30DaysOrders(last30DaysOrderCount)
@@ -275,8 +321,12 @@ public class SellerService {
                                 .profileImagePath(profile.getUser() != null ? profile.getUser().getProfileImagePath() : null)
                                 .weeklySales(weeklySales)
                                 .topSellingProducts(topSellingProducts)
-                                .followerCount(followerCount)
-                                .build();
+                                .followerCount(followerCount);
+
+                // Build the DTO
+                SellerDashboardStatsDTO stats = builder.build();
+
+                return stats;
         }
 
         public SellerCustomerDetailDTO getCustomerDetailsForSeller(Long sellerUserId, Long customerId) {
@@ -361,24 +411,44 @@ public class SellerService {
                                                 }
                                         }
 
-                                        return com.example.jhapcham.admin.CommissionReportDTO.builder()
-                                                        .orderId(o.getId())
-                                                        .productName(o.getItems() == null || o.getItems().isEmpty() ? "Order Sum" : (o.getItems().get(0).getProductNameSnapshot() != null ? o.getItems().get(0).getProductNameSnapshot() : "Product") + (o.getItems().size() > 1 ? "..." : ""))
-                                                        .category(o.getItems() != null && !o.getItems().isEmpty() && o.getItems().get(0).getProduct() != null ? o.getItems().get(0).getProduct().getCategory() : "Others")
-                                                        .sellerStoreName("Your Store")
-                                                        .saleAmount(o.getGrandTotal() != null ? o.getGrandTotal() : java.math.BigDecimal.ZERO)
-                                                        .commissionRate(o.getItems() != null && !o.getItems().isEmpty() && o.getItems().get(0).getCommissionPercentageSnapshot() != null ? o.getItems().get(0).getCommissionPercentageSnapshot() : 10.0)
-                                                        .commissionEarned(sellerSpecificCommission)
-                                                        .fineAmount(fine)
-                                                        .status(o.getCommissionStatus() != null ? o.getCommissionStatus() : com.example.jhapcham.order.CommissionStatus.PENDING)
-                                                        .dueDate(o.getCommissionDueDate())
-                                                        .createdAt(o.getCreatedAt() != null ? o.getCreatedAt() : java.time.LocalDateTime.now())
-                                                        .isOverdue(overdue)
-                                                        .reminderSent(o.isCommissionReminderSent())
-                                                        .build();
+                                         // Sale Amount = product subtotal MINUS promo discount MINUS loyalty discount (excludes shipping)
+                                         java.math.BigDecimal _items   = o.getItemsTotal()  != null ? o.getItemsTotal()           : java.math.BigDecimal.ZERO;
+                                         java.math.BigDecimal _promo   = o.getDiscountTotal() != null ? o.getDiscountTotal()       : java.math.BigDecimal.ZERO;
+                                         java.math.BigDecimal _loyalty = o.getLoyaltyDiscountAmount() != null ? o.getLoyaltyDiscountAmount() : java.math.BigDecimal.ZERO;
+                                         java.math.BigDecimal _netSale = _items.subtract(_promo).subtract(_loyalty);
+                                         if (_netSale.compareTo(java.math.BigDecimal.ZERO) < 0) _netSale = java.math.BigDecimal.ZERO;
+
+                                         return com.example.jhapcham.admin.CommissionReportDTO.builder()
+                                                         .orderId(o.getId())
+                                                         .customOrderId(o.getCustomOrderId())
+                                                         .productName(o.getItems() == null || o.getItems().isEmpty() ? "Order Sum" : (o.getItems().get(0).getProductNameSnapshot() != null ? o.getItems().get(0).getProductNameSnapshot() : "Product") + (o.getItems().size() > 1 ? "..." : ""))
+                                                         .category(o.getItems() != null && !o.getItems().isEmpty() && o.getItems().get(0).getProduct() != null ? o.getItems().get(0).getProduct().getCategory() : "Others")
+                                                         .sellerStoreName("Your Store")
+                                                         .saleAmount(_netSale)
+                                                         .commissionRate(o.getItems() != null && !o.getItems().isEmpty() && o.getItems().get(0).getCommissionPercentageSnapshot() != null ? o.getItems().get(0).getCommissionPercentageSnapshot() : 10.0)
+                                                         .commissionEarned(sellerSpecificCommission)
+                                                         .fineAmount(fine)
+                                                         .status(o.getCommissionStatus() != null ? o.getCommissionStatus() : com.example.jhapcham.order.CommissionStatus.PENDING)
+                                                         .dueDate(o.getCommissionDueDate())
+                                                         .createdAt(o.getCreatedAt() != null ? o.getCreatedAt() : java.time.LocalDateTime.now())
+                                                         .isOverdue(overdue)
+                                                         .reminderSent(o.isCommissionReminderSent())
+                                                         .vatAmount(o.getVatAmount() != null ? o.getVatAmount() : java.math.BigDecimal.ZERO)
+                                                         .discountTotal(o.getDiscountTotal() != null ? o.getDiscountTotal() : java.math.BigDecimal.ZERO)
+                                                         .netAmount(o.getSellerNetAmount() != null ? o.getSellerNetAmount() : java.math.BigDecimal.ZERO)
+                                                         .sellerPromoDiscountAmount(o.getSellerPromoDiscountAmount() != null ? o.getSellerPromoDiscountAmount() : java.math.BigDecimal.ZERO)
+                                                         .platformSponsoredDiscountAmount(o.getPlatformSponsoredDiscountAmount() != null ? o.getPlatformSponsoredDiscountAmount() : java.math.BigDecimal.ZERO)
+                                                         .inputVatAmount(o.getInputVatAmount() != null ? o.getInputVatAmount() : java.math.BigDecimal.ZERO)
+                                                         .outputVatAmount(o.getOutputVatAmount() != null ? o.getOutputVatAmount() : java.math.BigDecimal.ZERO)
+                                                         .vatPayableAmount(o.getVatPayableAmount() != null ? o.getVatPayableAmount() : java.math.BigDecimal.ZERO)
+                                                         .grossProfitAmount(o.getGrossProfitAmount() != null ? o.getGrossProfitAmount() : java.math.BigDecimal.ZERO)
+                                                         .netProfitAmount(o.getNetProfitAmount() != null ? o.getNetProfitAmount() : java.math.BigDecimal.ZERO)
+                                                         .finalSellerEarnings(o.getFinalSellerEarnings() != null ? o.getFinalSellerEarnings() : java.math.BigDecimal.ZERO)
+                                                         .build();
                                     } catch (Exception e) {
                                         return com.example.jhapcham.admin.CommissionReportDTO.builder()
                                                 .orderId(o.getId())
+                                                .customOrderId(o.getCustomOrderId())
                                                 .productName("Error in Record")
                                                 .status(com.example.jhapcham.order.CommissionStatus.PENDING)
                                                 .commissionEarned(BigDecimal.ZERO)

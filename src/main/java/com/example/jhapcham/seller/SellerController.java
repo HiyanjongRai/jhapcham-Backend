@@ -23,6 +23,47 @@ public class SellerController {
     private final OrderRepository orderRepository;
     private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
+    @GetMapping("/me")
+    public ResponseEntity<?> getMySellerProfile(Authentication authentication) {
+        var actor = currentUserService.requireUser(authentication);
+        currentUserService.requireSellerSelfOrAdmin(actor, actor.getId());
+        return ResponseEntity.ok(sellerService.getSellerProfile(actor.getId()));
+    }
+
+    @PutMapping("/me")
+    public ResponseEntity<SellerProfileResponseDTO> updateMySellerProfile(
+            @ModelAttribute SellerUpdateRequestDTO dto,
+            Authentication authentication) {
+        var actor = currentUserService.requireUser(authentication);
+        currentUserService.requireSellerSelfOrAdmin(actor, actor.getId());
+        return ResponseEntity.ok(sellerService.updateSeller(actor.getId(), dto));
+    }
+
+    @GetMapping("/me/income")
+    public ResponseEntity<?> getMySellerIncome(Authentication authentication) {
+        try {
+            var actor = currentUserService.requireUser(authentication);
+            currentUserService.requireSellerSelfOrAdmin(actor, actor.getId());
+            return ResponseEntity.ok(sellerService.getSellerIncome(actor.getId()));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        }
+    }
+
+    @GetMapping("/me/stats")
+    public ResponseEntity<?> getMyDashboardStats(Authentication authentication) {
+        var actor = currentUserService.requireUser(authentication);
+        currentUserService.requireSellerSelfOrAdmin(actor, actor.getId());
+        return ResponseEntity.ok(sellerService.getDashboardStats(actor.getId()));
+    }
+
+    @GetMapping("/me/commissions")
+    public ResponseEntity<?> getMySellerCommissions(Authentication authentication) {
+        var actor = currentUserService.requireUser(authentication);
+        currentUserService.requireSellerSelfOrAdmin(actor, actor.getId());
+        return ResponseEntity.ok(sellerService.getSellerCommissions(actor.getId()));
+    }
+
     @GetMapping("/{sellerUserId}")
     public ResponseEntity<?> getSeller(@PathVariable Long sellerUserId) {
         return ResponseEntity.ok(sellerService.getSellerProfile(sellerUserId));

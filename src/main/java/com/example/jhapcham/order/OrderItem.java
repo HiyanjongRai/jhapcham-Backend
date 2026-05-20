@@ -10,7 +10,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
-@Table(name = "order_items")
+@Table(name = "order_items", indexes = {
+        @Index(name = "idx_order_items_order", columnList = "order_id"),
+        @Index(name = "idx_order_items_product", columnList = "product_id"),
+        @Index(name = "idx_order_items_variant", columnList = "variant_id")
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -87,4 +91,40 @@ public class OrderItem {
 
     private Double commissionPercentageSnapshot;
     private BigDecimal commissionAmountSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal buyingUnitPriceSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal buyingLineTotalSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal sellingLineTotalSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal inputVatAmountSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal outputVatAmountSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal vatPayableSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal sellerPromoDiscountSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal platformDiscountSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal commissionBaseSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal grossProfitSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal netProfitSnapshot;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal finalSellerEarningSnapshot;
 }

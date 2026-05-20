@@ -12,6 +12,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.*;
 import com.example.jhapcham.common.FileStorageService;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -27,7 +28,7 @@ public class ReportController {
 
     @PostMapping
     public ResponseEntity<?> createReport(
-            @ModelAttribute ReportRequestDTO request,
+            @Valid @ModelAttribute ReportRequestDTO request,
             @RequestPart(value = "files", required = false) List<MultipartFile> files,
             @AuthenticationPrincipal UserDetails userDetails) {
         try {

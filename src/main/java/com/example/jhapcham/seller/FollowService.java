@@ -63,4 +63,18 @@ public class FollowService {
 
                 return followRepository.existsByFollowerAndSeller(user, seller);
         }
+
+        public java.util.List<SellerProfileResponseDTO> getFollowedSellers(Long userId) {
+                User user = userRepository.findById(Objects.requireNonNull(userId, "User ID cannot be null"))
+                                .orElseThrow(() -> new RuntimeException("User not found"));
+
+                return followRepository.findByFollower(user).stream()
+                                .map(follow -> {
+                                        SellerProfile seller = follow.getSeller();
+                                        long count = followRepository.countBySeller(seller);
+                                        // Products can be empty for this summary list or we could fetch them if needed
+                                        return SellerProfileResponseDTO.from(seller, java.util.Collections.emptyList(), count);
+                                })
+                                .collect(java.util.stream.Collectors.toList());
+        }
 }

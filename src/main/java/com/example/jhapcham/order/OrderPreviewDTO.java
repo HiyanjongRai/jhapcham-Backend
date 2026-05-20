@@ -16,6 +16,8 @@ public class OrderPreviewDTO {
     private BigDecimal shippingFee;
     private BigDecimal vatAmount;
     private BigDecimal discountTotal;
+    private BigDecimal loyaltyDiscountAmount;
+    private Long loyaltyPointsRedeemed;
     private BigDecimal grandTotal;
 
     private String estimatedDelivery; // "2-3 days" etc

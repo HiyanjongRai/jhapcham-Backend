@@ -10,6 +10,7 @@ import com.example.jhapcham.product.ProductRepository;
 import com.example.jhapcham.product.ProductVariant;
 import com.example.jhapcham.product.ProductVariantRepository;
 import com.example.jhapcham.product.ProductVariantService;
+import com.example.jhapcham.seller.SellerProfile;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
 import org.springframework.transaction.annotation.Transactional;
@@ -120,6 +121,7 @@ public class CartService {
         return getCart(userId);
     }
 
+    @Transactional(readOnly = true)
     public CartResponseDTO getCart(Long userId) {
         User user = userRepository.findById(Objects.requireNonNull(userId))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -129,55 +131,89 @@ public class CartService {
         BigDecimal subtotal = BigDecimal.ZERO;
 
         for (CartItem item : items) {
-            Product p = item.getProduct();
-            ProductVariant variant = item.getVariant();
+            try {
+                Product p = item.getProduct();
+                if (p == null) {
+                    cartItemRepository.delete(item);
+                    continue;
+                }
+                // Trigger loading of lazy proxy to catch EntityNotFoundException early
+                p.getName();
 
-            BigDecimal unitPrice;
-            if (variant != null) {
-                unitPrice = variant.getEffectivePrice(
-                    Boolean.TRUE.equals(p.getOnSale()) && p.getSalePrice() != null ? p.getSalePrice() : p.getPrice()
-                );
-            } else {
-                unitPrice = Boolean.TRUE.equals(p.getOnSale()) && p.getSalePrice() != null
-                        ? p.getSalePrice() : p.getPrice();
+                ProductVariant variant = item.getVariant();
+                if (variant != null) {
+                    // Trigger loading of lazy proxy to catch EntityNotFoundException early
+                    variant.getSku();
+                }
+
+                BigDecimal unitPrice;
+                if (variant != null) {
+                    unitPrice = variant.getEffectivePrice(
+                        Boolean.TRUE.equals(p.getOnSale()) && p.getSalePrice() != null ? p.getSalePrice() : p.getPrice()
+                    );
+                } else {
+                    unitPrice = Boolean.TRUE.equals(p.getOnSale()) && p.getSalePrice() != null
+                            ? p.getSalePrice() : p.getPrice();
+                }
+
+                if (unitPrice == null) {
+                    unitPrice = BigDecimal.ZERO;
+                }
+
+                BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
+                subtotal = subtotal.add(lineTotal);
+
+                String image = p.getImages() != null && !p.getImages().isEmpty()
+                        ? p.getImages().get(0).getImagePath() : null;
+                SellerProfile seller = p.getSellerProfile();
+
+                // Build dynamic attributes map from variant
+                Map<String, String> attrMap = new LinkedHashMap<>();
+                String variantLabel = null;
+                Integer stock = p.getStockQuantity();
+                String sku = null;
+
+                if (variant != null) {
+                    stock = variant.getStockQuantity();
+                    sku = variant.getSku();
+                    variantLabel = variant.getVariantLabel();
+                    variant.getAttributeValues().forEach(vav ->
+                        attrMap.put(vav.getAttributeValue().getAttribute().getName(),
+                                    vav.getAttributeValue().getValue())
+                    );
+                }
+
+                list.add(CartItemResponseDTO.builder()
+                        .cartItemId(item.getId())
+                        .productId(p.getId())
+                        .variantId(variant != null ? variant.getId() : null)
+                        .sku(sku)
+                        .name(p.getName())
+                        .brand(p.getBrand())
+                        .image(image)
+                        .quantity(item.getQuantity())
+                        .price(unitPrice)
+                        .sellerId(seller != null && seller.getUser() != null ? seller.getUser().getId() : null)
+                        .sellerProfileId(seller != null ? seller.getId() : null)
+                        .sellerStoreName(seller != null ? seller.getStoreName() : null)
+                        .freeShipping(p.getFreeShipping())
+                        .insideValleyShipping(p.getInsideValleyShipping())
+                        .outsideValleyShipping(p.getOutsideValleyShipping())
+                        .sellerFreeShippingMinOrder(p.getSellerFreeShippingMinOrder())
+                        .stockQuantity(stock)
+                        .variantLabel(variantLabel)
+                        .variantAttributes(attrMap)
+                        .build());
+            } catch (jakarta.persistence.EntityNotFoundException | org.hibernate.ObjectNotFoundException e) {
+                // Self-healing: automatically remove the orphaned cart item from DB
+                try {
+                    cartItemRepository.delete(item);
+                } catch (Exception ex) {
+                    System.err.println("Failed to delete orphaned cart item: " + ex.getMessage());
+                }
+            } catch (Exception e) {
+                System.err.println("Skipping bad cart item ID " + item.getId() + ": " + e.getMessage());
             }
-
-            BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
-            subtotal = subtotal.add(lineTotal);
-
-            String image = p.getImages() != null && !p.getImages().isEmpty()
-                    ? p.getImages().get(0).getImagePath() : null;
-
-            // Build dynamic attributes map from variant
-            Map<String, String> attrMap = new LinkedHashMap<>();
-            String variantLabel = null;
-            Integer stock = p.getStockQuantity();
-            String sku = null;
-
-            if (variant != null) {
-                stock = variant.getStockQuantity();
-                sku = variant.getSku();
-                variantLabel = variant.getVariantLabel();
-                variant.getAttributeValues().forEach(vav ->
-                    attrMap.put(vav.getAttributeValue().getAttribute().getName(),
-                                vav.getAttributeValue().getValue())
-                );
-            }
-
-            list.add(CartItemResponseDTO.builder()
-                    .cartItemId(item.getId())
-                    .productId(p.getId())
-                    .variantId(variant != null ? variant.getId() : null)
-                    .sku(sku)
-                    .name(p.getName())
-                    .brand(p.getBrand())
-                    .image(image)
-                    .quantity(item.getQuantity())
-                    .price(unitPrice)
-                    .stockQuantity(stock)
-                    .variantLabel(variantLabel)
-                    .variantAttributes(attrMap)
-                    .build());
         }
 
         return CartResponseDTO.builder()

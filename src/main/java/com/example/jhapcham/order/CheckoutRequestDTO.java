@@ -27,6 +27,8 @@ public class CheckoutRequestDTO {
 
     private String couponCode; // NEW
 
+    private Long loyaltyPointsToRedeem;
+
     private String idempotencyKey;
 
 }

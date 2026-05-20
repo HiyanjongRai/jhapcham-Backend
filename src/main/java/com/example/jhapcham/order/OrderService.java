@@ -14,6 +14,9 @@ import com.example.jhapcham.product.ProductVariant;
 import com.example.jhapcham.product.ProductVariantRepository;
 import com.example.jhapcham.seller.SellerProfile;
 import com.example.jhapcham.seller.SellerProfileRepository;
+import com.example.jhapcham.loyalty.LoyaltyDomainEvent;
+import com.example.jhapcham.loyalty.LoyaltyEventType;
+import com.example.jhapcham.loyalty.RedemptionQuoteDTO;
 import com.example.jhapcham.payment.Payment;
 import com.example.jhapcham.payment.PaymentRepository;
 import com.example.jhapcham.payment.PaymentState;
@@ -23,12 +26,14 @@ import com.example.jhapcham.user.model.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.security.SecureRandom;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import com.example.jhapcham.promocode.PromoCodeService;
 import com.example.jhapcham.promocode.PromoCodeService.DiscountResult;
@@ -60,6 +65,8 @@ public class OrderService {
     private final com.example.jhapcham.promocode.PromoCodeService promoCodeService;
     private final com.example.jhapcham.loyalty.LoyaltyService loyaltyService;
     private final ObjectProvider<com.example.jhapcham.delivery.ShipmentService> shipmentServiceProvider;
+    private final ApplicationEventPublisher eventPublisher;
+    private final OrderIdGenerator orderIdGenerator;
 
     // =========================
     // PREVIEW ORDER
@@ -74,6 +81,7 @@ public class OrderService {
 
         BigDecimal totalItemsCost = BigDecimal.ZERO;
         BigDecimal totalShipping = BigDecimal.ZERO;
+        BigDecimal totalVat = BigDecimal.ZERO;
         BigDecimal totalGrand = BigDecimal.ZERO;
         List<OrderItemResponseDTO> allItemResponses = new ArrayList<>();
 
@@ -82,6 +90,7 @@ public class OrderService {
 
             totalItemsCost = totalItemsCost.add(data.itemsTotal);
             totalShipping = totalShipping.add(data.shippingFee);
+            totalVat = totalVat.add(data.vatAmount);
             totalGrand = totalGrand.add(data.grandTotal);
             allItemResponses.addAll(data.itemResponses);
         }
@@ -99,8 +108,10 @@ public class OrderService {
                 .items(allItemResponses)
                 .itemsTotal(totalItemsCost)
                 .shippingFee(totalShipping)
-                .vatAmount(totalItemsCost.multiply(new BigDecimal("0.13")).setScale(2, RoundingMode.HALF_UP))
+                .vatAmount(totalVat)
                 .discountTotal(totalDiscount)
+                .loyaltyDiscountAmount(BigDecimal.ZERO)
+                .loyaltyPointsRedeemed(0L)
                 .grandTotal(totalGrand)
                 .estimatedDelivery(estimateDelivery(dto.getShippingLocation()))
                 .build();
@@ -132,40 +143,62 @@ public class OrderService {
         Map<Long, List<CheckoutItemDTO>> itemsBySeller = groupItemsBySeller(dto.getItems());
 
         List<OrderSummaryDTO> summaries = new ArrayList<>();
-        boolean anyPromoApplied = false;
-
-        // 1. Calculate the overall computation for all items to get global totals (especially for coupons)
-        CheckoutComputationResult globalData = computeForItems(dto.getItems(), dto.getShippingLocation(),
-                dto.getCouponCode(), user != null ? user.getId() : null);
-        BigDecimal totalItemsSum = globalData.itemsTotal;
-        BigDecimal globalDiscount = globalData.discountTotal;
-        if (globalDiscount.compareTo(BigDecimal.ZERO) > 0) {
-            anyPromoApplied = true;
+        Map<Long, CheckoutComputationResult> sellerComputations = new LinkedHashMap<>();
+        BigDecimal totalItemsSum = BigDecimal.ZERO;
+        BigDecimal groupedGrandBeforeDiscount = BigDecimal.ZERO;
+        for (Map.Entry<Long, List<CheckoutItemDTO>> entry : itemsBySeller.entrySet()) {
+            CheckoutComputationResult sellerData = computeForItems(entry.getValue(), dto.getShippingLocation(), null, null);
+            sellerComputations.put(entry.getKey(), sellerData);
+            totalItemsSum = totalItemsSum.add(sellerData.itemsTotal);
+            groupedGrandBeforeDiscount = groupedGrandBeforeDiscount.add(sellerData.grandTotal);
         }
+
+        DiscountResult discountResult = promoCodeService.calculateDiscount(dto.getCouponCode(), dto.getItems(),
+                user != null ? user.getId() : null);
+        BigDecimal globalDiscount = discountResult.getAmount();
+        boolean anyPromoApplied = globalDiscount.compareTo(BigDecimal.ZERO) > 0;
+        BigDecimal groupedGrandAfterDiscount = groupedGrandBeforeDiscount.subtract(globalDiscount);
+        if (groupedGrandAfterDiscount.compareTo(BigDecimal.ZERO) < 0) {
+            groupedGrandAfterDiscount = BigDecimal.ZERO;
+        }
+
+        BigDecimal loyaltyDiscountBudget = BigDecimal.ZERO;
+        Long loyaltyPointsBudget = 0L;
+        if (user != null && dto.getLoyaltyPointsToRedeem() != null && dto.getLoyaltyPointsToRedeem() > 0
+                && groupedGrandAfterDiscount.compareTo(BigDecimal.ZERO) > 0) {
+            RedemptionQuoteDTO quote = loyaltyService.quoteRedemption(user.getId(), groupedGrandAfterDiscount, dto.getLoyaltyPointsToRedeem());
+            loyaltyDiscountBudget = quote.getDiscountAmount();
+            loyaltyPointsBudget = quote.getApprovedPoints();
+        }
+        BigDecimal remainingLoyaltyDiscount = loyaltyDiscountBudget;
+        Long remainingLoyaltyPoints = loyaltyPointsBudget;
+        int sellerIndex = 0;
 
         // 2. Iterate through each seller's group and create sub-orders
         for (Map.Entry<Long, List<CheckoutItemDTO>> entry : itemsBySeller.entrySet()) {
-            List<CheckoutItemDTO> sellerItems = entry.getValue();
+            sellerIndex++;
 
             // Calculate base values for this specific seller's order
-            CheckoutComputationResult sellerBaseData = computeForItems(sellerItems, dto.getShippingLocation(), null, null);
+            CheckoutComputationResult sellerBaseData = sellerComputations.get(entry.getKey());
 
             // Smart discount distribution: SELLER_ONLY vs GLOBAL
-            PromoCodeService.DiscountResult dr = promoCodeService.calculateDiscount(dto.getCouponCode(), dto.getItems(),
-                    user != null ? user.getId() : null);
             BigDecimal sellerDiscount = BigDecimal.ZERO;
+            BigDecimal sellerPromoDiscount = BigDecimal.ZERO;
+            BigDecimal platformSponsoredDiscount = BigDecimal.ZERO;
 
-            if (dr.getAmount().compareTo(BigDecimal.ZERO) > 0) {
-                if (dr.getApplicableSellerId() != null) {
+            if (discountResult.getAmount().compareTo(BigDecimal.ZERO) > 0) {
+                if (discountResult.getApplicableSellerId() != null) {
                     // This is a SELLER_ONLY coupon. Only apply to the owner seller's sub-order.
-                    if (dr.getApplicableSellerId().equals(entry.getKey())) {
-                        sellerDiscount = dr.getAmount();
+                    if (discountResult.getApplicableSellerId().equals(entry.getKey())) {
+                        sellerDiscount = discountResult.getAmount();
+                        sellerPromoDiscount = sellerDiscount;
                     }
                 } else {
                     // This is a GLOBAL coupon. Distribute proportionally across all sellers.
                     if (totalItemsSum.compareTo(BigDecimal.ZERO) > 0) {
-                        sellerDiscount = dr.getAmount().multiply(sellerBaseData.itemsTotal)
+                        sellerDiscount = discountResult.getAmount().multiply(sellerBaseData.itemsTotal)
                                 .divide(totalItemsSum, 2, RoundingMode.HALF_UP);
+                        platformSponsoredDiscount = sellerDiscount;
                     }
                 }
             }
@@ -173,10 +206,29 @@ public class OrderService {
             // Recalculate Grand Total for this seller: Items + Shipping + VAT - Distributed Discount
             BigDecimal sellerGrandTotal = sellerBaseData.itemsTotal
                     .add(sellerBaseData.shippingFee)
-                    .add(sellerBaseData.vatAmount)
                     .subtract(sellerDiscount);
 
             if (sellerGrandTotal.compareTo(BigDecimal.ZERO) < 0) sellerGrandTotal = BigDecimal.ZERO;
+
+            BigDecimal sellerLoyaltyDiscount = BigDecimal.ZERO;
+            Long sellerLoyaltyPoints = 0L;
+            if (loyaltyPointsBudget > 0 && groupedGrandAfterDiscount.compareTo(BigDecimal.ZERO) > 0) {
+                if (sellerIndex == itemsBySeller.size()) {
+                    sellerLoyaltyDiscount = remainingLoyaltyDiscount;
+                    sellerLoyaltyPoints = remainingLoyaltyPoints;
+                } else {
+                    BigDecimal share = sellerGrandTotal.divide(groupedGrandAfterDiscount, 8, RoundingMode.HALF_UP);
+                    sellerLoyaltyDiscount = loyaltyDiscountBudget.multiply(share).setScale(2, RoundingMode.HALF_UP);
+                    sellerLoyaltyPoints = Math.min(remainingLoyaltyPoints,
+                            sellerLoyaltyDiscount.setScale(0, RoundingMode.DOWN).longValue());
+                }
+                if (sellerLoyaltyDiscount.compareTo(sellerGrandTotal) > 0) {
+                    sellerLoyaltyDiscount = sellerGrandTotal;
+                }
+                remainingLoyaltyDiscount = remainingLoyaltyDiscount.subtract(sellerLoyaltyDiscount);
+                remainingLoyaltyPoints = Math.max(0L, remainingLoyaltyPoints - sellerLoyaltyPoints);
+                sellerGrandTotal = sellerGrandTotal.subtract(sellerLoyaltyDiscount);
+            }
 
             Order order = Order.builder()
                     .user(user)
@@ -195,6 +247,10 @@ public class OrderService {
                     .shippingFee(sellerBaseData.shippingFee)
                     .vatAmount(sellerBaseData.vatAmount)
                     .discountTotal(sellerDiscount) // DISTRIBUTED DISCOUNT
+                    .sellerPromoDiscountAmount(sellerPromoDiscount)
+                    .platformSponsoredDiscountAmount(platformSponsoredDiscount)
+                    .loyaltyDiscountAmount(sellerLoyaltyDiscount)
+                    .loyaltyPointsRedeemed(sellerLoyaltyPoints)
                     .grandTotal(sellerGrandTotal)
                     .createdAt(LocalDateTime.now())
                     .appliedCoupon(dto.getCouponCode())
@@ -206,7 +262,23 @@ public class OrderService {
                     .sellerAccounted(false)
                     .build();
 
+            // ---------------------------------------------------------------
+            // Generate human-readable order ID: JHC-YYYYMMDD-XXXX
+            // Done before the first save so the field is persisted atomically.
+            // ---------------------------------------------------------------
+            String customOrderId = orderIdGenerator.generate(LocalDate.now());
+            order.setCustomOrderId(customOrderId);
+
             orderRepository.save(order);
+
+            if (user != null && sellerLoyaltyPoints > 0) {
+                BigDecimal beforeLoyalty = sellerGrandTotal.add(sellerLoyaltyDiscount);
+                RedemptionQuoteDTO applied = loyaltyService.commitCheckoutRedemption(user, order, sellerLoyaltyPoints, beforeLoyalty);
+                order.setLoyaltyPointsRedeemed(applied.getApprovedPoints());
+                order.setLoyaltyDiscountAmount(applied.getDiscountAmount());
+                order.setGrandTotal(beforeLoyalty.subtract(applied.getDiscountAmount()));
+                orderRepository.save(order);
+            }
 
             LocalDateTime paymentNow = LocalDateTime.now();
             Payment payment = Payment.builder()
@@ -228,7 +300,10 @@ public class OrderService {
                         ? productVariantRepository.findById(r.getVariantId()).orElse(null)
                         : null;
 
-                BigDecimal itemVat = r.getLineTotal().multiply(new BigDecimal("0.13")).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal itemVat = calculateIncludedVat(r.getLineTotal());
+                BigDecimal buyingUnitPrice = product.getBuyingPrice() != null ? product.getBuyingPrice() : BigDecimal.ZERO;
+                BigDecimal buyingLineTotal = buyingUnitPrice.multiply(BigDecimal.valueOf(r.getQuantity()))
+                        .setScale(2, RoundingMode.HALF_UP);
 
                 // Build JSON snapshot of variant attributes for order history
                 String attrSnapshot = buildAttrSnapshot(r.getVariantAttributes());
@@ -245,6 +320,9 @@ public class OrderService {
                         .unitPrice(r.getUnitPrice())
                         .vatAmount(itemVat)
                         .lineTotal(r.getLineTotal())
+                        .buyingUnitPriceSnapshot(buyingUnitPrice)
+                        .buyingLineTotalSnapshot(buyingLineTotal)
+                        .sellingLineTotalSnapshot(r.getLineTotal())
                         .variantSkuSnapshot(variant != null ? variant.getSku() : null)
                         .variantAttributesSnapshot(attrSnapshot)
                         .manufactureDateSnapshot(product.getManufactureDate())
@@ -272,7 +350,8 @@ public class OrderService {
 
             orderRepository.save(order);
             summaries.add(toSummaryDTO(order, mapItems(order)));
-            log.info("Order {} placed successfully for customer {}", order.getId(), dto.getFullName());
+            log.info("Order {} [{}] placed successfully for customer {}",
+                    order.getCustomOrderId(), order.getId(), dto.getFullName());
 
             sendPlacementNotifications(order, user);
         }
@@ -317,6 +396,7 @@ public class OrderService {
         checkout.setPaymentMethod(dto.getPaymentMethod());
         checkout.setCouponCode(dto.getCouponCode());
         checkout.setIdempotencyKey(dto.getIdempotencyKey());
+        checkout.setLoyaltyPointsToRedeem(dto.getLoyaltyPointsToRedeem());
         checkout.setItems(checkoutItems);
 
         List<OrderSummaryDTO> summaries = placeOrder(checkout);
@@ -389,26 +469,19 @@ public class OrderService {
         applyOrderStatusChange(order, OrderStatus.DELIVERED,
                 "Delivery OTP verified successfully");
         orderRepository.save(order);
-        log.info("Order {} delivered successfully with OTP verification", orderId);
+        log.info("Order {} [{}] delivered successfully with OTP verification",
+                order.getCustomOrderId(), orderId);
 
         // Send Final Status Update Email
-        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "DELIVERED");
-
-        // Award loyalty points
-        if (order.getUser() != null) {
-            try {
-                Long orderTotal = order.getGrandTotal() != null ? order.getGrandTotal().longValue() : 0L;
-                loyaltyService.addPointsForOrder(order.getUser().getId(), orderTotal);
-            } catch (Exception e) {
-                log.error("Failed to award loyalty points for order {}", orderId, e);
-            }
-        }
+        emailService.sendOrderStatusUpdateEmail(
+                order.getCustomerEmail(), order.getCustomerName(),
+                order.getCustomOrderId(), "DELIVERED");
 
         try {
             notificationService.createNotification(
                     order.getUser(),
                     "Order Delivered",
-                    "Your order #" + order.getId() + " has been successfully delivered.",
+                    "Your order " + order.getCustomOrderId() + " has been successfully delivered.",
                     com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
                     order.getId());
         } catch (Exception e) {
@@ -463,7 +536,7 @@ public class OrderService {
     }
 
     @Transactional
-    public OrderSummaryDTO sellerCancelOrder(Long orderId, Long sellerId) {
+    public OrderSummaryDTO sellerCancelOrder(Long orderId, Long sellerId, String reason) {
         Order order = getOrderOrFail(orderId);
         if (!sellerOwns(order, sellerId)) {
             throw new AuthorizationException("You do not have permission to cancel this order");
@@ -473,16 +546,27 @@ public class OrderService {
             throw new BusinessValidationException("Cannot cancel order in status: " + order.getStatus());
         }
 
-        OrderSummaryDTO summary = applyOrderStatusChange(order, OrderStatus.CANCELLED,
-                "Shipment cancelled after merchant cancellation");
+        // Save cancellation reason to orderNote so it shows up on customer order page
+        if (reason != null && !reason.trim().isEmpty()) {
+            order.setOrderNote("Merchant Cancellation Reason: " + reason);
+        }
 
-        emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), "CANCELED_BY_MERCHANT");
+        OrderSummaryDTO summary = applyOrderStatusChange(order, OrderStatus.CANCELLED,
+                "Shipment cancelled after merchant cancellation: " + (reason != null ? reason : ""));
+
+        emailService.sendOrderStatusUpdateEmail(
+                order.getCustomerEmail(), order.getCustomerName(),
+                order.getCustomOrderId(), "CANCELED_BY_MERCHANT");
 
         try {
+            String msg = "We regret to inform you that your order " + order.getCustomOrderId() + " was canceled by the merchant.";
+            if (reason != null && !reason.trim().isEmpty()) {
+                msg += " Reason: " + reason;
+            }
             notificationService.createNotification(
                     order.getUser(),
                     "Order Canceled by Merchant",
-                    "We regret to inform you that your order #" + order.getId() + " was canceled by the merchant.",
+                    msg,
                     com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
                     order.getId());
         } catch (Exception e) {
@@ -518,8 +602,8 @@ public class OrderService {
         if (order.getPaymentStatus() == PaymentStatus.PAID) {
             throw new BusinessValidationException("Order is already paid");
         }
-        if (order.getPaymentMethod() != PaymentMethod.ESEWA) {
-            throw new BusinessValidationException("Retry is only supported for eSewa payments");
+        if (order.getPaymentMethod() != PaymentMethod.ESEWA && order.getPaymentMethod() != PaymentMethod.KHALTI) {
+            throw new BusinessValidationException("Retry is only supported for eSewa and Khalti payments");
         }
 
         order.setPaymentStatus(PaymentStatus.PAYMENT_INITIATED);
@@ -544,27 +628,65 @@ public class OrderService {
         return toSummaryDTO(order, mapItems(order));
     }
 
+    /**
+     * Fetches an order by its human-readable reference (e.g. {@code JHC-20260520-0003}).
+     * Applies the same access-control rules as {@link #getOrder(Long, User)}.
+     *
+     * @param customOrderId e.g. {@code "JHC-20260520-0003"}
+     * @param actor         the authenticated user requesting the order
+     */
+    @Transactional(readOnly = true)
+    public OrderSummaryDTO getOrderByRef(String customOrderId, User actor) {
+        Order order = orderRepository.findByCustomOrderId(customOrderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + customOrderId));
+        assertOrderAccess(order, actor);
+        return toSummaryDTO(order, mapItems(order));
+    }
+
+    @Transactional(readOnly = true)
     public List<OrderSummaryDTO> getOrdersForUser(Long userId) {
-        List<Order> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        // Legacy safety: some orders were placed without linking User, but with customerEmail.
+        User user = userRepository.findById(userId).orElse(null);
+        String email = user != null ? user.getEmail() : null;
+        List<Order> orders = (email != null)
+                ? orderRepository.findForUserOrEmail(userId, email)
+                : orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
         return orders.stream().map(o -> toSummaryDTO(o, mapItems(o))).toList();
     }
 
+    @Transactional(readOnly = true)
     public List<OrderListItemDTO> getOrdersForUserSimple(Long userId) {
-        List<Order> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
-        return orders.stream().map(o -> OrderListItemDTO.builder()
-                .orderId(o.getId())
-                .status(o.getStatus())
-                .grandTotal(o.getGrandTotal())
-                .itemsTotal(o.getItemsTotal())
-                .paymentMethod(o.getPaymentMethod())
-                .paymentStatus(o.getPaymentStatus())
-                .paymentReference(o.getPaymentReference())
-                .deliveryStatus(o.getShipment() != null ? o.getShipment().getStatus() : null)
-                .discountTotal(o.getDiscountTotal())
-                .totalItems(o.getItems().size())
-                .createdAt(o.getCreatedAt())
-                .appliedCoupon(o.getAppliedCoupon())
-                .build()).toList();
+        User user = userRepository.findById(userId).orElse(null);
+        String email = user != null ? user.getEmail() : null;
+        List<Order> orders = (email != null)
+                ? orderRepository.findForUserOrEmail(userId, email)
+                : orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        return orders.stream().map(o -> {
+            String productNames = o.getItems().stream()
+                    .map(OrderItem::getProductNameSnapshot)
+                    .collect(Collectors.joining(", "));
+            
+            OrderItem firstItem = o.getItems().isEmpty() ? null : o.getItems().get(0);
+            String image = resolveProductImage(firstItem);
+
+            return OrderListItemDTO.builder()
+                    .orderId(o.getId())
+                    .customOrderId(o.getCustomOrderId())
+                    .status(o.getStatus())
+                    .grandTotal(o.getGrandTotal())
+                    .itemsTotal(o.getItemsTotal())
+                    .paymentMethod(o.getPaymentMethod())
+                    .paymentStatus(o.getPaymentStatus())
+                    .paymentReference(o.getPaymentReference())
+                    .deliveryStatus(o.getShipment() != null ? o.getShipment().getStatus() : null)
+                    .discountTotal(o.getDiscountTotal())
+                    .totalItems(o.getItems().size())
+                    .createdAt(o.getCreatedAt())
+                    .appliedCoupon(o.getAppliedCoupon())
+                    .productNames(productNames)
+                    .productImage(image)
+                    .build();
+        }).toList();
     }
 
     @Transactional(readOnly = true)
@@ -586,6 +708,7 @@ public class OrderService {
 
             return OrderListItemDTO.builder()
                     .orderId(o.getId())
+                    .customOrderId(o.getCustomOrderId())
                     .status(o.getStatus())
                     .grandTotal(o.getGrandTotal())
                     .itemsTotal(o.getItemsTotal())
@@ -698,8 +821,8 @@ public class OrderService {
             discountTotal = promoCodeService.calculateDiscount(couponCode, items, userId).getAmount();
         }
 
-        BigDecimal vatAmount = itemsTotal.multiply(new BigDecimal("0.13")).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal grandTotal = itemsTotal.add(shippingFee).add(vatAmount).subtract(discountTotal);
+        BigDecimal vatAmount = calculateIncludedVat(itemsTotal);
+        BigDecimal grandTotal = itemsTotal.add(shippingFee).subtract(discountTotal);
         if (grandTotal.compareTo(BigDecimal.ZERO) < 0) grandTotal = BigDecimal.ZERO;
 
         CheckoutComputationResult r = new CheckoutComputationResult();
@@ -717,6 +840,14 @@ public class OrderService {
     // HELPERS
     // =========================
 
+    private BigDecimal calculateIncludedVat(BigDecimal taxInclusiveAmount) {
+        if (taxInclusiveAmount == null || taxInclusiveAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return taxInclusiveAmount
+                .subtract(taxInclusiveAmount.divide(new BigDecimal("1.13"), 2, RoundingMode.HALF_UP))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
 
     private BigDecimal resolveEffectiveUnitPrice(Product p) {
         if (Boolean.TRUE.equals(p.getOnSale()) && p.getSalePrice() != null) return p.getSalePrice();
@@ -772,6 +903,7 @@ public class OrderService {
             applyReturnedSideEffects(order);
         }
         orderRepository.save(order);
+        publishLoyaltyStatusEvent(order, nextStatus);
         synchronizeDeliveryShipment(order, nextStatus, note);
         sendOrderStatusNotifications(order, nextStatus, note);
         return toSummaryDTO(order, mapItems(order));
@@ -825,10 +957,33 @@ public class OrderService {
         }
     }
 
+    private void publishLoyaltyStatusEvent(Order order, OrderStatus status) {
+        if (order.getUser() == null) {
+            return;
+        }
+        if (status == OrderStatus.DELIVERED) {
+            eventPublisher.publishEvent(new LoyaltyDomainEvent(LoyaltyEventType.ORDER_DELIVERED,
+                    order.getId(), order.getUser().getId(), "order-delivered-" + order.getId()));
+        } else if (status == OrderStatus.CANCELLED || status == OrderStatus.FAILED) {
+            eventPublisher.publishEvent(new LoyaltyDomainEvent(LoyaltyEventType.ORDER_CANCELLED,
+                    order.getId(), order.getUser().getId(), "order-cancelled-" + order.getId()));
+        } else if (status == OrderStatus.RETURNED || status == OrderStatus.REFUNDED) {
+            eventPublisher.publishEvent(new LoyaltyDomainEvent(LoyaltyEventType.ORDER_REFUNDED,
+                    order.getId(), order.getUser().getId(), "order-refunded-" + order.getId()));
+        }
+    }
+
     private void sendOrderStatusNotifications(Order order, OrderStatus status, String note) {
         try {
-            emailService.sendOrderStatusUpdateEmail(order.getCustomerEmail(), order.getCustomerName(), order.getId(), status.name());
-            notificationService.createNotification(order.getUser(), "Order Update", "Order #" + order.getId() + " is " + status.name(), com.example.jhapcham.notification.NotificationType.ORDER_UPDATE, order.getId());
+            String ref = order.getCustomOrderId() != null ? order.getCustomOrderId() : String.valueOf(order.getId());
+            emailService.sendOrderStatusUpdateEmail(
+                    order.getCustomerEmail(), order.getCustomerName(), ref, status.name());
+            notificationService.createNotification(
+                    order.getUser(),
+                    "Order Update",
+                    "Order " + ref + " is " + status.name().replace("_", " "),
+                    com.example.jhapcham.notification.NotificationType.ORDER_UPDATE,
+                    order.getId());
         } catch (Exception e) {
             log.error("Notification failed", e);
         }
@@ -847,14 +1002,27 @@ public class OrderService {
     }
 
     private void sendPlacementNotifications(Order order, User user) {
-        emailService.sendOrderConfirmationToCustomer(order.getCustomerEmail(), order.getCustomerName(), order.getId(), order.getGrandTotal());
+        String sellerEmail = null;
+        String sellerName = null;
         if (!order.getItems().isEmpty()) {
             OrderItem first = order.getItems().get(0);
             if (first.getProduct() != null) {
                 SellerProfile s = first.getProduct().getSellerProfile();
-                emailService.sendNewOrderAlertToSeller(s.getUser().getEmail(), s.getUser().getFullName(), order.getId(), order.getGrandTotal());
+                if (s != null && s.getUser() != null) {
+                    sellerEmail = s.getUser().getEmail();
+                    sellerName = s.getUser().getFullName();
+                }
             }
         }
+        eventPublisher.publishEvent(new OrderPlacedEvent(
+                order.getId(),
+                order.getCustomOrderId(),
+                user != null ? user.getId() : null,
+                order.getCustomerEmail(),
+                order.getCustomerName(),
+                order.getGrandTotal(),
+                sellerEmail,
+                sellerName));
     }
 
     private void validateItems(CheckoutRequestDTO dto) {
@@ -967,14 +1135,17 @@ public class OrderService {
             if (first.getProduct() != null && first.getProduct().getSellerProfile() != null) {
                 SellerProfile s = first.getProduct().getSellerProfile();
                 sellerStore = s.getStoreName();
-                sellerFull = s.getUser().getFullName();
-                sellerEmail = s.getUser().getEmail();
+                if (s.getUser() != null) {
+                    sellerFull = s.getUser().getFullName();
+                    sellerEmail = s.getUser().getEmail();
+                }
                 sellerLogo = s.getLogoImagePath();
             }
         }
 
         return OrderSummaryDTO.builder()
                 .orderId(o.getId())
+                .customOrderId(o.getCustomOrderId())
                 .customerId(o.getUser() != null ? o.getUser().getId() : null)
                 .status(o.getStatus())
                 .customerName(o.getCustomerName())
@@ -1007,6 +1178,14 @@ public class OrderService {
                 .sellerShippingCharge(o.getSellerShippingCharge())
                 .sellerNetAmount(o.getSellerNetAmount())
                 .marketplaceCommission(o.getMarketplaceCommission())
+                .sellerPromoDiscountAmount(o.getSellerPromoDiscountAmount())
+                .platformSponsoredDiscountAmount(o.getPlatformSponsoredDiscountAmount())
+                .inputVatAmount(o.getInputVatAmount())
+                .outputVatAmount(o.getOutputVatAmount())
+                .vatPayableAmount(o.getVatPayableAmount())
+                .grossProfitAmount(o.getGrossProfitAmount())
+                .netProfitAmount(o.getNetProfitAmount())
+                .finalSellerEarnings(o.getFinalSellerEarnings())
                 .deliveredBranch(o.getDeliveredBranch())
                 .build();
     }
@@ -1048,13 +1227,27 @@ public class OrderService {
                 .specification(i.getSpecificationSnapshot())
                 .features(i.getFeaturesSnapshot())
                 .sellerStoreName(i.getProduct() != null && i.getProduct().getSellerProfile() != null ? i.getProduct().getSellerProfile().getStoreName() : null)
-                .commissionRate(orderAccountingService.getCommissionRate(i.getProduct() != null ? i.getProduct().getCategory() : "Others"))
+                .commissionRate(i.getCommissionPercentageSnapshot() != null ? i.getCommissionPercentageSnapshot() : orderAccountingService.getCommissionRate(i.getProduct() != null ? i.getProduct().getCategory() : "Others"))
+                .commissionAmount(i.getCommissionAmountSnapshot())
+                .buyingUnitPrice(i.getBuyingUnitPriceSnapshot())
+                .buyingLineTotal(i.getBuyingLineTotalSnapshot())
+                .sellingLineTotal(i.getSellingLineTotalSnapshot())
+                .inputVatAmount(i.getInputVatAmountSnapshot())
+                .outputVatAmount(i.getOutputVatAmountSnapshot())
+                .vatPayableAmount(i.getVatPayableSnapshot())
+                .sellerPromoDiscount(i.getSellerPromoDiscountSnapshot())
+                .platformDiscount(i.getPlatformDiscountSnapshot())
+                .commissionBase(i.getCommissionBaseSnapshot())
+                .grossProfit(i.getGrossProfitSnapshot())
+                .netProfit(i.getNetProfitSnapshot())
+                .finalSellerEarning(i.getFinalSellerEarningSnapshot())
                 .build();
     }
 
     private OrderListItemDTO toListItemDTO(Order o) {
         return OrderListItemDTO.builder()
                 .orderId(o.getId())
+                .customOrderId(o.getCustomOrderId())
                 .customerName(o.getCustomerName())
                 .grandTotal(o.getGrandTotal())
                 .status(o.getStatus())

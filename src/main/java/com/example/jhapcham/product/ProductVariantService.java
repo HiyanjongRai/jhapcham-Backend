@@ -29,6 +29,7 @@ public class ProductVariantService {
     private final AttributeValueRepository attributeValueRepository;
     private final AttributeService attributeService;
     private final UserRepository userRepository;
+    private static final int MAX_SKU_LENGTH = 150;
 
     /**
      * Synchronizes variants from a JSON string.
@@ -50,7 +51,8 @@ public class ProductVariantService {
 
             for (Map<String, Object> vMap : variantList) {
                 @SuppressWarnings("unchecked")
-                Map<String, String> attrs = (Map<String, String>) vMap.get("attributes");
+                Map<String, Object> rawAttrs = (Map<String, Object>) vMap.get("attributes");
+                Map<String, String> attrs = normalizeAttributes(rawAttrs);
                 if (attrs == null || attrs.isEmpty()) continue;
 
                 List<Long> attrValueIds = new java.util.ArrayList<>();
@@ -76,6 +78,7 @@ public class ProductVariantService {
                 List<ProductVariant> existing = variantRepository.findByProductAndAttributeValues(product, attrValueIds, (long) attrValueIds.size());
                 ProductVariant variant;
                 String normalizedSku = sku != null ? sku.trim() : null;
+                validateSkuLength(normalizedSku);
 
                 if (normalizedSku != null && !normalizedSku.isBlank() && !submittedSkus.add(normalizedSku)) {
                     throw new BusinessValidationException("Duplicate SKU in variant submission: " + normalizedSku);
@@ -107,6 +110,10 @@ public class ProductVariantService {
                 }
                 variantRepository.save(variant);
                 processedIds.add(variant.getId());
+            }
+
+            if (!variantList.isEmpty() && processedIds.isEmpty()) {
+                throw new BusinessValidationException("At least one valid variant is required");
             }
 
             if (variantList.isEmpty()) {
@@ -289,19 +296,43 @@ public class ProductVariantService {
         String attrPart = attrValues.stream()
                 .map(av -> av.getValue().replaceAll("\\s+", "-").toUpperCase())
                 .collect(Collectors.joining("-"));
-        return "P" + product.getId() + "-" + attrPart;
+        String sku = "P" + product.getId() + "-" + attrPart;
+        return sku.length() <= MAX_SKU_LENGTH ? sku : sku.substring(0, MAX_SKU_LENGTH);
     }
 
     private void validateSkuForSync(String sku, Long currentVariantId) {
         if (sku == null || sku.isBlank()) {
             return;
         }
+        validateSkuLength(sku);
 
         variantRepository.findBySku(sku).ifPresent(existingVariant -> {
             if (currentVariantId == null || !existingVariant.getId().equals(currentVariantId)) {
                 throw new BusinessValidationException("SKU already exists: " + sku);
             }
         });
+    }
+
+    private void validateSkuLength(String sku) {
+        if (sku != null && sku.length() > MAX_SKU_LENGTH) {
+            throw new BusinessValidationException("Variant SKU must be " + MAX_SKU_LENGTH + " characters or fewer");
+        }
+    }
+
+    private Map<String, String> normalizeAttributes(Map<String, Object> rawAttrs) {
+        if (rawAttrs == null || rawAttrs.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> attrs = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : rawAttrs.entrySet()) {
+            String name = entry.getKey() != null ? entry.getKey().trim() : "";
+            String value = entry.getValue() != null ? entry.getValue().toString().trim() : "";
+            if (name.isBlank() || value.isBlank()) {
+                throw new BusinessValidationException("Variant attributes must include both name and value");
+            }
+            attrs.put(name, value);
+        }
+        return attrs;
     }
 
     private void validateVariantNumbers(BigDecimal price, Integer stockQuantity) {

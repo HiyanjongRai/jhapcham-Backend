@@ -12,6 +12,7 @@ import java.util.List;
 @Builder
 public class ReportResponseDTO {
     private Long id;
+    private String reportId;
     private Long orderId;
     private Long orderItemId;
     private Long reportedEntityId;

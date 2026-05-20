@@ -15,8 +15,11 @@ import java.util.List;
 @AllArgsConstructor
 public class DisputeResponseDTO {
     private Long id;
+    private String reportId;
     private Long orderId;
+    private Long initiatedByUserId;
     private String initiatedByUserName;
+    private Long otherPartyUserId;
     private String otherPartyUserName;
     private String title;
     private String description;

@@ -1,6 +1,5 @@
 package com.example.jhapcham.config;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.lang.NonNull;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -12,8 +11,11 @@ import java.nio.file.Path;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-        @Value("${file.upload.dir:H:/Project/Ecomm/Jhapcham Backend/jhapcham-Backend/uploads}")
-        private String uploadDir;
+        private final String uploadDir;
+
+        public WebConfig(@org.springframework.beans.factory.annotation.Value("${file.upload.dir:uploads}") String uploadDir) {
+                this.uploadDir = Path.of(uploadDir).toAbsolutePath().normalize().toString();
+        }
 
         @Override
         public void addCorsMappings(@NonNull CorsRegistry registry) {
@@ -28,34 +30,39 @@ public class WebConfig implements WebMvcConfigurer {
         @Override
         public void addResourceHandlers(@NonNull ResourceHandlerRegistry registry) {
 
-                String configuredBaseDir = Path.of(uploadDir).toAbsolutePath().normalize().toUri().toString();
-                String projectBaseDir = Path.of("H:/Project/Ecomm/Jhapcham Backend/jhapcham-Backend/uploads")
-                                .toAbsolutePath()
-                                .normalize()
-                                .toUri()
-                                .toString();
-
-                // Mapping "product-images" request path to the actual "products" folder on disk
                 registry.addResourceHandler("/product-images/**")
-                                .addResourceLocations(configuredBaseDir + "product-images/", projectBaseDir + "product-images/");
+                                .addResourceLocations(uploadLocation("product-images"));
 
                 registry.addResourceHandler("/products/**")
-                                .addResourceLocations(configuredBaseDir + "products/", projectBaseDir + "products/");
+                                .addResourceLocations(uploadLocation("products"));
 
                 registry.addResourceHandler("/customer-profile/**")
-                                .addResourceLocations(configuredBaseDir + "customer-profile/", projectBaseDir + "customer-profile/");
+                                .addResourceLocations(uploadLocation("customer-profile"));
 
                 registry.addResourceHandler("/review-images/**")
-                                .addResourceLocations(configuredBaseDir + "review-images/", projectBaseDir + "review-images/");
+                                .addResourceLocations(uploadLocation("review-images"));
 
                 registry.addResourceHandler("/seller_logos/**")
-                                .addResourceLocations(configuredBaseDir + "seller_logos/", projectBaseDir + "seller_logos/");
+                                .addResourceLocations(uploadLocation("seller_logos"));
 
                 registry.addResourceHandler("/campaign-images/**")
-                                .addResourceLocations(configuredBaseDir + "campaign-images/", projectBaseDir + "campaign-images/");
+                                .addResourceLocations(uploadLocation("campaign-images"));
 
                 registry.addResourceHandler("/banners/**")
-                                .addResourceLocations(configuredBaseDir + "banners/", projectBaseDir + "banners/");
+                                .addResourceLocations(uploadLocation("banners"));
+
+                registry.addResourceHandler("/refund_evidence/**")
+                                .addResourceLocations(uploadLocation("refund_evidence"));
+
+                registry.addResourceHandler("/dispute_evidence/**")
+                                .addResourceLocations(uploadLocation("dispute_evidence"));
+
+                registry.addResourceHandler("/reports/**")
+                                .addResourceLocations(uploadLocation("reports"));
+        }
+
+        private String uploadLocation(String subdir) {
+                return Path.of(uploadDir).resolve(subdir).normalize().toUri().toString();
         }
 
 }

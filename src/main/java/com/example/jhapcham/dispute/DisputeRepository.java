@@ -20,4 +20,6 @@ public interface DisputeRepository extends JpaRepository<Dispute, Long> {
     Optional<Dispute> findByOrder(Order order);
     
     List<Dispute> findByInitiatedByUserOrOtherPartyUserOrderByCreatedAtDesc(User user1, User user2);
+    
+    Dispute findTopByCreatedAtBetweenOrderByIdDesc(java.time.LocalDateTime start, java.time.LocalDateTime end);
 }

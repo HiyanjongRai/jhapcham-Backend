@@ -26,6 +26,12 @@ import com.example.jhapcham.user.model.Role;
 import com.example.jhapcham.user.model.Status;
 import com.example.jhapcham.user.model.User;
 import com.example.jhapcham.user.model.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -36,6 +42,7 @@ import java.math.RoundingMode;
 import java.text.Normalizer;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -64,6 +71,11 @@ public class ProductService {
     private static final String PRODUCT_IMAGE_SUBDIR = "product-images";
 
     @Transactional
+    @CacheEvict(cacheNames = {
+            com.example.jhapcham.config.CacheConfig.PRODUCT_DETAIL,
+            com.example.jhapcham.config.CacheConfig.PRODUCT_PAGE,
+            com.example.jhapcham.config.CacheConfig.CATEGORY_LIST
+    }, allEntries = true)
     public ProductResponseDTO createProductForSeller(Long sellerUserId, ProductCreateRequestDTO dto) {
 
         User sellerUser = userRepository.findById(sellerUserId)
@@ -77,6 +89,11 @@ public class ProductService {
 
         SellerProfile profile = sellerProfileRepository.findByUser(sellerUser)
                 .orElseThrow(() -> new ResourceNotFoundException("Seller profile not found"));
+
+        if (sellerUser.getStatus() == Status.ACTIVE && profile.getStatus() != Status.ACTIVE) {
+            profile.setStatus(Status.ACTIVE);
+            profile = sellerProfileRepository.save(profile);
+        }
 
         if (profile.getStatus() != Status.ACTIVE)
             throw new AuthorizationException("Seller profile not active");
@@ -108,6 +125,7 @@ public class ProductService {
                 .features(dto.features())
                 .colorOptions(dto.colorOptions())
                 .price(dto.price())
+                .buyingPrice(dto.buyingPrice())
                 .stockQuantity(Boolean.TRUE.equals(dto.hasVariants()) ? 0 : (dto.stockQuantity() != null ? dto.stockQuantity() : 0))
                 .warrantyMonths(dto.warrantyMonths())
                 .manufactureDate(mfg)
@@ -125,6 +143,7 @@ public class ProductService {
             ensureCategoryExists(product.getCategory());
         }
 
+        applySaleRules(product, dto);
         Product saved = productRepository.save(product);
 
         // Upload images to Cloudinary
@@ -159,6 +178,11 @@ public class ProductService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {
+            com.example.jhapcham.config.CacheConfig.PRODUCT_DETAIL,
+            com.example.jhapcham.config.CacheConfig.PRODUCT_PAGE,
+            com.example.jhapcham.config.CacheConfig.CATEGORY_LIST
+    }, allEntries = true)
     public ProductResponseDTO updateProduct(Long requesterId, Long productId, ProductUpdateRequestDTO dto) {
 
         Product product = productRepository.findById(productId)
@@ -197,6 +221,7 @@ public class ProductService {
         if (dto.features() != null) product.setFeatures(dto.features());
         if (dto.colorOptions() != null) product.setColorOptions(dto.colorOptions());
         if (dto.price() != null) product.setPrice(dto.price());
+        if (dto.buyingPrice() != null) product.setBuyingPrice(dto.buyingPrice());
         if (dto.stockQuantity() != null) product.setStockQuantity(dto.stockQuantity());
         if (dto.warrantyMonths() != null) product.setWarrantyMonths(dto.warrantyMonths());
         if (dto.manufactureDate() != null) product.setManufactureDate(manufactureDate);
@@ -329,11 +354,51 @@ public class ProductService {
         }
     }
 
+    private void applySaleRules(Product product, ProductCreateRequestDTO dto) {
+        if (dto.onSale() == null && dto.salePercentage() == null && dto.discountPrice() == null) return;
+        if (dto.onSale() == null && (dto.salePercentage() != null || dto.discountPrice() != null)) throw new BusinessValidationException("Sale must be enabled to apply discount");
+
+        if (Boolean.FALSE.equals(dto.onSale())) {
+            product.setOnSale(false);
+            product.setSalePercentage(null);
+            product.setDiscountPrice(null);
+            product.setSalePrice(null);
+            return;
+        }
+
+        BigDecimal price = product.getPrice();
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) throw new BusinessValidationException("Invalid product price");
+
+        boolean hasPercentage = dto.salePercentage() != null;
+        boolean hasFinalPrice = dto.discountPrice() != null;
+        if (hasPercentage == hasFinalPrice) throw new BusinessValidationException("Provide either sale percentage or final sale price");
+
+        product.setOnSale(true);
+        if (hasPercentage) {
+            BigDecimal pct = dto.salePercentage();
+            if (pct.compareTo(BigDecimal.ZERO) <= 0 || pct.compareTo(BigDecimal.valueOf(100)) >= 0) throw new BusinessValidationException("Invalid sale percentage");
+            BigDecimal discount = price.multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            BigDecimal salePrice = price.subtract(discount).setScale(2, RoundingMode.HALF_UP);
+            product.setSalePercentage(pct);
+            product.setDiscountPrice(discount);
+            product.setSalePrice(salePrice);
+        } else {
+            BigDecimal salePrice = dto.discountPrice();
+            if (salePrice.compareTo(BigDecimal.ZERO) <= 0 || salePrice.compareTo(price) >= 0) throw new BusinessValidationException("Invalid sale price");
+            BigDecimal discount = price.subtract(salePrice).setScale(2, RoundingMode.HALF_UP);
+            product.setSalePrice(salePrice);
+            product.setDiscountPrice(discount);
+            product.setSalePercentage(null);
+        }
+    }
+
+    @Transactional
     public ProductDetailDTO getProductDetail(Long id) {
         Product p = productRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Product not found"));
         return toDetail(p);
     }
 
+    @Transactional
     public ProductDetailDTO getProductDetailBySlug(String slug) {
         Product p = productRepository.findBySlug(slug).orElseThrow(() -> new ResourceNotFoundException("Product not found"));
         return toDetail(p);
@@ -367,6 +432,7 @@ public class ProductService {
                 .features(p.getFeatures())
                 .colorOptions(p.getColorOptions())
                 .price(p.getPrice())
+                .buyingPrice(p.getBuyingPrice())
                 .saleLabel(buildSaleLabel(p))
                 .discountPrice(p.getDiscountPrice())
                 .salePercentage(p.getSalePercentage())
@@ -410,7 +476,14 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public List<ProductResponseDTO> listAllActiveProducts() {
-        return productRepository.findByStatus(ProductStatus.ACTIVE).stream().map(this::toResponse).toList();
+        return listAllActiveProducts(PageRequest.of(0, 60)).getContent();
+    }
+
+    @Transactional(readOnly = true)
+    @Cacheable(cacheNames = com.example.jhapcham.config.CacheConfig.PRODUCT_PAGE,
+            key = "'active:' + #pageable.pageNumber + ':' + #pageable.pageSize + ':' + #pageable.sort")
+    public Page<ProductResponseDTO> listAllActiveProducts(Pageable pageable) {
+        return productRepository.findActiveProductCards(pageable).map(this::toCardResponse);
     }
 
     @Transactional(readOnly = true)
@@ -448,6 +521,7 @@ public class ProductService {
                 .features(p.getFeatures())
                 .colorOptions(p.getColorOptions())
                 .price(p.getPrice())
+                .buyingPrice(p.getBuyingPrice())
                 .discountPrice(p.getDiscountPrice())
                 .salePercentage(p.getSalePercentage())
                 .salePrice(p.getSalePrice())
@@ -475,6 +549,61 @@ public class ProductService {
                 .minPrice(calculateMinPrice(p))
                 .maxPrice(calculateMaxPrice(p))
                 .build();
+    }
+
+    private ProductResponseDTO toCardResponse(ProductCardProjection p) {
+        boolean hasVariants = Boolean.TRUE.equals(p.getHasVariants());
+        return ProductResponseDTO.builder()
+                .id(p.getId())
+                .sellerProfileId(p.getSellerProfileId())
+                .sellerUserId(p.getSellerUserId())
+                .name(p.getName())
+                .slug(p.getSlug())
+                .shortDescription(p.getShortDescription())
+                .description(p.getDescription())
+                .category(p.getCategory())
+                .brand(p.getBrand())
+                .price(p.getPrice())
+                .discountPrice(p.getDiscountPrice())
+                .salePercentage(p.getSalePercentage())
+                .salePrice(p.getSalePrice())
+                .onSale(Boolean.TRUE.equals(p.getOnSale()))
+                .saleLabel(p.getSaleLabel())
+                .freeShipping(p.getFreeShipping())
+                .insideValleyShipping(p.getInsideValleyShipping())
+                .outsideValleyShipping(p.getOutsideValleyShipping())
+                .sellerFreeShippingMinOrder(p.getSellerFreeShippingMinOrder())
+                .stockQuantity(p.getStockQuantity())
+                .warrantyMonths(p.getWarrantyMonths())
+                .manufactureDate(p.getManufactureDate())
+                .expiryDate(p.getExpiryDate())
+                .status(p.getStatus() != null ? ProductStatus.valueOf(p.getStatus()) : null)
+                .imagePaths(splitImagePaths(p.getImagePaths()))
+                .totalViews(p.getTotalViews())
+                .averageRating(p.getAverageRating())
+                .totalReviews(p.getTotalReviews())
+                .sellerFullName(p.getSellerFullName())
+                .storeName(p.getStoreName())
+                .logoImagePath(p.getLogoImagePath())
+                .profileImagePath(p.getProfileImagePath())
+                .saleEndTime(p.getSaleEndTime())
+                .hasVariants(hasVariants)
+                .minPrice(p.getMinPrice())
+                .maxPrice(p.getMaxPrice())
+                .build();
+    }
+
+    private List<String> splitImagePaths(String imagePaths) {
+        if (imagePaths == null || imagePaths.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(imagePaths.split("\\|"))
+                .filter(path -> path != null && !path.isBlank())
+                .toList();
+    }
+
+    private String normalizeText(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private BigDecimal calculateMinPrice(Product p) {
@@ -545,18 +674,18 @@ public class ProductService {
     }
 
     public List<ProductResponseDTO> filterProducts(BigDecimal minPrice, BigDecimal maxPrice, String brand, String category) {
-        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
-        CriteriaQuery<Product> cq = cb.createQuery(Product.class);
-        Root<Product> root = cq.from(Product.class);
-        List<Predicate> predicates = new ArrayList<>();
-        predicates.add(cb.equal(root.get("status"), ProductStatus.ACTIVE));
-        if (minPrice != null) predicates.add(cb.greaterThanOrEqualTo(root.get("price"), minPrice));
-        if (maxPrice != null) predicates.add(cb.lessThanOrEqualTo(root.get("price"), maxPrice));
-        if (brand != null && !brand.isBlank()) predicates.add(cb.like(cb.lower(root.get("brand")), "%" + brand.toLowerCase() + "%"));
-        if (category != null && !category.isBlank()) predicates.add(cb.equal(cb.lower(root.get("category")), category.toLowerCase()));
-        cq.where(predicates.toArray(new Predicate[0]));
-        cq.orderBy(cb.desc(root.get("id")));
-        return entityManager.createQuery(cq).getResultList().stream().map(this::toResponse).toList();
+        return filterProducts(minPrice, maxPrice, brand, category, PageRequest.of(0, 60)).getContent();
+    }
+
+    public Page<ProductResponseDTO> filterProducts(BigDecimal minPrice, BigDecimal maxPrice, String brand,
+                                                   String category, Pageable pageable) {
+        return productRepository.filterActiveProductCards(
+                        minPrice,
+                        maxPrice,
+                        normalizeText(brand),
+                        normalizeText(category),
+                        pageable)
+                .map(this::toCardResponse);
     }
 
     public List<ProductViewCountProjection> getViewCountsForAllProducts() {
@@ -564,15 +693,53 @@ public class ProductService {
     }
 
     public List<ProductResponseDTO> searchProducts(String keyword) {
-        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
-        CriteriaQuery<Product> cq = cb.createQuery(Product.class);
-        Root<Product> root = cq.from(Product.class);
+        return searchProducts(keyword, PageRequest.of(0, 60)).getContent();
+    }
 
+    public Page<ProductResponseDTO> searchProducts(String keyword, Pageable pageable) {
+        return productRepository.searchActiveProductCards(normalizeText(keyword), pageable)
+                .map(this::toCardResponse);
+    }
+
+    private Page<ProductResponseDTO> queryActiveProducts(BigDecimal minPrice, BigDecimal maxPrice, String brand,
+                                                        String category, String keyword, Pageable pageable) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+
+        CriteriaQuery<Product> dataQuery = cb.createQuery(Product.class);
+        Root<Product> dataRoot = dataQuery.from(Product.class);
+        dataQuery.where(buildActiveProductPredicates(cb, dataRoot, minPrice, maxPrice, brand, category, keyword)
+                .toArray(new Predicate[0]));
+        dataQuery.orderBy(cb.desc(dataRoot.get("id")));
+
+        List<ProductResponseDTO> content = entityManager.createQuery(dataQuery)
+                .setFirstResult((int) pageable.getOffset())
+                .setMaxResults(pageable.getPageSize())
+                .getResultList()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+
+        CriteriaQuery<Long> countQuery = cb.createQuery(Long.class);
+        Root<Product> countRoot = countQuery.from(Product.class);
+        countQuery.select(cb.count(countRoot));
+        countQuery.where(buildActiveProductPredicates(cb, countRoot, minPrice, maxPrice, brand, category, keyword)
+                .toArray(new Predicate[0]));
+        Long total = entityManager.createQuery(countQuery).getSingleResult();
+
+        return new PageImpl<>(content, pageable, total);
+    }
+
+    private List<Predicate> buildActiveProductPredicates(CriteriaBuilder cb, Root<Product> root,
+                                                         BigDecimal minPrice, BigDecimal maxPrice, String brand,
+                                                         String category, String keyword) {
         List<Predicate> predicates = new ArrayList<>();
         predicates.add(cb.equal(root.get("status"), ProductStatus.ACTIVE));
-
+        if (minPrice != null) predicates.add(cb.greaterThanOrEqualTo(root.get("price"), minPrice));
+        if (maxPrice != null) predicates.add(cb.lessThanOrEqualTo(root.get("price"), maxPrice));
+        if (brand != null && !brand.isBlank()) predicates.add(cb.like(cb.lower(root.get("brand")), "%" + brand.toLowerCase(Locale.ROOT) + "%"));
+        if (category != null && !category.isBlank()) predicates.add(cb.equal(cb.lower(root.get("category")), category.toLowerCase(Locale.ROOT)));
         if (keyword != null && !keyword.isBlank()) {
-            String k = "%" + keyword.toLowerCase() + "%";
+            String k = "%" + keyword.toLowerCase(Locale.ROOT) + "%";
             predicates.add(cb.or(
                     cb.like(cb.lower(root.get("name")), k),
                     cb.like(cb.lower(root.get("brand")), k),
@@ -583,15 +750,15 @@ public class ProductService {
                     cb.like(cb.lower(root.get("storageSpec")), k),
                     cb.like(cb.lower(root.get("colorOptions")), k)));
         }
-
-        cq.where(predicates.toArray(new Predicate[0]));
-        cq.orderBy(cb.desc(root.get("id")));
-
-        return entityManager.createQuery(cq).getResultList().stream().map(this::toResponse).toList();
+        return predicates;
     }
 
     public List<ProductResponseDTO> listAllProductsForAdmin() {
-        return productRepository.findAll().stream().map(this::toResponse).toList();
+        return listAllProductsForAdmin(PageRequest.of(0, 100)).getContent();
+    }
+
+    public Page<ProductResponseDTO> listAllProductsForAdmin(Pageable pageable) {
+        return productRepository.findAll(pageable).map(this::toResponse);
     }
 
     @Transactional
@@ -609,12 +776,20 @@ public class ProductService {
         return productRepository.findBySellerProfileAndStatus(profile, ProductStatus.ACTIVE).stream().map(this::toResponse).toList();
     }
 
+    @Transactional(readOnly = true)
+    public Page<ProductResponseDTO> listActiveProductsForSeller(Long sellerUserId, Pageable pageable) {
+        User seller = userRepository.findById(sellerUserId).orElseThrow(() -> new ResourceNotFoundException("Seller not found"));
+        SellerProfile profile = sellerProfileRepository.findByUser(seller).orElseThrow(() -> new ResourceNotFoundException("Seller profile not found"));
+        return productRepository.findBySellerProfileAndStatus(profile, ProductStatus.ACTIVE, pageable).map(this::toResponse);
+    }
+
     private void ensureProductOwnerOrAdmin(Long requesterId, Product product) {
         User actor = userRepository.findById(requesterId).orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (actor.getRole() == Role.ADMIN) return;
         if (actor.getRole() != Role.SELLER || !product.getSellerProfile().getUser().getId().equals(requesterId)) throw new AuthorizationException("Access denied");
     }
 
+    @Cacheable(cacheNames = com.example.jhapcham.config.CacheConfig.CATEGORY_LIST, key = "'active'")
     public List<String> getAllCategories() { return productRepository.findDistinctCategories(); }
 
     private void ensureCategoryExists(String name) {

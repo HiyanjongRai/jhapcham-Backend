@@ -3,6 +3,7 @@ package com.example.jhapcham.seller;
 import com.example.jhapcham.product.Product;
 import lombok.Builder;
 import lombok.Data;
+import org.hibernate.Hibernate;
 
 @Data
 @Builder
@@ -22,10 +23,14 @@ public class ProductSummaryDTO {
                 .category(p.getCategory())
                 .brand(p.getBrand())
                 .price(p.getPrice().doubleValue())
-                .mainImage(
-                        p.getImages() != null && !p.getImages().isEmpty()
-                                ? p.getImages().get(0).getImagePath()
-                                : null)
+                .mainImage(resolveMainImage(p))
                 .build();
+    }
+
+    private static String resolveMainImage(Product p) {
+        if (p.getImages() == null || !Hibernate.isInitialized(p.getImages()) || p.getImages().isEmpty()) {
+            return null;
+        }
+        return p.getImages().get(0).getImagePath();
     }
 }

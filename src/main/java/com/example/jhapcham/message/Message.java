@@ -1,7 +1,10 @@
 package com.example.jhapcham.message;
 
+import com.example.jhapcham.dispute.Dispute;
 import com.example.jhapcham.product.Product;
+import com.example.jhapcham.refund.RefundRequest;
 import com.example.jhapcham.user.model.User;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
@@ -39,6 +42,18 @@ public class Message {
     @JoinColumn(name = "product_id")
     @JsonIgnoreProperties({ "hibernateLazyInitializer", "handler", "seller" })
     private Product product;
+
+    /** Gap 1: link message to a dispute case thread */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dispute_id")
+    @JsonIgnore
+    private Dispute dispute;
+
+    /** Gap 1: link message to a refund case thread */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "refund_request_id")
+    @JsonIgnore
+    private RefundRequest refundRequest;
 
     @Builder.Default
     @Column(name = "is_read")

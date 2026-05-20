@@ -28,6 +28,7 @@ public class ProductResponseDTO {
     private String colorOptions;
 
     private BigDecimal price;
+    private BigDecimal buyingPrice;
     private BigDecimal discountPrice;
     private BigDecimal salePercentage;
     private BigDecimal salePrice;

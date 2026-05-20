@@ -14,6 +14,7 @@ public record ProductCreateRequestDTO(
                 String features,
                 String colorOptions,
                 BigDecimal price,
+                BigDecimal buyingPrice,
 
                 // Sale Fields
                 Boolean onSale,

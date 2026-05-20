@@ -33,4 +33,11 @@ public class FollowController {
         currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
         return ResponseEntity.ok(followService.isFollowing(userId, sellerId));
     }
+
+    @GetMapping("/{userId}/followed-sellers")
+    public ResponseEntity<java.util.List<SellerProfileResponseDTO>> getFollowedSellers(@PathVariable Long userId,
+            Authentication authentication) {
+        currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
+        return ResponseEntity.ok(followService.getFollowedSellers(userId));
+    }
 }

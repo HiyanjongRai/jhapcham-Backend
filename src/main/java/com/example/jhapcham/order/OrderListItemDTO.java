@@ -11,7 +11,8 @@ import java.time.LocalDateTime;
 public class OrderListItemDTO {
 
     private Long orderId;
-    private Long customerId; // NEW
+    private String customOrderId;  // e.g. JHC-20260520-0001
+    private Long customerId;
     private OrderStatus status;
     private BigDecimal grandTotal;
     private BigDecimal itemsTotal;

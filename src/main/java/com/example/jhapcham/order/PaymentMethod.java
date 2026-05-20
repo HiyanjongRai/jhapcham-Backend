@@ -5,9 +5,8 @@ public enum PaymentMethod {
     STRIPE,
 
     ESEWA,
-    // Deprecated methods retained for database backward compatibility
-    @Deprecated
     KHALTI,
+    // Deprecated methods retained for database backward compatibility
     @Deprecated
     SKYPAY
 }

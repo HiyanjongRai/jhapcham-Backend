@@ -16,6 +16,7 @@ public record ProductUpdateRequestDTO(
                 String colorOptions,
 
                 BigDecimal price,
+                BigDecimal buyingPrice,
                 Boolean onSale,
                 BigDecimal discountPrice,
                 BigDecimal salePercentage,

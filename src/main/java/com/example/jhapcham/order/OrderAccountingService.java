@@ -59,30 +59,67 @@ public class OrderAccountingService {
 
         SellerProfile seller = order.getItems().get(0).getProduct().getSellerProfile();
 
-        // Gross items total
-        BigDecimal itemsGross = order.getItemsTotal();
-        // Discount given by seller via promo code
-        BigDecimal discount = order.getDiscountTotal() != null ? order.getDiscountTotal() : BigDecimal.ZERO;
+        BigDecimal itemsGross = money(order.getItemsTotal());
+        BigDecimal sellerPromoDiscount = money(order.getSellerPromoDiscountAmount());
+        BigDecimal platformSponsoredDiscount = money(order.getPlatformSponsoredDiscountAmount());
+        BigDecimal totalDiscount = money(order.getDiscountTotal());
 
-        // The gross amount the seller is entitled to from items is itemsGross - discount
-        BigDecimal sellerGrossAmount = itemsGross.subtract(discount);
-
-        // --- Commission Calculation ---
         BigDecimal totalCommission = BigDecimal.ZERO;
+        BigDecimal inputVatTotal = BigDecimal.ZERO;
+        BigDecimal outputVatTotal = BigDecimal.ZERO;
+        BigDecimal vatPayableTotal = BigDecimal.ZERO;
+        BigDecimal grossProfitTotal = BigDecimal.ZERO;
+        BigDecimal netProfitTotal = BigDecimal.ZERO;
+        BigDecimal finalSellerEarningsTotal = BigDecimal.ZERO;
+
+        BigDecimal sellerGrossAmount = itemsGross.subtract(sellerPromoDiscount).setScale(2, java.math.RoundingMode.HALF_UP);
         for (OrderItem item : order.getItems()) {
-            BigDecimal itemLineTotal = item.getLineTotal() != null ? item.getLineTotal() : BigDecimal.ZERO;
+            BigDecimal itemLineTotal = money(item.getLineTotal());
+            BigDecimal sellerPromoShare = proportional(sellerPromoDiscount, itemLineTotal, itemsGross);
+            BigDecimal platformDiscountShare = proportional(platformSponsoredDiscount, itemLineTotal, itemsGross);
+            BigDecimal totalDiscountShare = proportional(totalDiscount, itemLineTotal, itemsGross);
+            BigDecimal commissionBase = itemLineTotal.subtract(totalDiscountShare);
+            if (commissionBase.compareTo(BigDecimal.ZERO) < 0) {
+                commissionBase = BigDecimal.ZERO;
+            }
+
             String category = item.getProduct() != null ? item.getProduct().getCategory() : "Others";
             double rate = getCommissionRate(category);
-            BigDecimal itemCommission = itemLineTotal.multiply(BigDecimal.valueOf(rate / 100.0))
+            BigDecimal itemCommission = commissionBase.multiply(BigDecimal.valueOf(rate / 100.0))
                     .setScale(2, java.math.RoundingMode.HALF_UP);
-            
+
+            BigDecimal buyingLineTotal = money(item.getBuyingLineTotalSnapshot());
+            BigDecimal sellingLineTotal = money(item.getSellingLineTotalSnapshot() != null ? item.getSellingLineTotalSnapshot() : itemLineTotal);
+            BigDecimal inputVat = calculateIncludedVat(buyingLineTotal);
+            BigDecimal outputVat = calculateIncludedVat(commissionBase);
+            BigDecimal vatPayable = outputVat.subtract(inputVat).setScale(2, java.math.RoundingMode.HALF_UP);
+            BigDecimal grossProfit = sellingLineTotal.subtract(buyingLineTotal).setScale(2, java.math.RoundingMode.HALF_UP);
+            BigDecimal netProfit = grossProfit.subtract(sellerPromoShare).subtract(vatPayable).subtract(itemCommission)
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            BigDecimal finalSellerEarning = sellingLineTotal.subtract(sellerPromoShare).subtract(vatPayable).subtract(itemCommission)
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+
             item.setCommissionPercentageSnapshot(rate);
             item.setCommissionAmountSnapshot(itemCommission);
+            item.setInputVatAmountSnapshot(inputVat);
+            item.setOutputVatAmountSnapshot(outputVat);
+            item.setVatPayableSnapshot(vatPayable);
+            item.setSellerPromoDiscountSnapshot(sellerPromoShare);
+            item.setPlatformDiscountSnapshot(platformDiscountShare);
+            item.setCommissionBaseSnapshot(commissionBase.setScale(2, java.math.RoundingMode.HALF_UP));
+            item.setGrossProfitSnapshot(grossProfit);
+            item.setNetProfitSnapshot(netProfit);
+            item.setFinalSellerEarningSnapshot(finalSellerEarning);
+
             totalCommission = totalCommission.add(itemCommission);
+            inputVatTotal = inputVatTotal.add(inputVat);
+            outputVatTotal = outputVatTotal.add(outputVat);
+            vatPayableTotal = vatPayableTotal.add(vatPayable);
+            grossProfitTotal = grossProfitTotal.add(grossProfit);
+            netProfitTotal = netProfitTotal.add(netProfit);
+            finalSellerEarningsTotal = finalSellerEarningsTotal.add(finalSellerEarning);
         }
-        // Round commission to 2 decimal places
         totalCommission = totalCommission.setScale(2, java.math.RoundingMode.HALF_UP);
-        // ------------------------------
 
         BigDecimal shippingFeePaidByCustomer = order.getShippingFee() != null ? order.getShippingFee()
                 : BigDecimal.ZERO;
@@ -94,15 +131,19 @@ public class OrderAccountingService {
             sellerShippingCharge = estimateSellerShippingCost(order, seller);
         }
 
-        // Net = Gross - VAT - ShippingCharge - MarketplaceCommission
-        // We use order.getVatAmount() which was calculated in OrderService
-        BigDecimal vatAmount = order.getVatAmount() != null ? order.getVatAmount() : BigDecimal.ZERO;
-        BigDecimal net = sellerGrossAmount.subtract(vatAmount).subtract(sellerShippingCharge).subtract(totalCommission);
+        BigDecimal net = sellerGrossAmount.subtract(vatPayableTotal).subtract(sellerShippingCharge).subtract(totalCommission)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
 
         order.setSellerGrossAmount(sellerGrossAmount);
         order.setSellerShippingCharge(sellerShippingCharge);
         order.setMarketplaceCommission(totalCommission);
         order.setSellerNetAmount(net);
+        order.setInputVatAmount(inputVatTotal.setScale(2, java.math.RoundingMode.HALF_UP));
+        order.setOutputVatAmount(outputVatTotal.setScale(2, java.math.RoundingMode.HALF_UP));
+        order.setVatPayableAmount(vatPayableTotal.setScale(2, java.math.RoundingMode.HALF_UP));
+        order.setGrossProfitAmount(grossProfitTotal.setScale(2, java.math.RoundingMode.HALF_UP));
+        order.setNetProfitAmount(netProfitTotal.subtract(sellerShippingCharge).setScale(2, java.math.RoundingMode.HALF_UP));
+        order.setFinalSellerEarnings(finalSellerEarningsTotal.subtract(sellerShippingCharge).setScale(2, java.math.RoundingMode.HALF_UP));
         order.setCommissionStatus(CommissionStatus.PENDING);
         
         // Note: sellerAccounted remains false, SellerProfile amounts are NOT updated yet.
@@ -134,7 +175,7 @@ public class OrderAccountingService {
         seller.setTotalIncome(seller.getTotalIncome().add(order.getSellerGrossAmount()));
         seller.setTotalShippingCost(seller.getTotalShippingCost().add(order.getSellerShippingCharge()));
         seller.setTotalCommission(seller.getTotalCommission().add(order.getMarketplaceCommission()));
-        seller.setTotalVatCollected(seller.getTotalVatCollected().add(order.getVatAmount() != null ? order.getVatAmount() : BigDecimal.ZERO));
+        seller.setTotalVatCollected(seller.getTotalVatCollected().add(order.getVatPayableAmount() != null ? order.getVatPayableAmount() : BigDecimal.ZERO));
         seller.setNetIncome(seller.getNetIncome().add(order.getSellerNetAmount()));
 
         sellerProfileRepository.save(seller);
@@ -188,7 +229,7 @@ public class OrderAccountingService {
                  seller.setTotalShippingCost(safeSubtract(seller.getTotalShippingCost(), order.getSellerShippingCharge()));
                  seller.setTotalCommission(safeSubtract(seller.getTotalCommission(), order.getMarketplaceCommission()));
                  seller.setTotalVatCollected(safeSubtract(seller.getTotalVatCollected(),
-                         order.getVatAmount() != null ? order.getVatAmount() : BigDecimal.ZERO));
+                         order.getVatPayableAmount() != null ? order.getVatPayableAmount() : BigDecimal.ZERO));
                  seller.setNetIncome(safeSubtract(seller.getNetIncome(), order.getSellerNetAmount()));
                  sellerProfileRepository.save(seller);
              }
@@ -237,6 +278,29 @@ public class OrderAccountingService {
             return BigDecimal
                     .valueOf(seller.getInsideValleyDeliveryFee() != null ? seller.getInsideValleyDeliveryFee() : 0);
         }
+    }
+
+    private BigDecimal calculateIncludedVat(BigDecimal taxInclusiveAmount) {
+        BigDecimal amount = money(taxInclusiveAmount);
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return amount.subtract(amount.divide(new BigDecimal("1.13"), 2, java.math.RoundingMode.HALF_UP))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal proportional(BigDecimal total, BigDecimal part, BigDecimal whole) {
+        total = money(total);
+        part = money(part);
+        whole = money(whole);
+        if (total.compareTo(BigDecimal.ZERO) == 0 || whole.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        return total.multiply(part).divide(whole, 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal money(BigDecimal value) {
+        return value != null ? value.setScale(2, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO;
     }
 
     private BigDecimal safeSubtract(BigDecimal current, BigDecimal amount) {

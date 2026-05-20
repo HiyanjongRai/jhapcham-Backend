@@ -86,6 +86,58 @@ public class DisputeController {
         }
     }
 
+    // ── GAP 2: STATUS TRANSITION ENDPOINTS ─────────────────────────────────────
+
+    @PostMapping("/{disputeId}/escalate")
+    public ResponseEntity<?> escalate(@PathVariable Long disputeId, Authentication authentication) {
+        try {
+            User user = currentUserService.requireUser(authentication);
+            return ResponseEntity.ok(disputeService.escalateDispute(disputeId, user.getId()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{disputeId}/seller-respond")
+    public ResponseEntity<?> sellerRespond(@PathVariable Long disputeId, Authentication authentication) {
+        try {
+            User user = currentUserService.requireUser(authentication);
+            return ResponseEntity.ok(disputeService.sellerRespond(disputeId, user.getId()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{disputeId}/seller-approve")
+    public ResponseEntity<?> sellerApprove(@PathVariable Long disputeId, Authentication authentication) {
+        try {
+            User user = currentUserService.requireUser(authentication);
+            return ResponseEntity.ok(disputeService.sellerApprove(disputeId, user.getId()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{disputeId}/seller-decline")
+    public ResponseEntity<?> sellerDecline(@PathVariable Long disputeId, Authentication authentication) {
+        try {
+            User user = currentUserService.requireUser(authentication);
+            return ResponseEntity.ok(disputeService.sellerDecline(disputeId, user.getId()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{disputeId}/customer-respond")
+    public ResponseEntity<?> customerRespond(@PathVariable Long disputeId, Authentication authentication) {
+        try {
+            User user = currentUserService.requireUser(authentication);
+            return ResponseEntity.ok(disputeService.customerRespond(disputeId, user.getId()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     // Admin endpoints
     @GetMapping("/admin/pending")
     @PreAuthorize("hasRole('ADMIN')")

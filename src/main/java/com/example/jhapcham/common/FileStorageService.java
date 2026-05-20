@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
 
@@ -17,6 +18,7 @@ import java.util.Set;
 public class FileStorageService {
 
     private final Path root;
+    private static final long MAX_FILE_BYTES = 10L * 1024L * 1024L;
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp", "gif", "pdf");
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "image/jpeg",
@@ -26,7 +28,7 @@ public class FileStorageService {
             "application/pdf");
 
     public FileStorageService(
-            @Value("${file.upload.dir:H:/Project/Ecomm/Jhapcham1/jhapcham-Backend/uploads}") String uploadDir
+            @Value("${file.upload.dir:uploads}") String uploadDir
     ) {
         this.root = Path.of(uploadDir).toAbsolutePath().normalize();
         try {
@@ -90,6 +92,10 @@ public class FileStorageService {
             throw new RuntimeException("Unsupported file type");
         }
 
+        if (file.getSize() <= 0 || file.getSize() > MAX_FILE_BYTES) {
+            throw new RuntimeException("File size is not allowed");
+        }
+
         int dot = original.lastIndexOf('.');
         if (dot < 0 || dot == original.length() - 1) {
             throw new RuntimeException("File extension is required");
@@ -99,5 +105,48 @@ public class FileStorageService {
         if (!ALLOWED_EXTENSIONS.contains(extension)) {
             throw new RuntimeException("Unsupported file extension");
         }
+
+        validateMagicBytes(file, extension, contentType.toLowerCase(Locale.ROOT));
+    }
+
+    private void validateMagicBytes(MultipartFile file, String extension, String contentType) {
+        try (InputStream input = file.getInputStream()) {
+            byte[] header = input.readNBytes(16);
+            boolean valid = switch (extension) {
+                case "jpg", "jpeg" -> startsWith(header, new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF});
+                case "png" -> startsWith(header, new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47});
+                case "webp" -> header.length >= 12
+                        && startsWith(header, new byte[] {0x52, 0x49, 0x46, 0x46})
+                        && Arrays.equals(Arrays.copyOfRange(header, 8, 12), new byte[] {0x57, 0x45, 0x42, 0x50});
+                case "gif" -> startsWith(header, new byte[] {0x47, 0x49, 0x46, 0x38});
+                case "pdf" -> startsWith(header, new byte[] {0x25, 0x50, 0x44, 0x46});
+                default -> false;
+            };
+            if (!valid) {
+                throw new RuntimeException("File content does not match its extension");
+            }
+            if (extension.equals("pdf") && !"application/pdf".equals(contentType)) {
+                throw new RuntimeException("PDF content type mismatch");
+            }
+            if (!extension.equals("pdf") && !contentType.startsWith("image/")) {
+                throw new RuntimeException("Image content type mismatch");
+            }
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Unable to validate uploaded file", e);
+        }
+    }
+
+    private boolean startsWith(byte[] value, byte[] prefix) {
+        if (value.length < prefix.length) {
+            return false;
+        }
+        for (int i = 0; i < prefix.length; i++) {
+            if (value[i] != prefix[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 }

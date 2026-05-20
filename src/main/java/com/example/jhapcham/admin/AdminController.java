@@ -4,6 +4,9 @@ import com.example.jhapcham.product.ProductResponseDTO;
 import com.example.jhapcham.report.dto.ReportResponseDTO;
 import com.example.jhapcham.user.model.User;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -72,8 +75,13 @@ public class AdminController {
 
     // Products
     @GetMapping("/products")
-    public ResponseEntity<List<ProductResponseDTO>> getAllProducts() {
-        return ResponseEntity.ok(adminService.getAllProducts());
+    public ResponseEntity<Page<ProductResponseDTO>> getAllProducts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, 100));
+        return ResponseEntity.ok(adminService.getAllProducts(
+                PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"))));
     }
 
     @PutMapping("/products/{productId}/visibility")

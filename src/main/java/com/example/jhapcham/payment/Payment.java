@@ -10,7 +10,11 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "payments")
+@Table(name = "payments", indexes = {
+        @Index(name = "idx_payments_order", columnList = "order_id", unique = true),
+        @Index(name = "idx_payments_transaction_uuid", columnList = "transaction_uuid", unique = true),
+        @Index(name = "idx_payments_state_updated", columnList = "state,updated_at")
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -57,4 +61,3 @@ public class Payment {
 
     private LocalDateTime updatedAt;
 }
-

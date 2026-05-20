@@ -2,6 +2,9 @@ package com.example.jhapcham.product;
 
 import com.example.jhapcham.Error.ErrorResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +20,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ProductController {
 
+    private static final int MAX_PAGE_SIZE = 60;
+
     private final ProductService productService;
     private final ProductViewService productViewService;
     private final com.example.jhapcham.security.CurrentUserService currentUserService;
@@ -26,9 +31,24 @@ public class ProductController {
         return ResponseEntity.ok(productService.listAllActiveProducts());
     }
 
+    @GetMapping("/page")
+    public ResponseEntity<?> listAllActiveProductsPaged(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "24") int size) {
+        return ResponseEntity.ok(productService.listAllActiveProducts(pageable(page, size)));
+    }
+
     @GetMapping("/seller/{sellerUserId}")
     public ResponseEntity<?> listActiveProductsForSeller(@PathVariable Long sellerUserId) {
-        return ResponseEntity.ok(productService.listActiveProductsForSeller(sellerUserId));
+        return ResponseEntity.ok(productService.listActiveProductsForSeller(sellerUserId, pageable(0, 60)).getContent());
+    }
+
+    @GetMapping("/seller/{sellerUserId}/page")
+    public ResponseEntity<?> listActiveProductsForSellerPaged(
+            @PathVariable Long sellerUserId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "24") int size) {
+        return ResponseEntity.ok(productService.listActiveProductsForSeller(sellerUserId, pageable(page, size)));
     }
 
     @GetMapping("/seller/{sellerUserId}/all")
@@ -40,7 +60,9 @@ public class ProductController {
     @GetMapping("/my-inventory")
     public ResponseEntity<?> listMyProducts(Authentication authentication) {
         User actor = currentUserService.requireUser(authentication);
-        return ResponseEntity.ok(productService.listProductsForSeller(actor.getId()));
+        // Seller inventory is seller-only and requires an approved seller account.
+        currentUserService.requireSellerSelfOrAdmin(actor, actor.getId());
+        return ResponseEntity.ok(productService.listActiveProductsForSeller(actor.getId(), pageable(0, 60)));
     }
 
     @GetMapping("/slug/{slug}")
@@ -57,7 +79,8 @@ public class ProductController {
             productViewService.recordView(dto.getProductId(), resolvedUserId);
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(new ErrorResponse("Failed to fetch product detail"));
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to fetch product detail: " + e.getMessage()));
         }
     }
 
@@ -90,15 +113,39 @@ public class ProductController {
     }
 
     @GetMapping("/views/user/{userId}/recent")
-    public ResponseEntity<?> getRecentViewsForUser(@PathVariable Long userId, Authentication authentication) {
+    public ResponseEntity<?> getRecentViewsForUser(
+            @PathVariable Long userId, 
+            @RequestParam(defaultValue = "10") int limit,
+            Authentication authentication) {
         try {
             currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
-            List<ProductViewDTO> dtoList = productViewService.getRecentViewsForUser(userId).stream()
-                    .map(v -> new ProductViewDTO(v.getId(), v.getProduct().getId(), v.getProduct().getName(), v.getUser() != null ? v.getUser().getId() : null, v.getUser() != null ? v.getUser().getUsername() : null, v.getViewedAt()))
+            List<ProductView> recentViews = productViewService.getRecentViewsForUser(userId);
+            
+            // Get unique product IDs in the order they were viewed
+            List<Long> orderedUniqueIds = recentViews.stream()
+                    .map(v -> v.getProduct().getId())
+                    .distinct()
+                    .limit(limit) 
                     .toList();
-            return ResponseEntity.ok(dtoList);
+            
+            if (orderedUniqueIds.isEmpty()) {
+                return ResponseEntity.ok(List.of());
+            }
+
+            // Fetch products and sort them to match the original viewed order
+            List<ProductResponseDTO> unorderedProducts = productService.listActiveProductsByIds(orderedUniqueIds);
+            
+            List<ProductResponseDTO> orderedProducts = orderedUniqueIds.stream()
+                    .map(id -> unorderedProducts.stream()
+                            .filter(p -> p.getId().equals(id))
+                            .findFirst()
+                            .orElse(null))
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+            
+            return ResponseEntity.ok(orderedProducts);
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(new ErrorResponse("Failed to load recent views"));
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to load recent views: " + e.getMessage()));
         }
     }
 
@@ -126,9 +173,28 @@ public class ProductController {
         return productService.filterProducts(minPrice, maxPrice, brand, category);
     }
 
+    @GetMapping("/filter/page")
+    public ResponseEntity<?> filterProductsPaged(
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) String brand,
+            @RequestParam(required = false) String category,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "24") int size) {
+        return ResponseEntity.ok(productService.filterProducts(minPrice, maxPrice, brand, category, pageable(page, size)));
+    }
+
     @GetMapping("/search")
     public List<ProductResponseDTO> searchProducts(@RequestParam String keyword) {
         return productService.searchProducts(keyword);
+    }
+
+    @GetMapping("/search/page")
+    public ResponseEntity<?> searchProductsPaged(
+            @RequestParam String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "24") int size) {
+        return ResponseEntity.ok(productService.searchProducts(keyword, pageable(page, size)));
     }
 
     @GetMapping("/views/counts-by-product")
@@ -153,4 +219,10 @@ public class ProductController {
     public record ProductViewDTO(Long viewId, Long productId, String productName, Long userId, String username, LocalDateTime viewedAt) {}
     public record ProductViewCountDTO(Long productId, long totalViews) {}
     public record ProductViewCountWithNameDTO(Long productId, String productName, long totalViews) {}
+
+    private Pageable pageable(int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"));
+    }
 }

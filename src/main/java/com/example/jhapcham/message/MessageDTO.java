@@ -16,6 +16,9 @@ public class MessageDTO {
     private Long productId;
     private String productName;
     private String productImage;
+    /** Gap 1: case thread identifiers */
+    private Long disputeId;
+    private Long refundRequestId;
     private LocalDateTime createdAt;
     private String senderRole;
     private boolean isRead;

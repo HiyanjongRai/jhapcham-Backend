@@ -2,6 +2,7 @@ package com.example.jhapcham.product;
 
 import com.example.jhapcham.seller.SellerProfile;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
@@ -13,7 +14,13 @@ import java.util.List;
 import java.util.Set;
 
 @Entity
-@Table(name = "products")
+@Table(name = "products", indexes = {
+        @Index(name = "idx_products_status_id", columnList = "status,id"),
+        @Index(name = "idx_products_status_category", columnList = "status,category"),
+        @Index(name = "idx_products_status_brand", columnList = "status,brand"),
+        @Index(name = "idx_products_seller_status", columnList = "seller_profile_id,status"),
+        @Index(name = "idx_products_slug", columnList = "slug", unique = true)
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -71,6 +78,13 @@ public class Product {
 
     @Column(nullable = false)
     private BigDecimal price;
+
+    @Column(precision = 38, scale = 2)
+    @DecimalMin("0")
+    private BigDecimal costPrice;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal buyingPrice;
 
     private BigDecimal discountPrice;
 

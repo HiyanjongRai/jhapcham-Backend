@@ -74,15 +74,20 @@ public class WishlistService {
                 List<Wishlist> items = wishlistRepository.findByUser(user);
 
                 List<Long> productIds = items.stream()
+                                .filter(w -> w.getProduct() != null)
                                 .map(w -> w.getProduct().getId())
                                 .distinct()
                                 .toList();
+
+                if (productIds.isEmpty()) return new ArrayList<>();
+
                 Map<Long, ProductResponseDTO> activeProductsById = productService.listActiveProductsByIds(productIds)
                                 .stream()
-                                .collect(Collectors.toMap(ProductResponseDTO::getId, p -> p));
+                                .collect(Collectors.toMap(ProductResponseDTO::getId, p -> p, (a, b) -> a));
 
                 List<ProductResponseDTO> result = new ArrayList<>();
                 for (Wishlist w : items) {
+                        if (w.getProduct() == null) continue;
                         ProductResponseDTO product = activeProductsById.get(w.getProduct().getId());
                         if (product != null) {
                                 result.add(product);

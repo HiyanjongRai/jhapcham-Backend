@@ -11,6 +11,8 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
     Optional<Follow> findByFollowerAndSeller(User follower, SellerProfile seller);
 
     boolean existsByFollowerAndSeller(User follower, SellerProfile seller);
+    
+    java.util.List<Follow> findByFollower(User follower);
 
     // Custom query if needed for DTOs
     long countBySeller(SellerProfile seller);

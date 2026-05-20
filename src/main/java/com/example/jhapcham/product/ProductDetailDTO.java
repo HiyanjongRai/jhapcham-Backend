@@ -28,6 +28,7 @@ public class ProductDetailDTO {
     private String colorOptions;
 
     private BigDecimal price;
+    private BigDecimal buyingPrice;
     private BigDecimal discountPrice; // final discounted price (manual or calculated)
     private BigDecimal salePercentage; // NEW percentage discount field
     private BigDecimal salePrice;

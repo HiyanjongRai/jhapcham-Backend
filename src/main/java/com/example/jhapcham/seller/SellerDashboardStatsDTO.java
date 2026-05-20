@@ -18,6 +18,10 @@ public class SellerDashboardStatsDTO {
     private BigDecimal totalShippingCost;
     private BigDecimal totalCommission;
     private BigDecimal totalVatCollected;
+    private BigDecimal totalCost;
+    private BigDecimal netProfit;
+    private BigDecimal profitMargin;
+    private BigDecimal averageOrderProfit;
     private BigDecimal netIncome;
 
     // Order counts

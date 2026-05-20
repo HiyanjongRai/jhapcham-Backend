@@ -4,7 +4,6 @@ import com.example.jhapcham.Error.AuthorizationException;
 import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.order.*;
-import com.example.jhapcham.refund.*;
 import com.example.jhapcham.report.dto.*;
 import com.example.jhapcham.user.model.Role;
 import com.example.jhapcham.user.model.User;
@@ -24,7 +23,6 @@ import java.util.stream.Collectors;
 public class ReportService {
 
     private final ReportRepository reportRepository;
-    private final RefundRepository refundRepository;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final UserRepository userRepository;
@@ -60,9 +58,14 @@ public class ReportService {
             throw new BusinessValidationException("Item does not belong to this order");
         }
 
+        if (reportRepository.existsByOrderItem(item)) {
+            throw new BusinessValidationException("A report has already been filed for this order item.");
+        }
+
         User seller = item.getProduct().getSellerProfile().getUser();
 
         Report report = Report.builder()
+                .reportId(generateReportId())
                 .order(order)
                 .orderItem(item)
                 .reportedEntityId(item.getId())
@@ -106,7 +109,10 @@ public class ReportService {
 
         if (action.isApproved()) {
             report.setStatus(ReportStatus.SELLER_APPROVED);
-            createRefund(report, PayerType.SELLER);
+            notificationService.createNotification(report.getCustomer(), "Report accepted by seller",
+                    "Seller accepted your report for item: " + report.getOrderItem().getProductNameSnapshot()
+                            + ". Use Refunds to request a payment refund if needed.",
+                    com.example.jhapcham.notification.NotificationType.REPORT_ALERT, report.getId());
         } else {
             report.setStatus(ReportStatus.SELLER_REJECTED);
             // Notify Admin of dispute
@@ -130,33 +136,15 @@ public class ReportService {
 
         if (action.isApproved()) {
             report.setStatus(ReportStatus.ADMIN_APPROVED);
-            PayerType payer = action.getPayerType() != null ? action.getPayerType() : PayerType.SELLER;
-            createRefund(report, payer);
+            notificationService.createNotification(report.getCustomer(), "Report approved by admin",
+                    "Admin approved your report #" + report.getId()
+                            + ". Refund requests are handled in the dedicated Refunds workflow.",
+                    com.example.jhapcham.notification.NotificationType.REPORT_ALERT, report.getId());
         } else {
             report.setStatus(ReportStatus.REJECTED);
         }
 
         return mapToDTO(reportRepository.save(report));
-    }
-
-    private void createRefund(Report report, PayerType payerType) {
-        Refund refund = Refund.builder()
-                .report(report)
-                .order(report.getOrder())
-                .orderItem(report.getOrderItem())
-                .customer(report.getCustomer())
-                .seller(report.getSeller())
-                .amount(report.getOrderItem().getLineTotal())
-                .status(RefundStatus.PENDING)
-                .payerType(payerType)
-                .build();
-        
-        refundRepository.save(refund);
-        
-        // Notify Customer
-        notificationService.createNotification(report.getCustomer(), "Refund Initiated", 
-            "A refund of Rs. " + refund.getAmount() + " has been initiated for your report #" + report.getId(), 
-            com.example.jhapcham.notification.NotificationType.REPORT_ALERT, report.getId());
     }
 
     private void notifyAdminsOfDispute(Report report) {
@@ -190,7 +178,7 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public List<ReportResponseDTO> getAllReports() {
-        return reportRepository.findAll().stream()
+        return reportRepository.findAllByOrderByCreatedAtDesc(org.springframework.data.domain.PageRequest.of(0, 500)).stream()
                 .map(this::mapToDTO).collect(Collectors.toList());
     }
 
@@ -206,25 +194,39 @@ public class ReportService {
     }
 
     private ReportResponseDTO mapToDTO(Report report) {
+        String storeName = "";
+        if (report.getSeller() != null && report.getSeller().getSellerProfile() != null) {
+            storeName = report.getSeller().getSellerProfile().getStoreName();
+        } else if (report.getOrderItem() != null && report.getOrderItem().getProduct() != null && 
+                   report.getOrderItem().getProduct().getSellerProfile() != null) {
+            storeName = report.getOrderItem().getProduct().getSellerProfile().getStoreName();
+        }
+
+        java.util.List<String> evidenceUrls = new java.util.ArrayList<>();
+        if (report.getEvidenceUrls() != null) {
+            evidenceUrls.addAll(report.getEvidenceUrls());
+        }
+
         ReportResponseDTO dto = ReportResponseDTO.builder()
                 .id(report.getId())
-                .orderId(report.getOrder().getId())
-                .orderItemId(report.getOrderItem().getId())
+                .reportId(report.getReportId())
+                .orderId(report.getOrder() != null ? report.getOrder().getId() : null)
+                .orderItemId(report.getOrderItem() != null ? report.getOrderItem().getId() : null)
                 .reportedEntityId(report.getReportedEntityId())
                 .reportedEntityName(report.getReportedEntityName())
                 .reportedEntityImage(report.getReportedEntityImage())
                 .type(report.getType() != null ? report.getType().name() : null)
-                .productName(report.getOrderItem().getProductNameSnapshot())
-                .productImage(report.getOrderItem().getImagePathSnapshot())
-                .customerId(report.getCustomer().getId())
-                .customerName(report.getCustomer().getFullName())
-                .reporterId(report.getReporter() != null ? report.getReporter().getId() : report.getCustomer().getId())
-                .reporterName(report.getReporter() != null ? report.getReporter().getFullName() : report.getCustomer().getFullName())
-                .sellerId(report.getSeller().getId())
-                .storeName(report.getOrderItem().getProduct().getSellerProfile().getStoreName())
+                .productName(report.getOrderItem() != null ? report.getOrderItem().getProductNameSnapshot() : null)
+                .productImage(report.getOrderItem() != null ? report.getOrderItem().getImagePathSnapshot() : null)
+                .customerId(report.getCustomer() != null ? report.getCustomer().getId() : null)
+                .customerName(report.getCustomer() != null ? report.getCustomer().getFullName() : null)
+                .reporterId(report.getReporter() != null ? report.getReporter().getId() : (report.getCustomer() != null ? report.getCustomer().getId() : null))
+                .reporterName(report.getReporter() != null ? report.getReporter().getFullName() : (report.getCustomer() != null ? report.getCustomer().getFullName() : null))
+                .sellerId(report.getSeller() != null ? report.getSeller().getId() : null)
+                .storeName(storeName)
                 .reason(report.getReason())
                 .description(report.getDescription())
-                .evidenceUrls(report.getEvidenceUrls())
+                .evidenceUrls(evidenceUrls)
                 .status(report.getStatus())
                 .sellerComment(report.getSellerComment())
                 .adminComment(report.getAdminComment())
@@ -240,5 +242,26 @@ public class ReportService {
         }
         
         return dto;
+    }
+
+    private String generateReportId() {
+        LocalDateTime startOfDay = LocalDateTime.now().with(java.time.LocalTime.MIN);
+        LocalDateTime endOfDay = LocalDateTime.now().with(java.time.LocalTime.MAX);
+        Report lastReport = reportRepository.findTopByCreatedAtBetweenOrderByIdDesc(startOfDay, endOfDay);
+        
+        int sequence = 1;
+        if (lastReport != null && lastReport.getReportId() != null) {
+            try {
+                String[] parts = lastReport.getReportId().split("-");
+                if (parts.length == 3) {
+                    sequence = Integer.parseInt(parts[2]) + 1;
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse last report ID, resetting sequence", e);
+            }
+        }
+        
+        String dateStr = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd").format(LocalDateTime.now());
+        return String.format("RPT-%s-%04d", dateStr, sequence);
     }
 }

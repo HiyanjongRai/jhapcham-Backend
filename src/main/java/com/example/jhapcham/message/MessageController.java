@@ -74,6 +74,24 @@ public class MessageController {
         return ResponseEntity.ok(messageService.getConversation(user.getId(), otherUserId));
     }
 
+    // ── GAP 1: CASE-LINKED MESSAGES ────────────────────────────────────────────
+
+    @GetMapping("/dispute/{disputeId}")
+    public ResponseEntity<?> getDisputeMessages(@PathVariable Long disputeId, Authentication authentication) {
+        if (authentication == null || authentication.getName().equals("anonymousUser")) {
+            return ResponseEntity.status(401).body("Error: Session expired.");
+        }
+        return ResponseEntity.ok(messageService.getDisputeMessages(disputeId));
+    }
+
+    @GetMapping("/refund/{refundRequestId}")
+    public ResponseEntity<?> getRefundMessages(@PathVariable Long refundRequestId, Authentication authentication) {
+        if (authentication == null || authentication.getName().equals("anonymousUser")) {
+            return ResponseEntity.status(401).body("Error: Session expired.");
+        }
+        return ResponseEntity.ok(messageService.getRefundMessages(refundRequestId));
+    }
+
     @GetMapping("/unread-count")
     public ResponseEntity<?> getUnreadCount(Authentication authentication) {
         if (authentication == null || authentication.getName().equals("anonymousUser")) {

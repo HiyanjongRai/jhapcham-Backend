@@ -65,6 +65,25 @@ public class OrderController {
         }
     }
 
+    /**
+     * Fetch an order by its human-readable reference, e.g. {@code JHC-20260520-0003}.
+     * <p>Must be declared BEFORE {@code /{orderId}} so Spring does not attempt to
+     * parse the literal segment {@code "ref"} as a {@code Long}.
+     */
+    @GetMapping("/ref/{customOrderId}")
+    public ResponseEntity<?> getOrderByRef(
+            @PathVariable String customOrderId,
+            Authentication authentication) {
+        try {
+            return ResponseEntity.ok(
+                    orderService.getOrderByRef(customOrderId, currentUserService.requireUser(authentication)));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Loading failed: " + e.getMessage()));
+        }
+    }
+
     @GetMapping("/{orderId}")
     public ResponseEntity<?> getOrder(@PathVariable Long orderId, Authentication authentication) {
         try {
@@ -116,6 +135,18 @@ public class OrderController {
         } catch (Exception e) {
             return ResponseEntity.status(500).body(new ErrorResponse("Loading failed: " + e.getMessage()));
         }
+    }
+
+    @GetMapping("/my-orders")
+    public ResponseEntity<?> getMyOrders(Authentication authentication) {
+        com.example.jhapcham.user.model.User user = currentUserService.requireUser(authentication);
+        return ResponseEntity.ok(orderService.getOrdersForUser(user.getId()));
+    }
+
+    @GetMapping("/my-orders/list")
+    public ResponseEntity<?> getMyOrdersSimple(Authentication authentication) {
+        com.example.jhapcham.user.model.User user = currentUserService.requireUser(authentication);
+        return ResponseEntity.ok(orderService.getOrdersForUserSimple(user.getId()));
     }
 
     @GetMapping("/seller/{sellerId}")
@@ -188,6 +219,20 @@ public class OrderController {
         }
     }
 
+    @PutMapping("/my-orders/cancel/{orderId}")
+    public ResponseEntity<?> myOrdersCancel(
+            @PathVariable Long orderId,
+            Authentication authentication) {
+        try {
+            com.example.jhapcham.user.model.User user = currentUserService.requireUser(authentication);
+            return ResponseEntity.ok(orderService.customerCancelOrder(orderId, user.getId()));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new ErrorResponse("Cancel failed: " + e.getMessage()));
+        }
+    }
+
     @PutMapping("/guest/cancel/{orderId}")
     public ResponseEntity<?> guestCancel(@PathVariable Long orderId) {
         try {
@@ -218,10 +263,11 @@ public class OrderController {
     public ResponseEntity<?> sellerCancel(
             @PathVariable Long sellerId,
             @PathVariable Long orderId,
+            @RequestParam(required = false) String reason,
             Authentication authentication) {
         try {
             currentUserService.requireSellerSelfOrAdmin(currentUserService.requireUser(authentication), sellerId);
-            return ResponseEntity.ok(orderService.sellerCancelOrder(orderId, sellerId));
+            return ResponseEntity.ok(orderService.sellerCancelOrder(orderId, sellerId, reason));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
         } catch (Exception e) {

@@ -11,6 +11,7 @@ public enum PaymentStatus {
     COD_FAILED,
     COD_REMITTED,
     REFUND_PENDING,
+    PARTIALLY_REFUNDED,
     REFUNDED,
     FAILED,
     CANCELLED,

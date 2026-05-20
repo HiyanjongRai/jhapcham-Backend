@@ -23,7 +23,7 @@ public class ProductImage {
     @JsonIgnore
     private Product product;
 
-    @Column(name = "image_path", nullable = false, length = 255)
+    @Column(name = "image_path", nullable = false, columnDefinition = "TEXT")
     private String imagePath;
 
     @Column(name = "is_main", nullable = false)

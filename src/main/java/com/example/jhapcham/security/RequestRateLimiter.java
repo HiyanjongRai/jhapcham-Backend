@@ -8,8 +8,12 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.time.Duration;
 
 /**
  * Simple in-memory fixed-window rate limiter.
@@ -23,13 +27,24 @@ public class RequestRateLimiter {
 
     private final ConcurrentMap<String, Window> windows = new ConcurrentHashMap<>();
     private final Clock clock;
+    private final ObjectProvider<RedisRateLimitService> redisRateLimitService;
 
     public RequestRateLimiter() {
-        this(Clock.systemUTC());
+        this(Clock.systemUTC(), null);
+    }
+
+    @Autowired
+    public RequestRateLimiter(ObjectProvider<RedisRateLimitService> redisRateLimitService) {
+        this(Clock.systemUTC(), redisRateLimitService);
     }
 
     RequestRateLimiter(Clock clock) {
+        this(clock, null);
+    }
+
+    RequestRateLimiter(Clock clock, ObjectProvider<RedisRateLimitService> redisRateLimitService) {
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.redisRateLimitService = redisRateLimitService;
     }
 
     public void check(String key, int maxRequests, long windowSeconds) {
@@ -38,6 +53,12 @@ public class RequestRateLimiter {
             return;
         }
         if (maxRequests <= 0 || windowSeconds <= 0) {
+            return;
+        }
+
+        RedisRateLimitService redisLimiter = redisRateLimitService != null ? redisRateLimitService.getIfAvailable() : null;
+        if (redisLimiter != null) {
+            redisLimiter.check("http", key, maxRequests, Duration.ofSeconds(windowSeconds));
             return;
         }
 
@@ -66,4 +87,3 @@ public class RequestRateLimiter {
         }
     }
 }
-

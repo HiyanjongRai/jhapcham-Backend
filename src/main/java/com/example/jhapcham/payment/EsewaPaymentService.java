@@ -2,6 +2,8 @@ package com.example.jhapcham.payment;
 
 import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
+import com.example.jhapcham.loyalty.LoyaltyDomainEvent;
+import com.example.jhapcham.loyalty.LoyaltyEventType;
 import com.example.jhapcham.order.CommissionStatus;
 import com.example.jhapcham.order.Order;
 import com.example.jhapcham.order.OrderAccountingService;
@@ -16,6 +18,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,12 +47,14 @@ public class EsewaPaymentService {
     private final OrderStockService orderStockService;
     private final OrderAccountingService orderAccountingService;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Generates a signature for eSewa v2.
      * Signed fields: total_amount,transaction_uuid,product_code
      */
     public String generateSignature(String totalAmount, String transactionUuid) {
+        ensureEsewaConfigured();
         String formattedAmount = formatAmount(totalAmount);
         String signedData = String.format("total_amount=%s,transaction_uuid=%s,product_code=%s",
                 formattedAmount,
@@ -76,7 +81,7 @@ public class EsewaPaymentService {
         }
 
         BigDecimal expectedTotal = normalizeAmount(totalAmount);
-        List<Order> orders = orderRepository.findAllById(orderIds);
+        List<Order> orders = orderRepository.findAllByIdForPaymentUpdate(orderIds);
         if (orders.size() != orderIds.size()) {
             throw new ResourceNotFoundException("One or more eSewa orders were not found");
         }
@@ -109,7 +114,7 @@ public class EsewaPaymentService {
             order.setPaymentInitiatedAt(now);
             orderRepository.save(order);
 
-            Payment payment = paymentRepository.findByOrder(order)
+            Payment payment = paymentRepository.findByOrderForUpdate(order)
                     .orElseGet(() -> Payment.builder()
                             .order(order)
                             .method(order.getPaymentMethod())
@@ -140,7 +145,7 @@ public class EsewaPaymentService {
         }
 
         BigDecimal expectedTotal = normalizeAmount(totalAmount);
-        List<Order> orders = orderRepository.findAllById(orderIds);
+        List<Order> orders = orderRepository.findAllByIdForPaymentUpdate(orderIds);
         if (orders.size() != orderIds.size()) {
             throw new ResourceNotFoundException("One or more orders were not found");
         }
@@ -195,6 +200,7 @@ public class EsewaPaymentService {
 
     @Transactional
     public Map<String, Object> processSuccess(String data, User actor) {
+        ensureEsewaConfigured();
         if (data == null || data.isBlank()) {
             throw new BusinessValidationException("Missing eSewa response data");
         }
@@ -214,7 +220,7 @@ public class EsewaPaymentService {
                 throw new BusinessValidationException("Invalid eSewa transaction UUID");
             }
 
-            List<Order> orders = orderRepository.findAllById(orderIds);
+            List<Order> orders = orderRepository.findAllByIdForPaymentUpdate(orderIds);
             if (orders.size() != orderIds.size()) {
                 throw new ResourceNotFoundException("One or more paid orders were not found");
             }
@@ -225,7 +231,7 @@ public class EsewaPaymentService {
 
             assertPaymentOwnership(orders, actor);
 
-            Payment firstPayment = paymentRepository.findByOrder(orders.get(0)).orElse(null);
+            Payment firstPayment = paymentRepository.findByOrderForUpdate(orders.get(0)).orElse(null);
             if (firstPayment != null) {
                 recordEvent(firstPayment, PaymentEventType.CALLBACK_RECEIVED, decodedJson);
             }
@@ -261,7 +267,7 @@ public class EsewaPaymentService {
                     throw new BusinessValidationException("Order #" + order.getId() + " is not an eSewa order");
                 }
 
-                Payment payment = paymentRepository.findByOrder(order)
+                Payment payment = paymentRepository.findByOrderForUpdate(order)
                         .orElseGet(() -> Payment.builder()
                                 .order(order)
                                 .method(order.getPaymentMethod())
@@ -273,6 +279,10 @@ public class EsewaPaymentService {
                 if (payment.getTransactionUuid() != null
                         && !Objects.equals(payment.getTransactionUuid(), expectedOrderTransactionUuid)) {
                     throw new BusinessValidationException("Stale eSewa payment callback for order #" + order.getId());
+                }
+                if (payment.getState() == PaymentState.SUCCESS && order.getPaymentStatus() == PaymentStatus.PAID) {
+                    log.info("Ignoring replayed successful eSewa callback for order {}", order.getId());
+                    continue;
                 }
 
                 order.setPaymentReference(refId);
@@ -307,18 +317,25 @@ public class EsewaPaymentService {
                 payment.setUpdatedAt(now);
                 Payment saved = paymentRepository.save(payment);
                 recordEvent(saved, PaymentEventType.VERIFICATION_SUCCEEDED, decodedJson);
+                if (order.getUser() != null) {
+                    eventPublisher.publishEvent(new LoyaltyDomainEvent(LoyaltyEventType.PAYMENT_COMPLETED,
+                            order.getId(), order.getUser().getId(), "payment-completed-" + order.getId()));
+                }
 
                 log.info("Order {} successfully paid via eSewa transaction {}", order.getId(), transactionUuid);
             }
 
-            return Map.of(
-                    "message", refundPendingOrderIds.isEmpty()
-                            ? "Payment verified successfully"
-                            : "Payment verified, but one or more expired orders require refund review",
-                    "orderIds", orderIds,
-                    "refundPendingOrderIds", refundPendingOrderIds,
-                    "transactionUuid", transactionUuid,
-                    "referenceId", refId != null ? refId : "");
+            Map<String, Object> result = new java.util.HashMap<>();
+            result.put("message", refundPendingOrderIds.isEmpty()
+                    ? "Payment verified successfully"
+                    : "Payment verified, but one or more expired orders require refund review");
+            result.put("orderIds", orderIds);
+            result.put("refundPendingOrderIds", refundPendingOrderIds);
+            result.put("transactionUuid", transactionUuid);
+            result.put("transactionCode", refId != null ? refId : "");
+            result.put("amount", paidAmount.toPlainString());
+            result.put("referenceId", refId != null ? refId : "");
+            return result;
         } catch (BusinessValidationException | ResourceNotFoundException e) {
             throw e;
         } catch (Exception e) {
@@ -389,6 +406,7 @@ public class EsewaPaymentService {
     }
 
     private boolean verifyResponseSignature(Map<String, String> payload) {
+        ensureEsewaConfigured();
         String receivedSignature = payload.get("signature");
         String signedFieldNames = payload.get("signed_field_names");
         if (receivedSignature == null || signedFieldNames == null) {
@@ -438,6 +456,16 @@ public class EsewaPaymentService {
         } catch (Exception e) {
             log.error("Error generating eSewa signature", e);
             throw new RuntimeException("Failed to generate payment signature");
+        }
+    }
+
+    private void ensureEsewaConfigured() {
+        if (!esewaProperties.isEnabled()) {
+            throw new BusinessValidationException("eSewa payment is disabled");
+        }
+        if (esewaProperties.getProductCode() == null || esewaProperties.getProductCode().isBlank()
+                || esewaProperties.getSecretKey() == null || esewaProperties.getSecretKey().isBlank()) {
+            throw new BusinessValidationException("eSewa payment is not configured");
         }
     }
 

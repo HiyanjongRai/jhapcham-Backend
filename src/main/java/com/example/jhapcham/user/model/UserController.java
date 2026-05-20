@@ -7,6 +7,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Objects;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/users")
@@ -39,6 +40,24 @@ public class UserController {
             return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage()));
         }
     }
+
+    @PatchMapping("/{userId}/status")
+    public ResponseEntity<?> updateUserStatus(@PathVariable Long userId, @RequestBody Map<String, String> body,
+            Authentication authentication) {
+        try {
+            currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
+            String statusStr = body.get("status");
+            if (statusStr == null) return ResponseEntity.badRequest().body(new ErrorResponse("Status is required"));
+            
+            Status newStatus = Status.valueOf(statusStr.toUpperCase());
+            // Only allow self to set DEACTIVATED or ACTIVE (if permitted)
+            User updated = authService.updateUserStatus(userId, newStatus);
+            return ResponseEntity.ok(mapToDto(updated));
+        } catch (Exception e) {
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage()));
+        }
+    }
+
 
     @PostMapping("/{userId}/profile-image")
     public ResponseEntity<?> uploadProfileImage(@PathVariable Long userId,

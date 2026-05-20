@@ -1,7 +1,12 @@
 package com.example.jhapcham.refund;
 
 public enum RefundStatus {
-    PENDING,
+    REQUESTED,
+    UNDER_REVIEW,
     APPROVED,
-    COMPLETED
+    REFUND_PROCESSING,
+    REFUNDED,
+    REJECTED,
+    CANCELLED,
+    FAILED
 }

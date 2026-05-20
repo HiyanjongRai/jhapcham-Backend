@@ -22,6 +22,19 @@ public class OrderItemResponseDTO {
     private BigDecimal unitPrice;
     private BigDecimal lineTotal;
     private Double commissionRate;
+    private BigDecimal commissionAmount;
+    private BigDecimal buyingUnitPrice;
+    private BigDecimal buyingLineTotal;
+    private BigDecimal sellingLineTotal;
+    private BigDecimal inputVatAmount;
+    private BigDecimal outputVatAmount;
+    private BigDecimal vatPayableAmount;
+    private BigDecimal sellerPromoDiscount;
+    private BigDecimal platformDiscount;
+    private BigDecimal commissionBase;
+    private BigDecimal grossProfit;
+    private BigDecimal netProfit;
+    private BigDecimal finalSellerEarning;
 
     /** Dynamic attributes snapshot: e.g. {"Color":"Red","Storage":"128GB"} */
     private Map<String, String> variantAttributes;

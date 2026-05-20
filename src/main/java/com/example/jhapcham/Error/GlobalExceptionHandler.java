@@ -2,6 +2,8 @@ package com.example.jhapcham.Error;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import jakarta.validation.ConstraintViolationException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -165,6 +168,15 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolationException(
+            ConstraintViolationException ex, WebRequest request) {
+        logger.warn("Constraint validation failed: {}", ex.getMessage());
+        ErrorResponse error = new ErrorResponse("CONSTRAINT_VIOLATION",
+                "Request contains invalid values.");
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
     // ==================== CONFLICT ERRORS (409) ====================
 
     /**
@@ -175,6 +187,24 @@ public class GlobalExceptionHandler {
             IllegalStateException ex, WebRequest request) {
         logger.warn("Illegal state: {}", ex.getMessage());
         ErrorResponse error = new ErrorResponse("CONFLICT", ex.getMessage());
+        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolationException(
+            DataIntegrityViolationException ex, WebRequest request) {
+        logger.warn("Database constraint violation: {}", ex.getMostSpecificCause().getMessage());
+        ErrorResponse error = new ErrorResponse("DATA_CONFLICT",
+                "The request conflicts with existing or invalid data.");
+        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleDatabaseLockException(
+            RuntimeException ex, WebRequest request) {
+        logger.warn("Database lock contention: {}", ex.getMessage());
+        ErrorResponse error = new ErrorResponse("RESOURCE_BUSY",
+                "The resource is being updated. Please retry shortly.");
         return new ResponseEntity<>(error, HttpStatus.CONFLICT);
     }
 

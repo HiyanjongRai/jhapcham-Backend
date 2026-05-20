@@ -157,8 +157,16 @@ public class OrderStockService {
      */
     @Transactional
     public void restoreItemStock(OrderItem item) {
+        restoreItemStock(item, item.getQuantity());
+    }
+
+    @Transactional
+    public void restoreItemStock(OrderItem item, int quantity) {
         if (item.getQuantity() <= 0) {
             throw new BusinessValidationException("Cannot restore non-positive quantity for order item " + item.getId());
+        }
+        if (quantity <= 0 || quantity > item.getQuantity()) {
+            throw new BusinessValidationException("Invalid restore quantity for order item " + item.getId());
         }
 
         ProductVariant variant = item.getVariant();
@@ -167,10 +175,10 @@ public class OrderStockService {
                     .orElse(null);
             if (locked != null) {
                 int current = locked.getStockQuantity() != null ? locked.getStockQuantity() : 0;
-                locked.setStockQuantity(current + item.getQuantity());
+                locked.setStockQuantity(current + quantity);
                 productVariantRepository.save(locked);
                 log.info("Restored {} units to variant {} (SKU={}). New stock: {}",
-                        item.getQuantity(), locked.getId(), locked.getSku(), locked.getStockQuantity());
+                        quantity, locked.getId(), locked.getSku(), locked.getStockQuantity());
             }
         }
         // Also restore product aggregate
@@ -179,7 +187,7 @@ public class OrderStockService {
             Product lockedProduct = productRepository.findByIdForUpdate(product.getId()).orElse(null);
             if (lockedProduct != null) {
                 int current = lockedProduct.getStockQuantity() != null ? lockedProduct.getStockQuantity() : 0;
-                lockedProduct.setStockQuantity(current + item.getQuantity());
+                lockedProduct.setStockQuantity(current + quantity);
                 productRepository.save(lockedProduct);
             }
         }

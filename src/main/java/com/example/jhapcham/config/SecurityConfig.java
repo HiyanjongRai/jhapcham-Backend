@@ -59,7 +59,9 @@ public class SecurityConfig {
                         "/user-images/**",
                         "/seller_logos/**",
                         "/campaign-images/**",
-                        "/banners/**")
+                        "/banners/**",
+                        "/dispute_evidence/**",
+                        "/reports/**")
                 .permitAll()
 
                 // Public auth
@@ -77,14 +79,22 @@ public class SecurityConfig {
                 .permitAll()
 
                 .requestMatchers(HttpMethod.GET, "/api/tracking/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/payment/esewa/success", "/api/payment/esewa/failure").permitAll()
+                .requestMatchers(HttpMethod.GET,
+                        "/api/payment/esewa/success",
+                        "/api/payment/esewa/failure",
+                        "/api/payment/khalti/order/success",
+                        "/api/payment/khalti/commission/success").permitAll()
 
                 // Public catalog
                 .requestMatchers(HttpMethod.GET,
                         "/api/products",
+                        "/api/products/page",
                         "/api/products/filter",
+                        "/api/products/filter/page",
                         "/api/products/search",
+                        "/api/products/search/page",
                         "/api/products/*",
+                        "/api/products/slug/**",
                         "/api/products/*/views/count",
                         "/api/products/views/counts-by-product",
                         "/api/products/*/variants",
@@ -105,23 +115,23 @@ public class SecurityConfig {
                 .requestMatchers("/api/views/**", "/api/search-history/**").permitAll()
 
                 // Authenticated APIs
-                .requestMatchers("/api/users/**").authenticated()
+                 .requestMatchers("/api/users/**").authenticated()
                 .requestMatchers("/api/addresses/**").authenticated()
-                .requestMatchers("/api/cart/**").authenticated()
-                .requestMatchers("/api/orders/**").authenticated()
+                .requestMatchers("/api/cart", "/api/cart/**").authenticated()
+                .requestMatchers("/api/orders", "/api/orders/**").authenticated()
                 .requestMatchers("/api/payment/**").authenticated()
-                .requestMatchers("/api/wishlist/**").authenticated()
+                .requestMatchers("/api/wishlist", "/api/wishlist/**").authenticated()
                 .requestMatchers("/api/follow/**").authenticated()
-                .requestMatchers("/api/notifications/**").authenticated()
-                .requestMatchers("/api/messages/**").authenticated()
+                .requestMatchers("/api/notifications", "/api/notifications/**").authenticated()
+                .requestMatchers("/api/messages", "/api/messages/**").authenticated()
                 .requestMatchers("/api/reports/**").authenticated()
-                .requestMatchers("/api/disputes/**").authenticated()
+                .requestMatchers("/api/disputes", "/api/disputes/**").authenticated()
                 .requestMatchers("/api/promos/**").authenticated()
                 .requestMatchers("/api/customers/**").authenticated()
                 .requestMatchers("/api/sellers/**").authenticated()
                 .requestMatchers("/api/inventory-alerts/**").authenticated()
                 .requestMatchers("/api/sms/**").authenticated()
-                .requestMatchers("/api/refunds/**").authenticated()
+                .requestMatchers("/api/refunds", "/api/refunds/**").authenticated()
                 .requestMatchers("/api/loyalty/**").authenticated()
                 .requestMatchers("/api/seller/**").authenticated()
                 .requestMatchers("/api/admin/**").authenticated()
@@ -137,6 +147,12 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/reviews/user/**").authenticated()
 
                 .anyRequest().authenticated());
+
+        http.exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint((request, response, authException) -> {
+                    response.sendError(jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized");
+                })
+        );
 
         http.httpBasic(httpBasic -> httpBasic.disable());
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));

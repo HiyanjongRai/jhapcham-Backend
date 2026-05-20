@@ -18,6 +18,13 @@ public class CartItemResponseDTO {
     private String image;
     private Integer quantity;
     private BigDecimal price;
+    private Long sellerId;
+    private Long sellerProfileId;
+    private String sellerStoreName;
+    private Boolean freeShipping;
+    private Double insideValleyShipping;
+    private Double outsideValleyShipping;
+    private Double sellerFreeShippingMinOrder;
     private Integer stockQuantity;
     private String variantLabel;
     /** Dynamic attributes: e.g. { "Color": "Red", "Storage": "128GB" } */

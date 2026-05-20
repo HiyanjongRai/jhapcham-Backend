@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class CommissionReportDTO {
     private Long orderId;
+    private String customOrderId;
     private String productName;
     private String category;
     private String sellerStoreName;
@@ -28,4 +29,15 @@ public class CommissionReportDTO {
     private BigDecimal fineAmount;
     private boolean isOverdue;
     private boolean reminderSent;
+    private BigDecimal vatAmount;
+    private BigDecimal discountTotal;
+    private BigDecimal netAmount;
+    private BigDecimal sellerPromoDiscountAmount;
+    private BigDecimal platformSponsoredDiscountAmount;
+    private BigDecimal inputVatAmount;
+    private BigDecimal outputVatAmount;
+    private BigDecimal vatPayableAmount;
+    private BigDecimal grossProfitAmount;
+    private BigDecimal netProfitAmount;
+    private BigDecimal finalSellerEarnings;
 }
