@@ -1,6 +1,6 @@
 package com.example.jhapcham.security;
 
-import com.example.jhapcham.user.model.User;
+import com.example.jhapcham.user.domain.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;

@@ -1,6 +1,6 @@
 package com.example.jhapcham.security;
 
-import com.example.jhapcham.user.model.User;
+import com.example.jhapcham.user.domain.User;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

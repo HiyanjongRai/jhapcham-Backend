@@ -1,0 +1,163 @@
+package com.example.jhapcham.product.domain;
+
+import com.example.jhapcham.seller.domain.SellerProfile;
+import jakarta.persistence.*;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Size;
+import lombok.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+@Entity
+@Table(name = "products", indexes = {
+        @Index(name = "idx_products_status_id", columnList = "status,id"),
+        @Index(name = "idx_products_status_category", columnList = "status,category"),
+        @Index(name = "idx_products_status_brand", columnList = "status,brand"),
+        @Index(name = "idx_products_seller_status", columnList = "seller_profile_id,status"),
+        @Index(name = "idx_products_slug", columnList = "slug", unique = true)
+})
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Product {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "seller_profile_id")
+    private SellerProfile sellerProfile;
+
+    @Column(nullable = false, length = 1000)
+    @Size(max = 1000)
+    private String name;
+
+    @Column(unique = true, length = 120)
+    @Size(max = 120)
+    private String slug;
+
+    @Column(length = 3000)
+    @Size(max = 3000)
+    private String shortDescription;
+
+    @Column(columnDefinition = "TEXT")
+    @Size(max = 20000)
+    private String description;
+
+    @Column(length = 1000)
+    @Size(max = 1000)
+    private String category;
+
+    @Column(length = 1000)
+    @Size(max = 1000)
+    private String brand;
+
+    @Column(columnDefinition = "TEXT")
+    @Size(max = 20000)
+    private String specification;
+
+    @Column(length = 5000)
+    @Size(max = 5000)
+    private String storageSpec;
+
+    @Column(columnDefinition = "TEXT")
+    @Size(max = 20000)
+    private String features;
+
+    @Column(length = 3000)
+    @Size(max = 3000)
+    private String colorOptions;
+
+    @Column(nullable = false)
+    private BigDecimal price;
+
+    @Column(precision = 38, scale = 2)
+    @DecimalMin("0")
+    private BigDecimal costPrice;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal buyingPrice;
+
+    private BigDecimal discountPrice;
+
+    @Column(nullable = false)
+    private Integer stockQuantity;
+
+    private Integer warrantyMonths;
+
+    private LocalDate manufactureDate;
+
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean onSale = false;
+
+    private LocalDate expiryDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private ProductStatus status;
+
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<ProductImage> images = new ArrayList<>();
+
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<ProductVariant> variants = new ArrayList<>();
+
+    public void addImage(ProductImage image) {
+        if (images == null) {
+            images = new ArrayList<>();
+        }
+        images.add(image);
+        image.setProduct(this);
+    }
+
+    private BigDecimal salePercentage;
+    private BigDecimal salePrice;
+    private Boolean freeShipping;
+    private Double insideValleyShipping;
+    private Double outsideValleyShipping;
+    private Double sellerFreeShippingMinOrder;
+
+    private java.time.LocalDateTime saleStartTime;
+    private java.time.LocalDateTime saleEndTime;
+    private String saleLabel;
+
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean hasVariants = false;
+
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean featured = false;
+
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    public void onCreate() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+        if (featured == null) {
+            featured = false;
+        }
+        if (hasVariants == null) {
+            hasVariants = false;
+        }
+        if (onSale == null) {
+            onSale = false;
+        }
+    }
+
+}

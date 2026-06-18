@@ -54,11 +54,6 @@ public class WebConfig implements WebMvcConfigurer {
                 registry.addResourceHandler("/refund_evidence/**")
                                 .addResourceLocations(uploadLocation("refund_evidence"));
 
-                registry.addResourceHandler("/dispute_evidence/**")
-                                .addResourceLocations(uploadLocation("dispute_evidence"));
-
-                registry.addResourceHandler("/reports/**")
-                                .addResourceLocations(uploadLocation("reports"));
         }
 
         private String uploadLocation(String subdir) {

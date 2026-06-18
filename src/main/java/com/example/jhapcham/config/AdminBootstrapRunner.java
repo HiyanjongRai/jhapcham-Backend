@@ -1,11 +1,11 @@
 package com.example.jhapcham.config;
 
-import com.example.jhapcham.delivery.Courier;
-import com.example.jhapcham.delivery.CourierRepository;
-import com.example.jhapcham.user.model.Role;
-import com.example.jhapcham.user.model.Status;
-import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.UserRepository;
+import com.example.jhapcham.delivery.domain.Courier;
+import com.example.jhapcham.delivery.persistence.CourierRepository;
+import com.example.jhapcham.user.domain.Role;
+import com.example.jhapcham.user.domain.Status;
+import com.example.jhapcham.user.domain.User;
+import com.example.jhapcham.user.persistence.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,8 +1,8 @@
 package com.example.jhapcham.security;
 
 import com.example.jhapcham.Error.AuthenticationException;
-import com.example.jhapcham.user.model.AuthResponseDTO;
-import com.example.jhapcham.user.model.User;
+import com.example.jhapcham.user.dto.AuthResponseDTO;
+import com.example.jhapcham.user.domain.User;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

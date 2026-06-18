@@ -1,0 +1,25 @@
+package com.example.jhapcham.review.dto;
+
+
+import com.example.jhapcham.review.application.*;
+import com.example.jhapcham.review.domain.*;
+import com.example.jhapcham.review.dto.*;
+import com.example.jhapcham.review.persistence.*;
+import lombok.Builder;
+import lombok.Data;
+import java.time.LocalDateTime;
+
+@Data
+@Builder
+public class ReviewResponseDTO {
+    private Long id;
+    private String userName;
+    private String userProfileImage; // Optional, useful for UI
+    private Long productId;
+    private String productName; // Useful for "My Reviews"
+    private Integer rating;
+    private String comment;
+    private String imagePath;
+    private String productImage;
+    private LocalDateTime createdAt;
+}

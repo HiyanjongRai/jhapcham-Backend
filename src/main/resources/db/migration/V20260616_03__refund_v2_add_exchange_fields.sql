@@ -1,0 +1,29 @@
+-- V20260616_03__refund_v2_add_exchange_fields.sql
+-- Update status check constraint and add replacement tracking fields to v2_refunds table.
+
+-- 1. Drop existing status check constraint
+ALTER TABLE v2_refunds DROP CONSTRAINT IF EXISTS chk_v2_refunds_status;
+
+-- 2. Re-create constraint with all recommended V2 statuses + legacy compatibility statuses
+ALTER TABLE v2_refunds ADD CONSTRAINT chk_v2_refunds_status CHECK (status IN (
+    'REQUEST_CREATED', 'REFUND_REQUEST_CREATED', 'PENDING_SELLER_REVIEW',
+    'SELLER_APPROVED_FULL_REFUND', 'SELLER_REJECTED',
+    'PARTIAL_REFUND_OFFERED', 'PARTIAL_REFUND_ACCEPTED',
+    'EXCHANGE_OFFERED', 'EXCHANGE_ACCEPTED', 'CUSTOMER_REJECTED_EXCHANGE',
+    'ADMIN_REVIEW_PENDING',
+    'ADMIN_APPROVED_FULL_REFUND', 'ADMIN_APPROVED_PARTIAL_REFUND',
+    'ADMIN_APPROVED_EXCHANGE', 'ADMIN_REJECTED',
+    'RETURN_IN_TRANSIT', 'RETURN_UNDER_REVIEW',
+    'RETURN_ACCEPTED', 'RETURN_REJECTED', 'RETURN_DISPUTE_PENDING',
+    'ADMIN_APPROVED_RETURN', 'ADMIN_REJECTED_RETURN',
+    'REPLACEMENT_PREPARING', 'REPLACEMENT_SHIPPED', 'REPLACEMENT_DELIVERED',
+    'REFUND_PROCESSED', 'CLOSED_PARTIAL_REFUNDED',
+    'EXCHANGE_IN_PROGRESS', 'EXCHANGE_COMPLETED',
+    'CLOSED_REJECTED', 'CASE_CLOSED'
+));
+
+-- 3. Add replacement tracking columns
+ALTER TABLE v2_refunds ADD COLUMN IF NOT EXISTS replacement_courier VARCHAR(100);
+ALTER TABLE v2_refunds ADD COLUMN IF NOT EXISTS replacement_tracking_number VARCHAR(150);
+ALTER TABLE v2_refunds ADD COLUMN IF NOT EXISTS replacement_shipped_at TIMESTAMP;
+ALTER TABLE v2_refunds ADD COLUMN IF NOT EXISTS replacement_delivered_at TIMESTAMP;

@@ -1,0 +1,27 @@
+package com.example.jhapcham.message.dto;
+
+
+import com.example.jhapcham.message.application.*;
+import com.example.jhapcham.message.domain.*;
+import com.example.jhapcham.message.dto.*;
+import com.example.jhapcham.message.persistence.*;
+import lombok.Data;
+import java.time.LocalDateTime;
+
+@Data
+public class MessageDTO {
+    private Long id;
+    private Long senderId;
+    private String senderName;
+    private String senderProfileImage;
+    private Long receiverId;
+    private String receiverName;
+    private String receiverProfileImage;
+    private String content;
+    private Long productId;
+    private String productName;
+    private String productImage;
+    private LocalDateTime createdAt;
+    private String senderRole;
+    private boolean isRead;
+}

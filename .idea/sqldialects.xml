@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SqlDialectMappings">
+    <file url="file://$PROJECT_DIR$/src/main/resources/db/migration/V20260516_01_add_core_performance_indexes.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/resources/db/migration/V20260517_01_search_analytics_scalability.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/resources/db/migration/V20260519_01_loyalty_rewards_system.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/resources/db/migration/V20260615_08__refund_proof_required_flag.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/resources/db/migration/V20260615_09__purge_orphaned_refund_child_rows.sql" dialect="PostgreSQL" />
+  </component>
+</project>

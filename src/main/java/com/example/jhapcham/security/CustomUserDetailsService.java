@@ -1,7 +1,7 @@
 package com.example.jhapcham.security;
 
-import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.UserRepository;
+import com.example.jhapcham.user.domain.User;
+import com.example.jhapcham.user.persistence.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;

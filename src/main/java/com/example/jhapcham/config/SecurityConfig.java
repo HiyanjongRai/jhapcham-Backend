@@ -17,9 +17,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
 import lombok.RequiredArgsConstructor;
-import com.example.jhapcham.delivery.CourierJwtAuthenticationFilter;
-import com.example.jhapcham.delivery.CourierJwtService;
-import com.example.jhapcham.delivery.CourierRepository;
+import com.example.jhapcham.delivery.application.CourierJwtAuthenticationFilter;
+import com.example.jhapcham.delivery.application.CourierJwtService;
+import com.example.jhapcham.delivery.persistence.CourierRepository;
 import com.example.jhapcham.security.JwtProperties;
 import com.example.jhapcham.security.JwtService;
 import com.example.jhapcham.security.JwtAuthenticationFilter;
@@ -60,8 +60,7 @@ public class SecurityConfig {
                         "/seller_logos/**",
                         "/campaign-images/**",
                         "/banners/**",
-                        "/dispute_evidence/**",
-                        "/reports/**")
+                        "/refund_evidence/**")
                 .permitAll()
 
                 // Public auth
@@ -93,6 +92,13 @@ public class SecurityConfig {
                         "/api/products/filter/page",
                         "/api/products/search",
                         "/api/products/search/page",
+                        "/api/products/best-sellers/**",
+                        "/api/products/top-rated/**",
+                        "/api/products/most-wishlisted/**",
+                        "/api/products/trending/**",
+                        "/api/products/recommendations",
+                        "/api/homepage",
+                        "/api/homepage/**",
                         "/api/products/*",
                         "/api/products/slug/**",
                         "/api/products/*/views/count",
@@ -104,7 +110,10 @@ public class SecurityConfig {
                         "/api/seller-profiles/**",
                         "/api/campaigns/**",
                         "/api/banners/**",
-                        "/api/reviews/product/**")
+                        "/api/reviews/product/**",
+                        "/api/promos/active",
+                        "/api/announcements/**",
+                        "/api/analytics/popular-searches/**")
                 .permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/chat/**").permitAll()
 
@@ -115,7 +124,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/views/**", "/api/search-history/**").permitAll()
 
                 // Authenticated APIs
-                 .requestMatchers("/api/users/**").authenticated()
+                .requestMatchers("/api/users/**").authenticated()
                 .requestMatchers("/api/addresses/**").authenticated()
                 .requestMatchers("/api/cart", "/api/cart/**").authenticated()
                 .requestMatchers("/api/orders", "/api/orders/**").authenticated()
@@ -124,23 +133,23 @@ public class SecurityConfig {
                 .requestMatchers("/api/follow/**").authenticated()
                 .requestMatchers("/api/notifications", "/api/notifications/**").authenticated()
                 .requestMatchers("/api/messages", "/api/messages/**").authenticated()
-                .requestMatchers("/api/reports/**").authenticated()
-                .requestMatchers("/api/disputes", "/api/disputes/**").authenticated()
+
                 .requestMatchers("/api/promos/**").authenticated()
                 .requestMatchers("/api/customers/**").authenticated()
                 .requestMatchers("/api/sellers/**").authenticated()
                 .requestMatchers("/api/inventory-alerts/**").authenticated()
                 .requestMatchers("/api/sms/**").authenticated()
-                .requestMatchers("/api/refunds", "/api/refunds/**").authenticated()
                 .requestMatchers("/api/loyalty/**").authenticated()
-                .requestMatchers("/api/seller/**").authenticated()
-                .requestMatchers("/api/admin/**").authenticated()
-                .requestMatchers("/api/delivery/**").authenticated()
-                .requestMatchers("/api/shipment/**").authenticated()
-                .requestMatchers("/api/courier/all", "/api/courier/assigned").authenticated()
-                .requestMatchers("/api/tracking/update", "/api/tracking/update-status").authenticated()
-                .requestMatchers(HttpMethod.POST, "/api/products/**").authenticated()
-                .requestMatchers(HttpMethod.PUT, "/api/products/**").authenticated()
+
+                // Reports & Refunds — all require authentication
+                .requestMatchers("/api/v1/reports/**").authenticated()
+                .requestMatchers("/api/v1/refunds/**").authenticated()
+
+                // V2 Refund Management System
+                .requestMatchers("/api/v2/refunds/**").authenticated()
+                .requestMatchers("/api/v2/seller/refunds/**").authenticated()
+                .requestMatchers("/api/v2/admin/refunds/**").authenticated()
+
                 .requestMatchers(HttpMethod.PATCH, "/api/products/**").authenticated()
                 .requestMatchers(HttpMethod.DELETE, "/api/products/**").authenticated()
                 .requestMatchers(HttpMethod.POST, "/api/reviews/**", "/api/reviews").authenticated()

@@ -1,0 +1,8 @@
+ALTER TABLE refunds
+    ADD COLUMN IF NOT EXISTS approved_amount NUMERIC(10, 2),
+    ADD COLUMN IF NOT EXISTS return_courier VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS return_tracking_number VARCHAR(150),
+    ADD COLUMN IF NOT EXISTS return_instructions TEXT,
+    ADD COLUMN IF NOT EXISTS return_deadline TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS viewed_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMP;

@@ -30,6 +30,16 @@ public class CacheConfig {
     public static final String RECOMMENDATIONS = "recommendations";
     public static final String BANNERS = "banners";
     public static final String SELLER_PROFILE = "seller-profile";
+    public static final String HOMEPAGE = "homepage";
+    
+    // Homepage endpoints caches
+    public static final String BEST_SELLERS = "best-sellers";
+    public static final String TOP_RATED = "top-rated";
+    public static final String MOST_WISHLISTED = "most-wishlisted";
+    public static final String TRENDING = "trending";
+    public static final String POPULAR_SEARCHES = "popular-searches";
+    public static final String DASHBOARD_STATISTICS = "dashboard-statistics";
+    public static final String ANNOUNCEMENTS = "announcements";
 
     @Bean
     public CacheManager cacheManager(RedisConnectionFactory redisConnectionFactory) {
@@ -39,14 +49,21 @@ public class CacheConfig {
                 .disableCachingNullValues()
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(serializer));
 
-        Map<String, RedisCacheConfiguration> cacheTtls = Map.of(
-                PRODUCT_DETAIL, defaults.entryTtl(Duration.ofMinutes(15)),
-                PRODUCT_PAGE, defaults.entryTtl(Duration.ofMinutes(3)),
-                CATEGORY_LIST, defaults.entryTtl(Duration.ofHours(1)),
-                RECOMMENDATIONS, defaults.entryTtl(Duration.ofMinutes(30)),
-                BANNERS, defaults.entryTtl(Duration.ofMinutes(5)),
-                SELLER_PROFILE, defaults.entryTtl(Duration.ofMinutes(15))
-        );
+        Map<String, RedisCacheConfiguration> cacheTtls = new java.util.HashMap<>();
+        cacheTtls.put(PRODUCT_DETAIL, defaults.entryTtl(Duration.ofMinutes(15)));
+        cacheTtls.put(PRODUCT_PAGE, defaults.entryTtl(Duration.ofMinutes(3)));
+        cacheTtls.put(CATEGORY_LIST, defaults.entryTtl(Duration.ofHours(1)));
+        cacheTtls.put(RECOMMENDATIONS, defaults.entryTtl(Duration.ofMinutes(30)));
+        cacheTtls.put(BANNERS, defaults.entryTtl(Duration.ofMinutes(5)));
+        cacheTtls.put(SELLER_PROFILE, defaults.entryTtl(Duration.ofMinutes(15)));
+        cacheTtls.put(HOMEPAGE, defaults.entryTtl(Duration.ofMinutes(5)));
+        cacheTtls.put(BEST_SELLERS, defaults.entryTtl(Duration.ofMinutes(10)));
+        cacheTtls.put(TOP_RATED, defaults.entryTtl(Duration.ofMinutes(10)));
+        cacheTtls.put(MOST_WISHLISTED, defaults.entryTtl(Duration.ofMinutes(10)));
+        cacheTtls.put(TRENDING, defaults.entryTtl(Duration.ofMinutes(10)));
+        cacheTtls.put(POPULAR_SEARCHES, defaults.entryTtl(Duration.ofMinutes(10)));
+        cacheTtls.put(DASHBOARD_STATISTICS, defaults.entryTtl(Duration.ofMinutes(10)));
+        cacheTtls.put(ANNOUNCEMENTS, defaults.entryTtl(Duration.ofMinutes(5)));
 
         return RedisCacheManager.builder(redisConnectionFactory)
                 .cacheDefaults(defaults)

@@ -2,10 +2,10 @@ package com.example.jhapcham.security;
 
 import com.example.jhapcham.Error.AuthenticationException;
 import com.example.jhapcham.Error.AuthorizationException;
-import com.example.jhapcham.user.model.Role;
-import com.example.jhapcham.user.model.Status;
-import com.example.jhapcham.user.model.User;
-import com.example.jhapcham.user.model.UserRepository;
+import com.example.jhapcham.user.domain.Role;
+import com.example.jhapcham.user.domain.Status;
+import com.example.jhapcham.user.domain.User;
+import com.example.jhapcham.user.persistence.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;

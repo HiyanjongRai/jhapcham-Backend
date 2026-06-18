@@ -1,2 +1,10 @@
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\admin\api\AdminStatisticsControllerIntegrationTest.java
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\analytics\api\AnalyticsControllerIntegrationTest.java
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\analytics\application\PopularSearchServiceTest.java
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\announcement\api\AnnouncementControllerIntegrationTest.java
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\announcement\application\AnnouncementServiceTest.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\JhapchamApplicationTests.java
-H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\refund\RefundStatusTransitionPolicyTest.java
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\payment\PaymentWorkflowServiceTest.java
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\product\api\HomepageControllerIntegrationTest.java
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\product\application\BestSellerServiceTest.java
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\test\java\com\example\jhapcham\product\application\TopRatedServiceTest.java

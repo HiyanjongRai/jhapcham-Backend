@@ -1,0 +1,23 @@
+package com.example.jhapcham.activity.persistence;
+
+
+import com.example.jhapcham.activity.application.*;
+import com.example.jhapcham.activity.domain.*;
+import com.example.jhapcham.activity.persistence.*;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface UserActivityRepository extends JpaRepository<UserActivity, Long> {
+
+    List<UserActivity> findByUserId(Long userId);
+
+    List<UserActivity> findTop10000ByOrderByTimestampDesc();
+
+    List<UserActivity> findByUserIdAndProductIdAndActivityType(Long userId, Long productId,
+            ActivityType activityType);
+
+}

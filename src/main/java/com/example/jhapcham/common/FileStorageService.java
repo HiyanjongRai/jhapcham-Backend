@@ -1,6 +1,8 @@
 package com.example.jhapcham.common;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import lombok.extern.slf4j.Slf4j;
@@ -83,6 +85,41 @@ public class FileStorageService {
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to store file: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Save campaign image
+     * @return relative path for storing in DB
+     */
+    public String storeCampaignImage(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return null;
+        }
+        String timestamp = System.currentTimeMillis() + "_";
+        String fileName = timestamp + file.getOriginalFilename();
+        return save(file, "campaigns", fileName);
+    }
+
+    public Resource loadAsResource(String subdir, String fileName) {
+        try {
+            Path dir = this.root.resolve(subdir).normalize();
+            if (!dir.startsWith(this.root)) {
+                throw new RuntimeException("Invalid upload directory");
+            }
+
+            String safeFileName = fileName.replace("\\", "/");
+            if (safeFileName.contains("/")) {
+                throw new RuntimeException("Invalid file path");
+            }
+
+            Path target = dir.resolve(safeFileName).normalize();
+            if (!target.startsWith(dir) || !Files.exists(target) || !Files.isRegularFile(target)) {
+                throw new RuntimeException("File not found");
+            }
+            return new UrlResource(target.toUri());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load file: " + e.getMessage(), e);
         }
     }
 
