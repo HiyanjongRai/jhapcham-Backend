@@ -1,6 +1,7 @@
 package com.example.jhapcham.activity.api;
 
 
+import com.example.jhapcham.common.ApiResponse;
 import com.example.jhapcham.activity.application.*;
 import com.example.jhapcham.activity.domain.*;
 import com.example.jhapcham.activity.persistence.*;
@@ -89,9 +90,9 @@ public class UserActivityController {
 
     @PostMapping("/sync")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<String> syncActivities() {
+    public ResponseEntity<ApiResponse<Void>> syncActivities() {
         userActivityService.syncActivitiesFromExistingData();
-        return ResponseEntity.ok("Activities synchronized successfully");
+        return ResponseEntity.ok(ApiResponse.success("Activities synchronized successfully"));
     }
 
     @PostMapping("/record")

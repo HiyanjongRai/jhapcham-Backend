@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -38,10 +39,8 @@ public class AuthService {
     private final String PROFILE_SUBDIR = "customer-profile";
     private static final SecureRandom OTP_RANDOM = new SecureRandom();
 
-    private static final String GOOGLE_CLIENT_ID =
-            System.getenv("GOOGLE_CLIENT_ID") != null
-            ? System.getenv("GOOGLE_CLIENT_ID")
-            : "983073986551-a49ce7tnjh29fccqnqp1v92ma4i3b3ba.apps.googleusercontent.com";
+    @Value("${app.security.google.client-id}")
+    private String googleClientId;
 
     @Transactional
     public User loginWithGoogle(String credential) {
@@ -52,7 +51,7 @@ public class AuthService {
                 new com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
                     .Builder(new com.google.api.client.http.javanet.NetHttpTransport(),
                              com.google.api.client.json.gson.GsonFactory.getDefaultInstance())
-                    .setAudience(java.util.Collections.singletonList(GOOGLE_CLIENT_ID))
+                    .setAudience(java.util.Collections.singletonList(googleClientId))
                     .build();
 
             com.google.api.client.googleapis.auth.oauth2.GoogleIdToken idToken = verifier.verify(credential);
@@ -216,7 +215,9 @@ public class AuthService {
 
         User user = User.builder()
                 .username(req.username())
+                .fullName(req.fullName())
                 .email(req.email())
+                .contactNumber(req.contactNumber())
                 .password(passwordEncoder.encode(req.password()))
                 .role(Role.SELLER)
                 .status(Status.PENDING)

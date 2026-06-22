@@ -2,6 +2,7 @@ package com.example.jhapcham.product.application;
 
 import com.example.jhapcham.product.dto.RecommendationDTO;
 import com.example.jhapcham.product.persistence.ProductRepository;
+import com.example.jhapcham.Error.BusinessValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
@@ -67,7 +68,7 @@ public class ProductRecommendationService {
                     .logoImagePath(proj.getLogoImagePath())
                     .build();
         }
-        return null;
+        throw new BusinessValidationException("Unable to map recommendation data.");
     }
 
     private List<String> parseImagePaths(String imagePaths) {

@@ -1,6 +1,7 @@
 package com.example.jhapcham.seller.api;
 
 
+import com.example.jhapcham.common.ApiResponse;
 import com.example.jhapcham.seller.application.*;
 import com.example.jhapcham.seller.domain.*;
 import com.example.jhapcham.seller.dto.*;
@@ -19,17 +20,17 @@ public class FollowController {
     private final com.example.jhapcham.security.CurrentUserService currentUserService;
 
     @PostMapping("/{userId}/follow/{sellerId}")
-    public ResponseEntity<String> follow(@PathVariable Long userId, @PathVariable Long sellerId,
+    public ResponseEntity<ApiResponse<String>> follow(@PathVariable Long userId, @PathVariable Long sellerId,
             Authentication authentication) {
         currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
-        return ResponseEntity.ok(followService.followSeller(userId, sellerId));
+        return ResponseEntity.ok(ApiResponse.success("Seller followed successfully", followService.followSeller(userId, sellerId)));
     }
 
     @DeleteMapping("/{userId}/unfollow/{sellerId}")
-    public ResponseEntity<String> unfollow(@PathVariable Long userId, @PathVariable Long sellerId,
+    public ResponseEntity<ApiResponse<String>> unfollow(@PathVariable Long userId, @PathVariable Long sellerId,
             Authentication authentication) {
         currentUserService.requireSelfOrAdmin(currentUserService.requireUser(authentication), userId);
-        return ResponseEntity.ok(followService.unfollowSeller(userId, sellerId));
+        return ResponseEntity.ok(ApiResponse.success("Seller unfollowed successfully", followService.unfollowSeller(userId, sellerId)));
     }
 
     @GetMapping("/{userId}/is-following/{sellerId}")

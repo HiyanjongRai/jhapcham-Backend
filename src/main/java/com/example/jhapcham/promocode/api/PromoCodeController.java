@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -16,6 +18,8 @@ import java.util.List;
 @RequestMapping("/api/promos") // Changed from /api/seller/promos to avoid conflict with /api/seller/{id}
 @RequiredArgsConstructor
 public class PromoCodeController {
+
+    private static final Logger logger = LoggerFactory.getLogger(PromoCodeController.class);
 
     private final PromoCodeService promoCodeService;
     private final PromoCodeRepository promoCodeRepository;
@@ -106,7 +110,9 @@ public class PromoCodeController {
                 if (actor != null) {
                     userId = actor.getId();
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ex) {
+                logger.debug("Skipping authenticated promo validation context", ex);
+            }
         }
         
         try {

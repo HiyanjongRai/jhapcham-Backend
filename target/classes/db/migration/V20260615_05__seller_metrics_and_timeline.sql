@@ -1,9 +1,11 @@
 -- Phase 8: Seller Refund Performance Metrics
 -- Weekly aggregated metrics per seller for the admin performance dashboard
+--
+-- NOTE: Inline FKs removed — added conditionally via DO blocks below.
 
 CREATE TABLE IF NOT EXISTS seller_refund_metrics (
     id                    BIGSERIAL     PRIMARY KEY,
-    seller_id             BIGINT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    seller_id             BIGINT        NOT NULL,
     period_start          DATE          NOT NULL,
     period_end            DATE          NOT NULL,
     total_orders          INTEGER       NOT NULL DEFAULT 0,
@@ -29,12 +31,24 @@ CREATE TABLE IF NOT EXISTS seller_refund_metrics (
 CREATE INDEX IF NOT EXISTS idx_srm_seller_period ON seller_refund_metrics(seller_id, period_start DESC);
 CREATE INDEX IF NOT EXISTS idx_srm_refund_rate   ON seller_refund_metrics(refund_rate DESC);
 
+-- FK: seller_refund_metrics.seller_id → users(id)
+DO $$
+BEGIN
+    IF to_regclass('public.users') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                       WHERE constraint_name = 'fk_srm_seller' AND table_name = 'seller_refund_metrics')
+    THEN
+        ALTER TABLE seller_refund_metrics ADD CONSTRAINT fk_srm_seller
+            FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE CASCADE;
+    END IF;
+END $$;
+
 -- Phase 9: Refund Timeline Events
 -- Every state transition and key action generates a timeline event visible to the customer
 
 CREATE TABLE IF NOT EXISTS refund_timeline_events (
     id          BIGSERIAL     PRIMARY KEY,
-    refund_id   BIGINT        NOT NULL REFERENCES refunds(refund_id) ON DELETE CASCADE,
+    refund_id   BIGINT        NOT NULL,
     -- Examples: REQUESTED, SELLER_REVIEWED, APPROVED, REJECTED, ESCALATED,
     --           RETURN_REQUESTED, RETURN_SHIPPED, RETURN_RECEIVED, INSPECTED,
     --           PAYMENT_INITIATED, PAYMENT_CONFIRMED, REFUNDED, PARTIALLY_REFUNDED
@@ -48,3 +62,15 @@ CREATE TABLE IF NOT EXISTS refund_timeline_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_timeline_refund_time ON refund_timeline_events(refund_id, created_at);
+
+-- FK: refund_timeline_events.refund_id → refunds(refund_id)
+DO $$
+BEGIN
+    IF to_regclass('public.refunds') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                       WHERE constraint_name = 'fk_rte_refund' AND table_name = 'refund_timeline_events')
+    THEN
+        ALTER TABLE refund_timeline_events ADD CONSTRAINT fk_rte_refund
+            FOREIGN KEY (refund_id) REFERENCES refunds(refund_id) ON DELETE CASCADE;
+    END IF;
+END $$;

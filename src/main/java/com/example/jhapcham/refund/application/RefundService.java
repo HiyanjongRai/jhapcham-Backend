@@ -1024,16 +1024,50 @@ public class RefundService {
                                 .build())
                         .collect(Collectors.toList());
 
+        String productImage = null;
+        if (refund.getItems() != null && !refund.getItems().isEmpty()) {
+            com.example.jhapcham.refund.domain.RefundItem firstItem = refund.getItems().get(0);
+            if (firstItem.getOrderItem() != null) {
+                productImage = firstItem.getOrderItem().getImagePathSnapshot();
+                if ((productImage == null || productImage.trim().isEmpty()) && firstItem.getOrderItem().getProduct() != null) {
+                    List<com.example.jhapcham.product.domain.ProductImage> productImages = firstItem.getOrderItem().getProduct().getImages();
+                    if (productImages != null && !productImages.isEmpty()) {
+                        productImage = productImages.stream()
+                                .filter(com.example.jhapcham.product.domain.ProductImage::isMainImage)
+                                .map(com.example.jhapcham.product.domain.ProductImage::getImagePath)
+                                .findFirst()
+                                .orElse(productImages.get(0).getImagePath());
+                    }
+                }
+            }
+        }
+
         List<RefundItemResponseDTO> itemDTOs = refund.getItems() == null ? Collections.emptyList() :
                 refund.getItems().stream()
-                        .map(i -> RefundItemResponseDTO.builder()
-                                .id(i.getId())
-                                .orderItemId(i.getOrderItem().getId())
-                                .productName(i.getOrderItem().getProductNameSnapshot())
-                                .imagePath(i.getOrderItem().getImagePathSnapshot())
-                                .quantity(i.getQuantity())
-                                .refundAmount(i.getRefundAmount())
-                                .build())
+                        .map(i -> {
+                            String itemImg = null;
+                            if (i.getOrderItem() != null) {
+                                itemImg = i.getOrderItem().getImagePathSnapshot();
+                                if ((itemImg == null || itemImg.trim().isEmpty()) && i.getOrderItem().getProduct() != null) {
+                                    List<com.example.jhapcham.product.domain.ProductImage> productImages = i.getOrderItem().getProduct().getImages();
+                                    if (productImages != null && !productImages.isEmpty()) {
+                                        itemImg = productImages.stream()
+                                                .filter(com.example.jhapcham.product.domain.ProductImage::isMainImage)
+                                                .map(com.example.jhapcham.product.domain.ProductImage::getImagePath)
+                                                .findFirst()
+                                                .orElse(productImages.get(0).getImagePath());
+                                    }
+                                }
+                            }
+                            return RefundItemResponseDTO.builder()
+                                    .id(i.getId())
+                                    .orderItemId(i.getOrderItem() != null ? i.getOrderItem().getId() : null)
+                                    .productName(i.getOrderItem() != null ? i.getOrderItem().getProductNameSnapshot() : "Product Item")
+                                    .imagePath(itemImg)
+                                    .quantity(i.getQuantity())
+                                    .refundAmount(i.getRefundAmount())
+                                    .build();
+                        })
                         .collect(Collectors.toList());
 
         return RefundResponseDTO.builder()
@@ -1065,6 +1099,7 @@ public class RefundService {
                 .replacementCourier(refund.getReplacementCourier())
                 .replacementTrackingNumber(refund.getReplacementTrackingNumber())
                 .replacementShippedAt(refund.getReplacementShippedAt())
+                .productImage(productImage)
                 .items(itemDTOs)
                 .evidence(evidenceDTOs)
                 .inspection(inspectionDTO)

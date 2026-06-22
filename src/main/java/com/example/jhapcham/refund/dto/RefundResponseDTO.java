@@ -41,6 +41,7 @@ public class RefundResponseDTO {
     private String replacementCourier;
     private String replacementTrackingNumber;
     private LocalDateTime replacementShippedAt;
+    private String productImage;
     private List<RefundItemResponseDTO> items;
     private List<EvidenceResponseDTO> evidence;
     private InspectionResponseDTO inspection;

@@ -9,13 +9,13 @@ DROP TABLE IF EXISTS refund_inspection CASCADE;
 DROP TABLE IF EXISTS refunds CASCADE;
 DROP TABLE IF EXISTS v2_refunds CASCADE;
 
--- 1. Create refunds table
+-- 1. Create refunds table (no inline FKs — added conditionally below)
 CREATE TABLE refunds (
     id BIGSERIAL PRIMARY KEY,
     refund_number VARCHAR(50) UNIQUE NOT NULL,
-    order_id BIGINT REFERENCES orders(id) ON DELETE SET NULL,
-    customer_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
-    seller_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    order_id BIGINT,
+    customer_id BIGINT,
+    seller_id BIGINT,
     type VARCHAR(30) NOT NULL, -- REFUND, EXCHANGE, PARTIAL_REFUND
     status VARCHAR(60) NOT NULL,
     reason VARCHAR(255) NOT NULL,
@@ -29,6 +29,42 @@ CREATE TABLE refunds (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- FK: refunds.order_id → orders(id)
+DO $$
+BEGIN
+    IF to_regclass('public.orders') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                       WHERE constraint_name = 'fk_refund_order' AND table_name = 'refunds')
+    THEN
+        ALTER TABLE refunds ADD CONSTRAINT fk_refund_order
+            FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+-- FK: refunds.customer_id → users(id)
+DO $$
+BEGIN
+    IF to_regclass('public.users') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                       WHERE constraint_name = 'fk_refund_customer' AND table_name = 'refunds')
+    THEN
+        ALTER TABLE refunds ADD CONSTRAINT fk_refund_customer
+            FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+-- FK: refunds.seller_id → users(id)
+DO $$
+BEGIN
+    IF to_regclass('public.users') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM information_schema.table_constraints
+                       WHERE constraint_name = 'fk_refund_seller' AND table_name = 'refunds')
+    THEN
+        ALTER TABLE refunds ADD CONSTRAINT fk_refund_seller
+            FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- 2. Create refund_evidence table
 CREATE TABLE refund_evidence (
