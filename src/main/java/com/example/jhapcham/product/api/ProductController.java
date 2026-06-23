@@ -19,7 +19,9 @@ import com.example.jhapcham.user.domain.User;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/products")
 @RequiredArgsConstructor
@@ -90,8 +92,8 @@ public class ProductController {
             productViewService.recordView(dto.getProductId(), resolvedUserId);
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(500).body(new ErrorResponse("Failed to fetch product detail: " + e.getMessage()));
+            log.error("Failed to fetch product detail for slug {}: {}", slug, e.getMessage());
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to fetch product detail"));
         }
     }
 
@@ -108,6 +110,7 @@ public class ProductController {
             productViewService.recordView(productId, resolvedUserId);
             return ResponseEntity.ok(productService.getProductDetail(productId));
         } catch (Exception e) {
+            log.error("Failed to fetch product detail for id {}: {}", productId, e.getMessage());
             return ResponseEntity.status(500).body(new ErrorResponse("Failed to fetch product detail"));
         }
     }
@@ -156,7 +159,8 @@ public class ProductController {
             
             return ResponseEntity.ok(orderedProducts);
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(new ErrorResponse("Failed to load recent views: " + e.getMessage()));
+            log.error("Failed to load recent views for user {}: {}", userId, e.getMessage());
+            return ResponseEntity.status(500).body(new ErrorResponse("Failed to load recent views"));
         }
     }
 

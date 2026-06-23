@@ -31,14 +31,13 @@ import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.beans.factory.annotation.Value;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
-
-    @Value("${app.security.google.client-id}")
-    private String googleClientId;
 
     private final AuthService authService;
     private final SellerApplicationService sellerApplicationService;
@@ -47,6 +46,28 @@ public class AuthController {
     private final com.example.jhapcham.security.RefreshTokenCookieService refreshTokenCookieService;
     private final com.example.jhapcham.security.CurrentUserService currentUserService;
     private final com.example.jhapcham.security.RequestRateLimiter rateLimiter;
+    @Value("${app.security.google.client-id}")
+    private String googleClientId;
+
+    private static String rateKey(HttpServletRequest request, String action) {
+        if (request == null) {
+            return action;
+        }
+
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip != null && !ip.isBlank()) {
+            // Only use the first IP if multiple are present.
+            int comma = ip.indexOf(',');
+            ip = (comma > 0 ? ip.substring(0, comma) : ip).trim();
+        } else {
+            ip = request.getRemoteAddr();
+        }
+
+        if (ip == null || ip.isBlank()) {
+            ip = "unknown";
+        }
+        return action + ":" + ip;
+    }
 
     @PostMapping("/register/customer")
     public ResponseEntity<AuthResponseDTO> registerCustomer(@Valid @RequestBody RegisterRequestDTO req,
@@ -81,9 +102,9 @@ public class AuthController {
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(403).body(new ErrorResponse(e.getMessage()));
+            return ResponseEntity.status(403).body(new ErrorResponse("Unable to complete login"));
         } catch (RuntimeException e) {
-            return ResponseEntity.status(401).body(new ErrorResponse(e.getMessage()));
+            return ResponseEntity.status(401).body(new ErrorResponse("Invalid username or password"));
         }
     }
 
@@ -102,33 +123,21 @@ public class AuthController {
                     .build();
 
             GoogleIdToken idToken = verifier.verify(idTokenString);
-            
+
             if (idToken != null) {
                 GoogleIdToken.Payload payload = idToken.getPayload();
                 String userId = payload.getSubject();
                 String email = payload.getEmail();
                 String name = (String) payload.get("name");
 
-                Role requestedRole = null;
-                String roleHint = body.get("role");
-                if (roleHint == null) roleHint = body.get("requestedRole");
-                if (roleHint == null) roleHint = body.get("accountType");
-                if (roleHint == null && "seller".equalsIgnoreCase(body.get("intent"))) {
-                    roleHint = "SELLER";
-                }
-                if (roleHint != null) {
-                    try {
-                        requestedRole = Role.valueOf(roleHint.toUpperCase());
-                    } catch (Exception e) { /* fallback to default */ }
-                }
-
-                User user = authService.loginWithGoogle(email, name, userId, requestedRole);
+                User user = authService.loginWithGoogle(email, name, userId);
                 return buildAuthenticatedResponse(user, "Google Auth successful", response);
             } else {
                 return ResponseEntity.status(401).body(new ErrorResponse("Invalid Google token"));
             }
         } catch (Exception e) {
-            return ResponseEntity.status(401).body(new ErrorResponse("Google Authentication failed: " + e.getMessage()));
+            log.warn("Google authentication failed: {}", e.getMessage());
+            return ResponseEntity.status(401).body(new ErrorResponse("Google Authentication failed"));
         }
     }
 
@@ -140,7 +149,7 @@ public class AuthController {
             User seller = authService.upgradeCustomerToSeller(currentUser.getId());
             return buildAuthenticatedResponse(seller, "Seller account started. Please submit application documents", response);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+            return ResponseEntity.badRequest().body(new ErrorResponse("Unable to upgrade account at this time"));
         }
     }
 
@@ -155,7 +164,7 @@ public class AuthController {
             return ResponseEntity.ok(rotated.authResponse());
         } catch (RuntimeException e) {
             response.addHeader(HttpHeaders.SET_COOKIE, refreshTokenCookieService.createClearedRefreshTokenCookie());
-            return ResponseEntity.status(401).body(new ErrorResponse(e.getMessage()));
+            return ResponseEntity.status(401).body(new ErrorResponse("Session refresh failed"));
         }
     }
 
@@ -169,7 +178,7 @@ public class AuthController {
             return ResponseEntity.ok(Map.of("message", "Logout successful"));
         } catch (RuntimeException e) {
             response.addHeader(HttpHeaders.SET_COOKIE, refreshTokenCookieService.createClearedRefreshTokenCookie());
-            return ResponseEntity.status(401).body(new ErrorResponse(e.getMessage()));
+            return ResponseEntity.status(401).body(new ErrorResponse("Logout failed"));
         }
     }
 
@@ -195,7 +204,7 @@ public class AuthController {
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
         } catch (RuntimeException e) {
-             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+             return ResponseEntity.badRequest().body(new ErrorResponse("Unable to process forgot-password request"));
         }
     }
 
@@ -213,9 +222,11 @@ public class AuthController {
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
         } catch (RuntimeException e) {
-             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+             return ResponseEntity.badRequest().body(new ErrorResponse("Unable to verify OTP"));
         }
     }
+
+    // --------------- ADMIN ONLY: SELLER APPLICATIONS ---------------
 
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> body, HttpServletRequest httpRequest) {
@@ -224,7 +235,7 @@ public class AuthController {
             String email = body.get("email");
             String otp = body.get("otp");
             String newPassword = body.get("newPassword");
-            
+
             if (email == null || email.isBlank() || otp == null || otp.isBlank() || newPassword == null || newPassword.isBlank()) {
                 return ResponseEntity.badRequest().body(new ErrorResponse("Email, OTP, and newPassword are required"));
             }
@@ -233,11 +244,9 @@ public class AuthController {
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
         } catch (RuntimeException e) {
-             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+             return ResponseEntity.badRequest().body(new ErrorResponse("Unable to reset password"));
         }
     }
-
-    // --------------- ADMIN ONLY: SELLER APPLICATIONS ---------------
 
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/admin/seller-applications/pending")
@@ -282,6 +291,8 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
+    // --------------- USER PROFILE UPDATE (SELF) ---------------
+
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/admin/seller-applications/{appId}/reject")
     public ResponseEntity<Map<String, Object>> rejectSellerApplication(
@@ -302,7 +313,7 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    // --------------- USER PROFILE UPDATE (SELF) ---------------
+    // --------------- ADMIN WITH ADMIN ID: VIEW ALL USERS ---------------
 
     @PutMapping("/profile/{userId}")
     public ResponseEntity<?> updateProfileById(
@@ -316,15 +327,15 @@ public class AuthController {
             UserProfileResponseDTO response = authService.convertToProfileDto(updated);
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+            return ResponseEntity.badRequest().body(new ErrorResponse("Invalid profile update"));
         } catch (RuntimeException e) {
-            return ResponseEntity.status(404).body(new ErrorResponse(e.getMessage()));
+            return ResponseEntity.status(404).body(new ErrorResponse("User not found"));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(new ErrorResponse("Failed to update profile"));
         }
     }
 
-    // --------------- ADMIN WITH ADMIN ID: VIEW ALL USERS ---------------
+    // ADMIN WITH ADMIN ID: change status of CUSTOMER or SELLER
 
     @GetMapping("/admin/{adminId}/users")
     public ResponseEntity<?> listSellersAndCustomersForAdmin(@PathVariable Long adminId, Authentication authentication) {
@@ -351,11 +362,11 @@ public class AuthController {
 
             return ResponseEntity.ok(users);
         } catch (RuntimeException e) {
-            return ResponseEntity.status(403).body(new ErrorResponse(e.getMessage()));
+            return ResponseEntity.status(403).body(new ErrorResponse("Unable to load users"));
         }
     }
 
-    // ADMIN WITH ADMIN ID: change status of CUSTOMER or SELLER
+    // --------------- HELPER ---------------
 
     @PutMapping("/admin/{adminId}/users/{userId}/status")
     public ResponseEntity<?> changeUserStatus(
@@ -395,13 +406,11 @@ public class AuthController {
 
             return ResponseEntity.ok(dto);
         } catch (RuntimeException e) {
-            return ResponseEntity.status(403).body(new ErrorResponse(e.getMessage()));
+            return ResponseEntity.status(403).body(new ErrorResponse("Unable to change user status"));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(new ErrorResponse("Failed to change status"));
         }
     }
-
-    // --------------- HELPER ---------------
 
     @GetMapping("/seller/{userId}/application-status")
     public ResponseEntity<SellerApplicationStatusDTO> getSellerApplicationStatus(@PathVariable Long userId,
@@ -447,26 +456,6 @@ public class AuthController {
 
         return ResponseEntity.ok(dto);
 
-    }
-
-    private static String rateKey(HttpServletRequest request, String action) {
-        if (request == null) {
-            return action;
-        }
-
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip != null && !ip.isBlank()) {
-            // Only use the first IP if multiple are present.
-            int comma = ip.indexOf(',');
-            ip = (comma > 0 ? ip.substring(0, comma) : ip).trim();
-        } else {
-            ip = request.getRemoteAddr();
-        }
-
-        if (ip == null || ip.isBlank()) {
-            ip = "unknown";
-        }
-        return action + ":" + ip;
     }
 
     private ResponseEntity<AuthResponseDTO> buildAuthenticatedResponse(User user,

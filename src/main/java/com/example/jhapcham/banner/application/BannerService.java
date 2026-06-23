@@ -6,6 +6,7 @@ import com.example.jhapcham.banner.domain.*;
 import com.example.jhapcham.banner.dto.*;
 import com.example.jhapcham.banner.persistence.*;
 import com.example.jhapcham.Error.BusinessValidationException;
+import com.example.jhapcham.common.CloudinaryService;
 import com.example.jhapcham.product.domain.Product;
 import com.example.jhapcham.product.dto.HomepageBannerDto;
 import com.example.jhapcham.product.persistence.ProductRepository;
@@ -26,7 +27,7 @@ public class BannerService {
     private final BannerRepository bannerRepository;
     private final BannerProductRepository bannerProductRepository;
     private final ProductRepository productRepository;
-    private final com.example.jhapcham.common.FileStorageService fileStorageService;
+    private final CloudinaryService cloudinaryService;
 
     @Transactional
     public BannerResponseDTO createBanner(BannerUpsertRequestDTO dto) {
@@ -50,6 +51,12 @@ public class BannerService {
     @Transactional
     public void deleteBanner(Long id) {
         Banner banner = findBanner(id);
+        if (banner.getImageUrl() != null && banner.getImageUrl().contains("cloudinary.com")) {
+            cloudinaryService.delete(banner.getImageUrl());
+        }
+        if (banner.getMobileImageUrl() != null && banner.getMobileImageUrl().contains("cloudinary.com")) {
+            cloudinaryService.delete(banner.getMobileImageUrl());
+        }
         bannerRepository.delete(banner);
     }
 
@@ -128,7 +135,7 @@ public class BannerService {
         if (image == null || image.isEmpty()) {
             throw new BusinessValidationException("Image file is required.");
         }
-        String imagePath = fileStorageService.save(image, "banners", "banner_" + System.currentTimeMillis());
+        String imagePath = cloudinaryService.uploadImage(image, "banners");
         return new BannerImageUploadResponseDTO(imagePath);
     }
 
@@ -171,7 +178,10 @@ public class BannerService {
         if (dto.getAnimationType() != null) banner.setAnimationType(dto.getAnimationType());
 
         if (dto.getImage() != null && !dto.getImage().isEmpty()) {
-            String imagePath = fileStorageService.save(dto.getImage(), "banners", "banner_" + System.currentTimeMillis());
+            if (banner.getImageUrl() != null && banner.getImageUrl().contains("cloudinary.com")) {
+                cloudinaryService.delete(banner.getImageUrl());
+            }
+            String imagePath = cloudinaryService.uploadImage(dto.getImage(), "banners");
             banner.setImageUrl(imagePath);
         } else if (!isBlank(dto.getImageUrl())) {
             banner.setImageUrl(dto.getImageUrl());
@@ -180,8 +190,10 @@ public class BannerService {
         }
 
         if (dto.getMobileImage() != null && !dto.getMobileImage().isEmpty()) {
-            String mobilePath = fileStorageService.save(dto.getMobileImage(), "banners",
-                    "banner_mobile_" + System.currentTimeMillis());
+            if (banner.getMobileImageUrl() != null && banner.getMobileImageUrl().contains("cloudinary.com")) {
+                cloudinaryService.delete(banner.getMobileImageUrl());
+            }
+            String mobilePath = cloudinaryService.uploadImage(dto.getMobileImage(), "banners");
             banner.setMobileImageUrl(mobilePath);
         } else if (!isBlank(dto.getMobileImageUrl())) {
             banner.setMobileImageUrl(dto.getMobileImageUrl());

@@ -20,9 +20,9 @@ public interface PopularSearchRepository extends JpaRepository<PopularSearch, Lo
     @Query("SELECT ps FROM PopularSearch ps WHERE ps.searchCount >= :minCount ORDER BY ps.searchCount DESC")
     List<PopularSearch> findPopularSearchesByMinCount(@Param("minCount") Long minCount);
 
-    @Query("SELECT ps FROM PopularSearch ps ORDER BY ps.lastSearchedAt DESC LIMIT :limit")
-    List<PopularSearch> findRecentSearches(@Param("limit") int limit);
+    @Query("SELECT ps FROM PopularSearch ps ORDER BY ps.lastSearchedAt DESC")
+    List<PopularSearch> findRecentSearches(Pageable pageable);
 
-    @Query("SELECT ps FROM PopularSearch ps ORDER BY ps.conversionRate DESC LIMIT :limit")
-    List<PopularSearch> findTopConversionSearches(@Param("limit") int limit);
+    @Query("SELECT ps FROM PopularSearch ps ORDER BY ps.conversionRate DESC")
+    List<PopularSearch> findTopConversionSearches(Pageable pageable);
 }

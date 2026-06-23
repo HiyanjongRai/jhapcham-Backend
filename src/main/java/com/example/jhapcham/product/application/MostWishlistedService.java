@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +30,7 @@ public class MostWishlistedService {
 
     @Cacheable(cacheNames = "most-wishlisted-top", key = "#limit")
     public List<MostWishlistedDTO> getTopMostWishlisted(int limit) {
-        List<Object[]> results = mostWishlistedRepository.findTopMostWishlisted(limit);
+        List<Object[]> results = mostWishlistedRepository.findTopMostWishlisted(PageRequest.of(0, normalizeLimit(limit)));
         return mapToMostWishlistedDTOs(results);
     }
 
@@ -67,5 +68,9 @@ public class MostWishlistedService {
             return new ArrayList<>();
         }
         return List.of(imagePaths.split("\\|"));
+    }
+
+    private int normalizeLimit(int limit) {
+        return Math.max(1, Math.min(limit, 100));
     }
 }

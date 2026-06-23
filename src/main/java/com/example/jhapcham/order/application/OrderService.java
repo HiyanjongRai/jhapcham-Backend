@@ -652,11 +652,6 @@ public class OrderService {
         return toSummaryDTO(order, mapItems(order));
     }
 
-    @Transactional
-    public OrderSummaryDTO guestCancelOrder(Long orderId) {
-        throw new AuthorizationException("Guest order cancellation requires a secure verification flow");
-    }
-
     // =========================
     // FETCH
     // =========================

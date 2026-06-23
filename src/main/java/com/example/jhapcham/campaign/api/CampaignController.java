@@ -5,10 +5,7 @@ import com.example.jhapcham.campaign.application.*;
 import com.example.jhapcham.campaign.domain.*;
 import com.example.jhapcham.campaign.dto.*;
 import com.example.jhapcham.campaign.persistence.*;
-import com.example.jhapcham.common.FileStorageService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.Resource;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -24,7 +21,6 @@ public class CampaignController {
 
     private final CampaignService campaignService;
     private final com.example.jhapcham.security.CurrentUserService currentUserService;
-    private final FileStorageService fileStorageService;
 
     // Admin Endpoints
     @PostMapping(value = "/admin/campaigns", consumes = { "application/json" })
@@ -111,32 +107,6 @@ public class CampaignController {
     }
 
     // Public Endpoints
-    @GetMapping("/campaigns/image/{fileName}")
-    public ResponseEntity<Resource> getCampaignImage(@PathVariable String fileName) {
-        try {
-            Resource resource = fileStorageService.loadAsResource("campaigns", fileName);
-            String contentType = determineContentType(fileName);
-            return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .body(resource);
-        } catch (Exception e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
-
-    private String determineContentType(String fileName) {
-        if (fileName.endsWith(".png")) {
-            return "image/png";
-        } else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
-            return "image/jpeg";
-        } else if (fileName.endsWith(".webp")) {
-            return "image/webp";
-        } else if (fileName.endsWith(".gif")) {
-            return "image/gif";
-        }
-        return "application/octet-stream";
-    }
-
     @GetMapping("/campaigns")
     public ResponseEntity<List<CampaignResponseDTO>> getPublicCampaigns() {
         return ResponseEntity.ok(campaignService.getUpcomingCampaigns());

@@ -8,7 +8,7 @@ import com.example.jhapcham.seller.persistence.*;
 import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.Error.RoleBasedAccessException;
-import com.example.jhapcham.common.FileStorageService;
+import com.example.jhapcham.common.CloudinaryService;
 import com.example.jhapcham.user.domain.Role;
 import com.example.jhapcham.user.domain.Status;
 import com.example.jhapcham.user.domain.User;
@@ -30,7 +30,7 @@ public class SellerApplicationService {
     private final SellerApplicationRepository applicationRepo;
     private final SellerProfileRepository profileRepo;
     private final UserRepository userRepo;
-    private final FileStorageService storage;
+    private final CloudinaryService cloudinaryService;
     private final com.example.jhapcham.notification.application.NotificationService notificationService;
 
     @Transactional
@@ -55,15 +55,15 @@ public class SellerApplicationService {
         }
 
         String idPath = idDoc != null
-                ? storage.save(idDoc, "seller_docs", "id_" + userId)
+                ? cloudinaryService.uploadDocument(idDoc, "seller_docs")
                 : (app != null ? app.getIdDocumentPath() : null);
 
         String licPath = licenseDoc != null
-                ? storage.save(licenseDoc, "seller_docs", "license_" + userId)
+                ? cloudinaryService.uploadDocument(licenseDoc, "seller_docs")
                 : (app != null ? app.getBusinessLicensePath() : null);
 
         String taxPath = taxDoc != null
-                ? storage.save(taxDoc, "seller_docs", "tax_" + userId)
+                ? cloudinaryService.uploadDocument(taxDoc, "seller_docs")
                 : (app != null ? app.getTaxCertificatePath() : null);
 
         if (app == null) {

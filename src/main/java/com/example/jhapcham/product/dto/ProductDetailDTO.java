@@ -30,7 +30,6 @@ public class ProductDetailDTO {
     private String colorOptions;
 
     private BigDecimal price;
-    private BigDecimal buyingPrice;
     private BigDecimal discountPrice; // final discounted price (manual or calculated)
     private BigDecimal salePercentage; // NEW percentage discount field
     private BigDecimal salePrice;
@@ -56,13 +55,9 @@ public class ProductDetailDTO {
     // seller info
     private String sellerUsername;
     private String sellerFullName;
-    private String sellerEmail;
-    private String sellerContactNumber;
-    private com.example.jhapcham.user.domain.Status sellerUserStatus;
 
     private String storeName;
     private String storeAddress;
-    private com.example.jhapcham.user.domain.Status sellerProfileStatus;
     private String logoImagePath;
     private String profileImagePath;
 

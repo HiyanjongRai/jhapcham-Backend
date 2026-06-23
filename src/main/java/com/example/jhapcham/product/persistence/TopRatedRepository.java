@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 
@@ -114,8 +115,7 @@ public interface TopRatedRepository extends JpaRepository<Product, Long> {
                      imgs.image_paths, rv.average_rating, rv.total_reviews, pv.total_views,
                      u.full_name, sp.store_name, sp.logo_image_path, vs.total_stock, vs.min_price, vs.max_price
             ORDER BY average_rating DESC, total_reviews DESC, p.id DESC
-            LIMIT :limit
             """,
             nativeQuery = true)
-    List<Object[]> findTopRatedProducts(@Param("limit") int limit);
+    List<Object[]> findTopRatedProducts(Pageable pageable);
 }

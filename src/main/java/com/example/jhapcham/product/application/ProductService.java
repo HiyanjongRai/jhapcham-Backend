@@ -18,7 +18,6 @@ import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.Error.RoleBasedAccessException;
 import com.example.jhapcham.common.CloudinaryService;
-import com.example.jhapcham.common.FileStorageService;
 import com.example.jhapcham.order.domain.OrderItem;
 import com.example.jhapcham.order.persistence.OrderItemRepository;
 import com.example.jhapcham.order.persistence.OrderRepository;
@@ -62,7 +61,6 @@ public class ProductService {
     private final ProductImageRepository productImageRepository;
     private final UserRepository userRepository;
     private final SellerProfileRepository sellerProfileRepository;
-    private final FileStorageService fileStorageService;
     private final CloudinaryService cloudinaryService;
     private final ProductViewRepository productViewRepository;
     private final OrderRepository orderRepository;
@@ -159,7 +157,7 @@ public class ProductService {
                 if (f == null || f.isEmpty())
                     continue;
 
-                String path = cloudinaryService.upload(f, PRODUCT_IMAGE_SUBDIR);
+                String path = cloudinaryService.uploadImage(f, PRODUCT_IMAGE_SUBDIR);
 
                 ProductImage img = ProductImage.builder()
                         .product(saved)
@@ -268,7 +266,7 @@ public class ProductService {
                 if (f == null || f.isEmpty())
                     continue;
 
-                String path = cloudinaryService.upload(f, PRODUCT_IMAGE_SUBDIR);
+                String path = cloudinaryService.uploadImage(f, PRODUCT_IMAGE_SUBDIR);
 
                 ProductImage img = ProductImage.builder()
                         .product(product)
@@ -466,7 +464,6 @@ public class ProductService {
                 .features(p.getFeatures())
                 .colorOptions(p.getColorOptions())
                 .price(p.getPrice())
-                .buyingPrice(p.getBuyingPrice())
                 .saleLabel(buildSaleLabel(p))
                 .discountPrice(p.getDiscountPrice())
                 .salePercentage(p.getSalePercentage())
@@ -484,12 +481,8 @@ public class ProductService {
                 .imagePaths(img)
                 .sellerUsername(seller.getUsername())
                 .sellerFullName(seller.getFullName())
-                .sellerEmail(seller.getEmail())
-                .sellerContactNumber(seller.getContactNumber())
-                .sellerUserStatus(seller.getStatus())
                 .storeName(profile.getStoreName())
                 .storeAddress(profile.getAddress())
-                .sellerProfileStatus(profile.getStatus())
                 .logoImagePath(profile.getLogoImagePath())
                 .profileImagePath(seller.getProfileImagePath())
                 .averageRating(reviewRepository.findAverageRatingByProductId(p.getId()))
@@ -571,7 +564,6 @@ public class ProductService {
                 .features(p.getFeatures())
                 .colorOptions(p.getColorOptions())
                 .price(p.getPrice())
-                .buyingPrice(p.getBuyingPrice())
                 .discountPrice(p.getDiscountPrice())
                 .salePercentage(p.getSalePercentage())
                 .salePrice(p.getSalePrice())

@@ -6,7 +6,7 @@ import com.example.jhapcham.seller.domain.*;
 import com.example.jhapcham.seller.dto.*;
 import com.example.jhapcham.seller.persistence.*;
 import com.example.jhapcham.Error.ResourceNotFoundException;
-import com.example.jhapcham.common.FileStorageService;
+import com.example.jhapcham.common.CloudinaryService;
 import com.example.jhapcham.order.domain.Order;
 import com.example.jhapcham.order.application.OrderAccountingService;
 import com.example.jhapcham.order.persistence.OrderRepository;
@@ -30,7 +30,7 @@ public class SellerService {
 
         private final SellerProfileRepository sellerProfileRepository;
         private final ProductRepository productRepository;
-        private final FileStorageService fileStorageService;
+        private final CloudinaryService cloudinaryService;
         private final UserRepository userRepository;
         private final OrderRepository orderRepository;
         private final OrderAccountingService orderAccountingService;
@@ -83,13 +83,10 @@ public class SellerService {
 
                 // save logo
                 if (dto.logoImage() != null && !dto.logoImage().isEmpty()) {
-
-                        String fileName = "seller_logo_" + profile.getId() + "_" + System.currentTimeMillis();
-
-                        String path = fileStorageService.save(
-                                        dto.logoImage(),
-                                        SELLER_LOGO_DIR,
-                                        fileName);
+                        if (profile.getLogoImagePath() != null && profile.getLogoImagePath().contains("cloudinary.com")) {
+                                cloudinaryService.delete(profile.getLogoImagePath());
+                        }
+                        String path = cloudinaryService.uploadImage(dto.logoImage(), SELLER_LOGO_DIR);
 
                         profile.setLogoImagePath(path);
                 }

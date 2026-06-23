@@ -130,9 +130,19 @@ public class EsewaPaymentController {
         if (transactionUuid == null || transactionUuid.isBlank()) {
             return List.of();
         }
-        String[] parts = transactionUuid.split("-");
+        boolean isCommission = transactionUuid.startsWith("COMM-");
+        String workUuid = transactionUuid;
+        if (isCommission) {
+            workUuid = workUuid.substring(5);
+        }
+        String[] parts = workUuid.split("-");
         if (parts.length < 2) {
             return List.of();
+        }
+        if (isCommission) {
+            return java.util.Arrays.stream(parts[0].split("_"))
+                    .map(Long::parseLong)
+                    .toList();
         }
         if ("ORDS".equalsIgnoreCase(parts[0])) {
             return java.util.Arrays.stream(parts[1].split("_"))

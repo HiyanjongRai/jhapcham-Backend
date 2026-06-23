@@ -486,13 +486,21 @@ public class EsewaPaymentService {
             return ids;
         }
 
+        boolean isCommission = transactionUuid.startsWith("COMM-");
         String workUuid = transactionUuid;
-        if (workUuid.startsWith("COMM-")) {
+        if (isCommission) {
             workUuid = workUuid.substring(5);
         }
 
         String[] parts = workUuid.split("-");
         if (parts.length < 2) {
+            return ids;
+        }
+
+        if (isCommission) {
+            for (String id : parts[0].split("_")) {
+                ids.add(Long.parseLong(id));
+            }
             return ids;
         }
 

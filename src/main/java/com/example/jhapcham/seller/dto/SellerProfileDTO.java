@@ -37,10 +37,7 @@ public class SellerProfileDTO {
 
     // user info
     private String sellerUsername;
-    private String sellerEmail;
     private String sellerFullName;
-    private String sellerContactNumber;
-    private String contactNumber;
     private String logoImagePath;
 
 }

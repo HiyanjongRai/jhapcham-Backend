@@ -33,7 +33,6 @@ public class AdminOrderController {
 
     @PutMapping("/{orderId}/deliver-manually")
     public ResponseEntity<Void> deliverManually(@PathVariable Long orderId) {
-        adminService.manuallyDeliverOrder(orderId);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.status(403).build();
     }
 }

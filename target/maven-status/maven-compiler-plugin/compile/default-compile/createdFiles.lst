@@ -348,7 +348,6 @@ com\example\jhapcham\order\application\OrderCleanupTask.class
 com\example\jhapcham\product\api\ProductController.class
 com\example\jhapcham\user\application\AuthService.class
 com\example\jhapcham\delivery\api\CourierSettlementController.class
-com\example\jhapcham\common\FileStorageService.class
 com\example\jhapcham\refund\domain\Refund$RefundBuilder.class
 com\example\jhapcham\inventory\domain\InventoryAlert$InventoryAlertBuilder.class
 com\example\jhapcham\loyalty\dto\ManualAdjustmentRequestDTO.class

@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +30,7 @@ public class BestSellerService {
 
     @Cacheable(cacheNames = "best-sellers-top", key = "#limit")
     public List<BestSellerDTO> getTopBestSellers(int limit) {
-        List<Object[]> results = bestSellerRepository.findTopBestSellers(limit);
+        List<Object[]> results = bestSellerRepository.findTopBestSellers(PageRequest.of(0, normalizeLimit(limit)));
         return mapToBestSellerDTOs(results);
     }
 
@@ -67,5 +68,9 @@ public class BestSellerService {
             return new ArrayList<>();
         }
         return List.of(imagePaths.split("\\|"));
+    }
+
+    private int normalizeLimit(int limit) {
+        return Math.max(1, Math.min(limit, 100));
     }
 }

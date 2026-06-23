@@ -9,7 +9,7 @@ import com.example.jhapcham.Error.AuthenticationException;
 import com.example.jhapcham.Error.AuthorizationException;
 import com.example.jhapcham.Error.BusinessValidationException;
 import com.example.jhapcham.Error.ResourceNotFoundException;
-import com.example.jhapcham.common.FileStorageService;
+import com.example.jhapcham.common.CloudinaryService;
 import com.example.jhapcham.seller.persistence.SellerProfileRepository;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +17,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -29,11 +31,13 @@ import com.example.jhapcham.seller.persistence.SellerApplicationRepository;
 @RequiredArgsConstructor
 public class AuthService {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private final SellerApplicationRepository applicationRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
-    private final FileStorageService fileStorageService;
+    private final CloudinaryService cloudinaryService;
     private final com.example.jhapcham.notification.application.EmailService emailService;
     private final com.example.jhapcham.loyalty.application.LoyaltyService loyaltyService;
     private final String PROFILE_SUBDIR = "customer-profile";
@@ -98,8 +102,7 @@ public class AuthService {
             try {
                 loyaltyService.initializeLoyaltyPoints(saved);
             } catch (Exception ex) {
-                org.slf4j.LoggerFactory.getLogger(AuthService.class)
-                        .error("Failed to initialize loyalty points for Google user {}: {}", saved.getId(), ex.getMessage());
+                log.error("Failed to initialize loyalty points for Google user {}: {}", saved.getId(), ex.getMessage());
             }
 
             return saved;
@@ -107,7 +110,7 @@ public class AuthService {
     }
 
     @Transactional
-    public User loginWithGoogle(String email, String name, String googleSub, Role requestedRole) {
+    public User loginWithGoogle(String email, String name, String googleSub) {
         User user = users.findByEmail(email).orElseGet(() -> {
             String baseUsername = email.split("@")[0].replaceAll("[^a-zA-Z0-9_]", "");
             String username = baseUsername;
@@ -120,16 +123,13 @@ public class AuthService {
             OTP_RANDOM.nextBytes(randomBytes);
             String randomPassword = java.util.Base64.getEncoder().encodeToString(randomBytes);
 
-            Role role = (requestedRole != null) ? requestedRole : Role.CUSTOMER;
-            Status status = (role == Role.SELLER) ? Status.PENDING : Status.ACTIVE;
-
             User newUser = User.builder()
                     .username(username)
                     .fullName(name != null ? name : username)
                     .email(email)
                     .password(passwordEncoder.encode(randomPassword))
-                    .role(role)
-                    .status(status)
+                    .role(Role.CUSTOMER)
+                    .status(Status.ACTIVE)
                     .build();
 
             User saved = users.save(newUser);
@@ -137,18 +137,11 @@ public class AuthService {
             try {
                 loyaltyService.initializeLoyaltyPoints(saved);
             } catch (Exception ex) {
-                org.slf4j.LoggerFactory.getLogger(AuthService.class)
-                        .error("Failed to initialize loyalty points for Google user {}: {}", saved.getId(), ex.getMessage());
+                log.error("Failed to initialize loyalty points for Google user {}: {}", saved.getId(), ex.getMessage());
             }
 
             return saved;
         });
-
-        if (requestedRole == Role.SELLER && user.getRole() == Role.CUSTOMER) {
-            user.setRole(Role.SELLER);
-            user.setStatus(Status.PENDING);
-            user = users.save(user);
-        }
 
         return validateUserStatus(user);
     }
@@ -197,8 +190,7 @@ public class AuthService {
             loyaltyService.initializeLoyaltyPoints(saved);
         } catch (Exception e) {
             // Non-critical — log and continue
-            org.slf4j.LoggerFactory.getLogger(AuthService.class)
-                    .error("Failed to initialize loyalty points for user {}: {}", saved.getId(), e.getMessage());
+            log.error("Failed to initialize loyalty points for user {}: {}", saved.getId(), e.getMessage());
         }
 
         return saved;
@@ -305,10 +297,10 @@ public class AuthService {
         }
 
         if (dto.getProfileImage() != null && !dto.getProfileImage().isEmpty()) {
-            String path = fileStorageService.save(
-                    dto.getProfileImage(),
-                    PROFILE_SUBDIR,
-                    "user_" + user.getId());
+            if (user.getProfileImagePath() != null && user.getProfileImagePath().contains("cloudinary.com")) {
+                cloudinaryService.delete(user.getProfileImagePath());
+            }
+            String path = cloudinaryService.uploadImage(dto.getProfileImage(), PROFILE_SUBDIR);
             user.setProfileImagePath(path);
         }
 

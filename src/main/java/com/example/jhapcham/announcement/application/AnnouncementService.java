@@ -8,6 +8,7 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,7 +45,7 @@ public class AnnouncementService {
 
     @Cacheable(cacheNames = "announcements-latest", key = "#limit")
     public List<AnnouncementDTO> getLatestAnnouncements(int limit) {
-        List<Announcement> results = announcementRepository.findLatestAnnouncements(limit);
+        List<Announcement> results = announcementRepository.findLatestAnnouncements(PageRequest.of(0, normalizeLimit(limit)));
         return results.stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -109,6 +110,10 @@ public class AnnouncementService {
         
         Announcement updated = announcementRepository.save(announcement);
         return mapToDTO(updated);
+    }
+
+    private int normalizeLimit(int limit) {
+        return Math.max(1, Math.min(limit, 60));
     }
 
     private AnnouncementDTO mapToDTO(Announcement announcement) {

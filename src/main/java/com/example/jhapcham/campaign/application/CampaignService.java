@@ -6,6 +6,7 @@ import com.example.jhapcham.campaign.domain.*;
 import com.example.jhapcham.campaign.dto.*;
 import com.example.jhapcham.campaign.persistence.*;
 import com.example.jhapcham.Error.BusinessValidationException;
+import com.example.jhapcham.common.CloudinaryService;
 import com.example.jhapcham.product.domain.Product;
 import com.example.jhapcham.product.dto.HomepageCampaignDto;
 import com.example.jhapcham.product.persistence.ProductRepository;
@@ -27,7 +28,7 @@ public class CampaignService {
     private final SellerCampaignRepository sellerCampaignRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final ProductRepository productRepository;
-    private final com.example.jhapcham.common.FileStorageService fileStorageService;
+    private final CloudinaryService cloudinaryService;
     private final com.example.jhapcham.notification.application.NotificationService notificationService;
 
     public CampaignResponseDTO createCampaign(CampaignCreateRequestDTO dto) {
@@ -43,7 +44,7 @@ public class CampaignService {
         // Handle file upload if provided
         String imagePath = null;
         if (dto.getImage() != null && !dto.getImage().isEmpty()) {
-            imagePath = fileStorageService.storeCampaignImage(dto.getImage());
+            imagePath = cloudinaryService.uploadImage(dto.getImage(), "campaigns");
         } else if (dto.getImageUrl() != null && !dto.getImageUrl().trim().isEmpty()) {
             imagePath = dto.getImageUrl();
         }
@@ -116,6 +117,9 @@ public class CampaignService {
 
         // Delete the campaign; JPA CascadeType.ALL + orphanRemoval handles
         // CampaignProduct and SellerCampaign
+        if (campaign.getImagePath() != null && campaign.getImagePath().contains("cloudinary.com")) {
+            cloudinaryService.delete(campaign.getImagePath());
+        }
         campaignRepository.delete(campaign);
         campaignRepository.flush(); // Ensure synchronization with DB immediately
 

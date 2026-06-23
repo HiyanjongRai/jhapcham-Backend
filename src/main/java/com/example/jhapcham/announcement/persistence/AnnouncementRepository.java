@@ -27,6 +27,6 @@ public interface AnnouncementRepository extends JpaRepository<Announcement, Long
     @Query("SELECT a FROM Announcement a WHERE a.type = :type AND a.isActive = true ORDER BY a.displayOrder DESC")
     List<Announcement> findByType(@Param("type") String type);
 
-    @Query("SELECT a FROM Announcement a WHERE a.isActive = true ORDER BY a.displayOrder DESC, a.createdAt DESC LIMIT :limit")
-    List<Announcement> findLatestAnnouncements(@Param("limit") int limit);
+    @Query("SELECT a FROM Announcement a WHERE a.isActive = true ORDER BY a.displayOrder DESC, a.createdAt DESC")
+    List<Announcement> findLatestAnnouncements(Pageable pageable);
 }

@@ -201,6 +201,10 @@ public class OrderAccountingService {
 
     @Transactional
     public void markCommissionAsPaid(Order order) {
+        if (order.getCommissionStatus() == CommissionStatus.PAID) {
+            log.info("Commission for order {} has already been paid.", order.getId());
+            return;
+        }
         if (order.getCommissionStatus() != CommissionStatus.UNPAID && order.getCommissionStatus() != CommissionStatus.PENDING) {
             throw new RuntimeException("Cannot pay commission: current status is " + order.getCommissionStatus());
         }

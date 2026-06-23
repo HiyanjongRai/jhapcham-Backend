@@ -1,6 +1,7 @@
 package com.example.jhapcham.seller.persistence;
 
 import com.example.jhapcham.seller.domain.SellerProfile;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,9 +27,8 @@ public interface SellerRankingRepository extends JpaRepository<SellerProfile, Lo
             WHERE o.status = 'DELIVERED'
             GROUP BY sp.user_id, u.full_name, sp.store_name, sp.logo_image_path
             ORDER BY soldQuantity DESC, sp.user_id DESC
-            LIMIT :limit
             """, nativeQuery = true)
-    List<TopSellerProjection> findTopSellersBySoldQuantity(@Param("limit") int limit);
+    List<TopSellerProjection> findTopSellersBySoldQuantity(Pageable pageable);
 
     @Query(value = """
             SELECT sp.user_id AS sellerUserId,
@@ -47,7 +47,6 @@ public interface SellerRankingRepository extends JpaRepository<SellerProfile, Lo
             GROUP BY sp.user_id, u.full_name, sp.store_name, sp.logo_image_path
             HAVING COUNT(r.id) > 0
             ORDER BY averageRating DESC, totalReviews DESC, soldQuantity DESC, sp.user_id DESC
-            LIMIT :limit
             """, nativeQuery = true)
-    List<TopSellerProjection> findTopRatedSellers(@Param("limit") int limit);
+    List<TopSellerProjection> findTopRatedSellers(Pageable pageable);
 }

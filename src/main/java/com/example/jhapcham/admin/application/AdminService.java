@@ -176,11 +176,6 @@ public class AdminService {
         synchronizeShipment(order, status);
     }
 
-    @Transactional
-    public void manuallyDeliverOrder(Long orderId) {
-        throw new RuntimeException("Manual delivery is disabled. Use courier OTP verification and COD collection flow.");
-    }
-
     private void synchronizeShipment(Order order, com.example.jhapcham.order.domain.OrderStatus status) {
         com.example.jhapcham.delivery.domain.Shipment shipment = shipmentService.findByOrderId(order.getId());
 

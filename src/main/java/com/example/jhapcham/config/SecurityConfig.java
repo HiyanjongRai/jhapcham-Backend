@@ -51,18 +51,6 @@ public class SecurityConfig {
                 // OPTIONS always allowed
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                // Public static assets only
-                .requestMatchers(
-                        "/product-images/**",
-                        "/customer-profile/**",
-                        "/review-images/**",
-                        "/user-images/**",
-                        "/seller_logos/**",
-                        "/campaign-images/**",
-                        "/banners/**",
-                        "/refund_evidence/**")
-                .permitAll()
-
                 // Public auth
                 .requestMatchers(HttpMethod.POST,
                         "/api/auth/register/customer",
@@ -115,7 +103,7 @@ public class SecurityConfig {
                         "/api/announcements/**",
                         "/api/analytics/popular-searches/**")
                 .permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/chat/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/chat/**").authenticated()
 
                 // Public order preview only. Order placement requires an authenticated customer.
                 .requestMatchers(HttpMethod.POST, "/api/orders/preview").permitAll()

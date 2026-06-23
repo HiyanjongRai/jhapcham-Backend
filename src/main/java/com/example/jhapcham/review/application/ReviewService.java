@@ -10,7 +10,6 @@ import com.example.jhapcham.Error.ResourceNotFoundException;
 import com.example.jhapcham.activity.domain.ActivityType;
 import com.example.jhapcham.activity.application.UserActivityService;
 import com.example.jhapcham.common.CloudinaryService;
-import com.example.jhapcham.common.FileStorageService;
 import com.example.jhapcham.order.persistence.OrderItemRepository;
 import com.example.jhapcham.product.domain.Product;
 import com.example.jhapcham.product.persistence.ProductRepository;
@@ -33,7 +32,6 @@ public class ReviewService {
     private final OrderItemRepository orderItemRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
-    private final FileStorageService fileStorageService;
     private final CloudinaryService cloudinaryService;
     private final UserActivityService userActivityService;
 
@@ -65,7 +63,7 @@ public class ReviewService {
         // 5. Handle image (Stored in Cloudinary)
         String imagePath = null;
         if (image != null && !image.isEmpty()) {
-            imagePath = cloudinaryService.upload(image, REVIEW_IMAGE_DIR);
+            imagePath = cloudinaryService.uploadImage(image, REVIEW_IMAGE_DIR);
         }
 
         // 6. Save
@@ -104,7 +102,7 @@ public class ReviewService {
             if (review.getImagePath() != null && review.getImagePath().contains("cloudinary.com")) {
                 cloudinaryService.delete(review.getImagePath());
             }
-            String imagePath = cloudinaryService.upload(image, REVIEW_IMAGE_DIR);
+            String imagePath = cloudinaryService.uploadImage(image, REVIEW_IMAGE_DIR);
             review.setImagePath(imagePath);
         }
 

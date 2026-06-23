@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +33,7 @@ public class TrendingService {
     @Cacheable(cacheNames = "trending-top", key = "#limit")
     public List<TrendingDTO> getTopTrending(int limit) {
         LocalDateTime sevenDaysAgo = LocalDateTime.now().minusDays(7);
-        List<Object[]> results = trendingRepository.findTopTrending(sevenDaysAgo, limit);
+        List<Object[]> results = trendingRepository.findTopTrending(sevenDaysAgo, PageRequest.of(0, normalizeLimit(limit)));
         return mapToTrendingDTOs(results);
     }
 
@@ -69,5 +70,9 @@ public class TrendingService {
             return new ArrayList<>();
         }
         return List.of(imagePaths.split("\\|"));
+    }
+
+    private int normalizeLimit(int limit) {
+        return Math.max(1, Math.min(limit, 100));
     }
 }

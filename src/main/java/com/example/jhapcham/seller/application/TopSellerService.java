@@ -3,6 +3,7 @@ package com.example.jhapcham.seller.application;
 import com.example.jhapcham.seller.dto.TopSellerDTO;
 import com.example.jhapcham.seller.persistence.SellerRankingRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -17,13 +18,13 @@ public class TopSellerService {
     private final SellerRankingRepository sellerRankingRepository;
 
     public List<TopSellerDTO> getTopSellers(int limit) {
-        return sellerRankingRepository.findTopSellersBySoldQuantity(normalizeLimit(limit)).stream()
+        return sellerRankingRepository.findTopSellersBySoldQuantity(PageRequest.of(0, normalizeLimit(limit))).stream()
                 .map(TopSellerDTO::from)
                 .toList();
     }
 
     public List<TopSellerDTO> getTopRatedSellers(int limit) {
-        return sellerRankingRepository.findTopRatedSellers(normalizeLimit(limit)).stream()
+        return sellerRankingRepository.findTopRatedSellers(PageRequest.of(0, normalizeLimit(limit))).stream()
                 .map(TopSellerDTO::from)
                 .toList();
     }

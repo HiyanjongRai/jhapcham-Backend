@@ -3,7 +3,7 @@ package com.example.jhapcham.config;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.cache.CacheManager;
@@ -77,7 +77,13 @@ public class CacheConfig {
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         mapper.activateDefaultTyping(
-                LaissezFaireSubTypeValidator.instance,
+                BasicPolymorphicTypeValidator.builder()
+                        .allowIfSubType("com.example.jhapcham.")
+                        .allowIfSubType("org.springframework.data.domain.")
+                        .allowIfSubType("java.util.")
+                        .allowIfSubType("java.time.")
+                        .allowIfSubType("java.math.")
+                        .build(),
                 ObjectMapper.DefaultTyping.NON_FINAL,
                 JsonTypeInfo.As.PROPERTY);
         return mapper;

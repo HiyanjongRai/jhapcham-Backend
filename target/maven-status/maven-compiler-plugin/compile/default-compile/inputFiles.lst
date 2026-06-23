@@ -70,8 +70,8 @@ H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jha
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\chat\api\ChatController.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\chat\application\ChatService.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\chat\dto\ChatRequest.java
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\common\ApiResponse.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\common\CloudinaryService.java
-H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\common\FileStorageService.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\common\PublicReferenceIdGenerator.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\common\PublicReferenceType.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\config\AdminBootstrapRunner.java
@@ -81,6 +81,7 @@ H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jha
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\config\RestTemplateConfig.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\config\SchemaCompatibilityRunner.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\config\SecurityConfig.java
+H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\config\StandardApiResponseBodyAdvice.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\config\WebConfig.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\delivery\api\CourierController.java
 H:\Project\Ecomm\Jhapcham Backend\jhapcham-Backend\src\main\java\com\example\jhapcham\delivery\api\CourierSettlementController.java

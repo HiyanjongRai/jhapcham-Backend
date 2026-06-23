@@ -19,8 +19,6 @@ public class SellerProfileResponseDTO {
     private Long sellerProfileId;
     private Long userId;
     private String username;
-    private String email;
-    private String contactNumber;
 
     private String storeName;
     private String address;
@@ -48,8 +46,6 @@ public class SellerProfileResponseDTO {
                 .sellerProfileId(profile.getId())
                 .userId(profile.getUser().getId())
                 .username(profile.getUser().getUsername())
-                .email(profile.getUser().getEmail())
-                .contactNumber(profile.getUser().getContactNumber())
                 .storeName(profile.getStoreName())
                 .address(profile.getAddress())
                 .description(profile.getDescription())

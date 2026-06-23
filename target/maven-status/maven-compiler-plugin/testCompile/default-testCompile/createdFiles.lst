@@ -1,9 +1,3 @@
-com\example\jhapcham\analytics\application\PopularSearchServiceTest.class
-com\example\jhapcham\announcement\application\AnnouncementServiceTest.class
-com\example\jhapcham\announcement\api\AnnouncementControllerIntegrationTest.class
 com\example\jhapcham\analytics\api\AnalyticsControllerIntegrationTest.class
-com\example\jhapcham\product\application\BestSellerServiceTest.class
-com\example\jhapcham\product\application\TopRatedServiceTest.class
 com\example\jhapcham\admin\api\AdminStatisticsControllerIntegrationTest.class
-com\example\jhapcham\payment\PaymentWorkflowServiceTest.class
-com\example\jhapcham\product\api\HomepageControllerIntegrationTest.class
+com\example\jhapcham\DbCheck.class

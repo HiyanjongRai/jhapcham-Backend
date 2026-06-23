@@ -137,7 +137,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolationException(DataIntegrityViolationException ex) {
-        logger.warn("Database constraint violation: {}", ex.getMostSpecificCause().getMessage());
+        Throwable cause = ex.getMostSpecificCause();
+        logger.warn("Database constraint violation: {}", cause != null ? cause.getMessage() : ex.getMessage());
         return error(HttpStatus.CONFLICT, "DATA_CONFLICT",
                 "The request conflicts with existing or invalid data.");
     }

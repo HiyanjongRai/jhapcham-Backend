@@ -14,6 +14,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @RestController
 @RequestMapping("/api/messages")
 @RequiredArgsConstructor
@@ -36,9 +39,8 @@ public class MessageController {
 
             return ResponseEntity.ok(messageService.sendMessage(user.getId(), request));
         } catch (Exception e) {
-            e.printStackTrace();
-            String errorMsg = e.getMessage() != null ? e.getMessage() : e.toString();
-            return ResponseEntity.badRequest().body("Error: " + errorMsg);
+            log.warn("Failed to send message: {}", e.getMessage());
+            return ResponseEntity.badRequest().body("Error: Unable to send message.");
         }
     }
 

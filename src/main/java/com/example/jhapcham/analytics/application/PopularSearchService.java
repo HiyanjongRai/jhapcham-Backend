@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,7 +43,7 @@ public class PopularSearchService {
 
     @Cacheable(cacheNames = "recent-searches", key = "#limit")
     public List<PopularSearchDTO> getRecentSearches(int limit) {
-        List<PopularSearch> results = popularSearchRepository.findRecentSearches(limit);
+        List<PopularSearch> results = popularSearchRepository.findRecentSearches(PageRequest.of(0, normalizeLimit(limit)));
         return results.stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -50,7 +51,7 @@ public class PopularSearchService {
 
     @Cacheable(cacheNames = "conversion-searches", key = "#limit")
     public List<PopularSearchDTO> getTopConversionSearches(int limit) {
-        List<PopularSearch> results = popularSearchRepository.findTopConversionSearches(limit);
+        List<PopularSearch> results = popularSearchRepository.findTopConversionSearches(PageRequest.of(0, normalizeLimit(limit)));
         return results.stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -81,5 +82,9 @@ public class PopularSearchService {
                 .lastSearchedAt(search.getLastSearchedAt())
                 .createdAt(search.getCreatedAt())
                 .build();
+    }
+
+    private int normalizeLimit(int limit) {
+        return Math.max(1, Math.min(limit, 100));
     }
 }
